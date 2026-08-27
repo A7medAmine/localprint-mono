@@ -5,7 +5,9 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { PDFDocument } from "pdf-lib";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID, createHash } from "crypto";
+
+const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 import supabase, {
   getSettings,
@@ -17,6 +19,10 @@ import supabase, {
   hashToken,
   getShopBySlug,
   getShopByTokenHash,
+  createShop,
+  listShops,
+  rotateShopToken,
+  updateShop,
   getSupabaseUserFromToken,
   AuthUnavailableError,
   getProfile,
@@ -76,6 +82,9 @@ async function requireShopToken(req, res, next) {
     if (!shop) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    if (shop.is_active === false) {
+      return res.status(403).json({ error: 'Shop is deactivated' });
+    }
     req.shop = shop;
     next();
   } catch (err) {
@@ -84,11 +93,24 @@ async function requireShopToken(req, res, next) {
   }
 }
 
+// ── Platform-admin auth — a single shared bearer for the handful of shops. ──
+const PLATFORM_ADMIN_TOKEN = process.env.PLATFORM_ADMIN_TOKEN || "";
+function requirePlatformAdmin(req, res, next) {
+  const auth = req.headers.authorization || "";
+  if (!PLATFORM_ADMIN_TOKEN) {
+    return res.status(503).json({ error: "PLATFORM_ADMIN_TOKEN not configured" });
+  }
+  if (!auth.startsWith("Bearer ") || auth.slice(7) !== PLATFORM_ADMIN_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
 // ── Shop slug middleware — resolves the shop for public customer-facing routes ──
 async function resolveShopBySlug(req, res, next) {
   try {
     const shop = await getShopBySlug(req.params.shopSlug);
-    if (!shop) {
+    if (!shop || shop.is_active === false) {
       return res.status(404).json({ error: 'Shop not found' });
     }
     req.shop = shop;
@@ -118,6 +140,28 @@ async function optionalCustomerAuth(req, res, next) {
         return res.status(503).json({ error: 'Authentication temporarily unavailable' });
       }
       console.error('❌ optionalCustomerAuth error:', err.message);
+    }
+  }
+  next();
+}
+
+// ── Lenient optional auth — for the PUBLIC upload route, where most callers
+// are guests. If auth is unavailable we downgrade a token-carrying request to
+// guest and tag it req.authDeferred so it can be reconciled to the account
+// later, rather than 503-ing a walk-in customer's upload. ──
+async function optionalCustomerAuthLenient(req, res, next) {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    try {
+      const user = await getSupabaseUserFromToken(auth.slice(7));
+      if (user) req.userId = user.id;
+    } catch (err) {
+      if (err instanceof AuthUnavailableError) {
+        console.warn('⚠️  auth unavailable on upload — proceeding as guest (deferred):', err.message);
+        req.authDeferred = true;
+      } else {
+        console.error('❌ optionalCustomerAuthLenient error:', err.message);
+      }
     }
   }
   next();
@@ -202,12 +246,18 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 
 const app = express();
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Cloudflare + the box's reverse proxy sit in front — trust one proxy hop so
+// req.ip is the real client (the rate limiter keys on it).
+app.set("trust proxy", 1);
+
+// Cap body sizes; file uploads go through multer, not these parsers.
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
 if (isDev) {
+  const devOrigin = process.env.DEV_CORS_ORIGIN || "http://localhost:5000";
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "http://localhost:5000");
+    res.header("Access-Control-Allow-Origin", devOrigin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") return res.sendStatus(200);
@@ -218,8 +268,10 @@ if (isDev) {
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  // X-XSS-Protection is deprecated / harmful — omitted deliberately.
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' blob: https://*.supabase.co; frame-src 'self';");
   next();
 });
 
@@ -387,15 +439,66 @@ app.get("/api/s/:shopSlug/orders/stream", resolveShopBySlug, async (req, res) =>
   });
 });
 
-// Public upload endpoint (rate-limited). optionalCustomerAuth never rejects —
-// guest uploads (no/invalid token) behave exactly as before.
-app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustomerAuth, upload.single("file"), async (req, res) => {
+// Minimal platform-admin console (token pasted in the page, kept in-memory).
+app.get("/platform-admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "platform-admin.html"));
+});
+
+// ── Platform-admin API (PLATFORM_ADMIN_TOKEN bearer) ──
+app.post("/api/admin/shops", requirePlatformAdmin, async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ error: "name required" });
+    const shop = await createShop(name);
+    // token shown once
+    res.status(201).json({ id: shop.id, slug: shop.slug, name: shop.name, token: shop.token });
+  } catch (err) {
+    console.error("❌ createShop:", err);
+    res.status(500).json({ error: "Failed to create shop" });
+  }
+});
+
+app.get("/api/admin/shops", requirePlatformAdmin, async (req, res) => {
+  try {
+    res.json(await listShops());
+  } catch (err) {
+    console.error("❌ listShops:", err);
+    res.status(500).json({ error: "Failed to list shops" });
+  }
+});
+
+app.post("/api/admin/shops/:id/rotate-token", requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await rotateShopToken(req.params.id);
+    if (!result) return res.status(404).json({ error: "Shop not found" });
+    res.json(result); // { id, slug, name, token } — token shown once
+  } catch (err) {
+    console.error("❌ rotateShopToken:", err);
+    res.status(500).json({ error: "Failed to rotate token" });
+  }
+});
+
+app.patch("/api/admin/shops/:id", requirePlatformAdmin, async (req, res) => {
+  try {
+    const { name, slug, isActive } = req.body || {};
+    const result = await updateShop(req.params.id, { name, slug, is_active: isActive });
+    if (!result) return res.status(400).json({ error: "Nothing to update" });
+    res.json(result);
+  } catch (err) {
+    console.error("❌ updateShop:", err);
+    res.status(500).json({ error: "Failed to update shop" });
+  }
+});
+
+// Public upload endpoint (rate-limited). Lenient auth: a guest, or a signed-in
+// customer downgraded to guest if Supabase auth is briefly unavailable.
+app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustomerAuthLenient, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: "No file uploaded" });
     }
 
-    const metadata = JSON.parse(req.body.metadata);
+    const metadata = JSON.parse(req.body.metadata || "{}");
     const filePath = path.join(UPLOADS_DIR, req.file.filename);
 
     if (!validateMagicBytes(filePath, req.file.mimetype)) {
@@ -422,10 +525,16 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
         ? metadata.quotedPrice
         : null;
 
+    // Server owns the id and the delete secret — never the client.
+    const orderId = randomUUID();
+    const deleteToken = randomBytes(16).toString("hex");
+
     const newOrder = {
-      id: metadata.id,
+      id: orderId,
       shop_id: req.shop.id,
       user_id: req.userId || null,
+      delete_token_hash: hashDeleteToken(deleteToken),
+      auth_deferred: !!req.authDeferred,
       customername: metadata.customerName || profile?.name || '',
       phonenumber: metadata.phoneNumber || profile?.phone || '',
       notes: metadata.notes || '',
@@ -449,7 +558,7 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
 
     // Return camelCase to the client
     const responseOrder = {
-      id: metadata.id,
+      id: orderId,
       customerName: newOrder.customername,
       phoneNumber: newOrder.phonenumber,
       notes: newOrder.notes,
@@ -466,7 +575,7 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
       source: newOrder.source,
       shopSyncStatus: newOrder.shopsyncstatus,
     };
-    res.status(200).json({ success: true, job: responseOrder });
+    res.status(200).json({ success: true, job: responseOrder, deleteToken });
   } catch (err) {
     console.error("❌ Upload Error:", err);
     res.status(400).json({ success: false, error: "Invalid upload metadata" });
@@ -510,22 +619,26 @@ app.post("/api/s/:shopSlug/orders/query", resolveShopBySlug, async (req, res) =>
   res.status(200).json(sanitized);
 });
 
-// Delete order (ownership verified via myIds)
+// Delete order — customer proves ownership with the per-upload deleteToken.
 app.delete("/api/s/:shopSlug/orders/:id", resolveShopBySlug, async (req, res) => {
   const orderId = req.params.id;
-  const { myIds } = req.body || {};
-
-  if (!Array.isArray(myIds) || !myIds.includes(orderId)) {
-    return res.status(403).json({ success: false, error: "Not authorized to delete this order" });
-  }
+  const { deleteToken } = req.body || {};
 
   const { data: order, error } = await supabase.from('orders').select('*').eq('shop_id', req.shop.id).eq('id', orderId).single();
   if (error || !order) {
     return res.status(404).json({ success: false, error: "Order not found" });
   }
 
-  const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-  try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn("⚠️  Could not delete physical file"); }
+  const tokenOk = order.delete_token_hash && deleteToken &&
+    hashDeleteToken(deleteToken) === order.delete_token_hash;
+  if (!tokenOk) {
+    return res.status(403).json({ success: false, error: "Not authorized to delete this order" });
+  }
+
+  if (order.serverfilename) {
+    const filePath = path.join(UPLOADS_DIR, order.serverfilename);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn("⚠️  Could not delete physical file"); }
+  }
 
   await supabase.from('orders').delete().eq('shop_id', req.shop.id).eq('id', orderId);
   res.status(200).json({ success: true });
@@ -534,17 +647,21 @@ app.delete("/api/s/:shopSlug/orders/:id", resolveShopBySlug, async (req, res) =>
 // Public file access by order ID
 app.get("/api/s/:shopSlug/files/public/:id", resolveShopBySlug, async (req, res) => {
   try {
-    const { data: order, error } = await supabase.from('orders').select('serverfilename, filename').eq('shop_id', req.shop.id).eq('id', req.params.id).single();
+    const { data: order, error } = await supabase.from('orders').select('serverfilename, filename, filetype, status').eq('shop_id', req.shop.id).eq('id', req.params.id).single();
     if (error || !order || !order.serverfilename) {
       return res.status(404).json({ error: "File not found" });
+    }
+    if (["pending_review", "rejected", "REJECTED"].includes(order.status)) {
+      return res.status(404).json({ error: "File not available" });
     }
     const filePath = path.resolve(path.join(UPLOADS_DIR, order.serverfilename));
     if (!filePath.startsWith(path.resolve(UPLOADS_DIR))) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (fs.existsSync(filePath)) {
-      const safeName = order.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-      res.set("Content-Disposition", `inline; filename="${safeName}"`);
+      const safeName = (order.filename || "file").replace(/[^a-zA-Z0-9._-]/g, '_');
+      const inline = /^image\//.test(order.filetype || "") || order.filetype === "application/pdf";
+      res.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${safeName}"`);
       res.sendFile(filePath);
     } else {
       res.status(404).json({ error: "File not found" });

@@ -39,6 +39,24 @@ class StorageService {
     return `my_upload_ids_${shopSlug}`;
   }
 
+  private deleteTokensKey(shopSlug: string): string {
+    return `my_upload_tokens_${shopSlug}`;
+  }
+
+  private getMyDeleteTokens(shopSlug: string): Record<string, string> {
+    try {
+      return JSON.parse(localStorage.getItem(this.deleteTokensKey(shopSlug)) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  private setMyDeleteToken(shopSlug: string, id: string, token: string) {
+    const map = this.getMyDeleteTokens(shopSlug);
+    map[id] = token;
+    localStorage.setItem(this.deleteTokensKey(shopSlug), JSON.stringify(map));
+  }
+
   async saveJob(
     shopSlug: string,
     job: PrintJob,
@@ -74,6 +92,9 @@ class StorageService {
             const myJobs = this.getMyJobIds(shopSlug);
             myJobs.push(response.job.id);
             localStorage.setItem(this.myJobIdsKey(shopSlug), JSON.stringify(myJobs));
+            if (response.deleteToken) {
+              this.setMyDeleteToken(shopSlug, response.job.id, response.deleteToken);
+            }
             resolve();
           } catch (e) {
             reject(new Error("Malformed response from server"));
@@ -117,13 +138,17 @@ class StorageService {
   }
 
   async deleteJob(shopSlug: string, id: string): Promise<void> {
-    const myJobs = this.getMyJobIds(shopSlug);
+    const deleteToken = this.getMyDeleteTokens(shopSlug)[id];
     await this.safeFetch(`/api/s/${shopSlug}/orders/${id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ myIds: myJobs }),
+      body: JSON.stringify({ deleteToken }),
     });
-    localStorage.setItem(this.myJobIdsKey(shopSlug), JSON.stringify(myJobs.filter((mid) => mid !== id)));
+    const myJobs = this.getMyJobIds(shopSlug).filter((mid) => mid !== id);
+    localStorage.setItem(this.myJobIdsKey(shopSlug), JSON.stringify(myJobs));
+    const tokens = this.getMyDeleteTokens(shopSlug);
+    delete tokens[id];
+    localStorage.setItem(this.deleteTokensKey(shopSlug), JSON.stringify(tokens));
   }
 
   async getSettings(shopSlug: string): Promise<ShopSettings> {

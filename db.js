@@ -73,6 +73,45 @@ export const createShop = async (name) => {
   return { id, slug, name, token };
 };
 
+// Platform-admin helpers ────────────────────────────────────────────────
+export const listShops = async () => {
+  const { data, error } = await supabase
+    .from('shops')
+    .select('id, slug, name, is_active, created_at')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const rotateShopToken = async (id) => {
+  const token = randomBytes(32).toString('hex');
+  const { data, error } = await supabase
+    .from('shops')
+    .update({ token_hash: hashToken(token) })
+    .eq('id', id)
+    .select('id, slug, name')
+    .single();
+  if (error) throw error;
+  if (!data) return null;
+  return { ...data, token };
+};
+
+export const updateShop = async (id, { name, slug, is_active } = {}) => {
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (slug !== undefined) patch.slug = slugify(slug);
+  if (is_active !== undefined) patch.is_active = !!is_active;
+  if (Object.keys(patch).length === 0) return null;
+  const { data, error } = await supabase
+    .from('shops')
+    .update(patch)
+    .eq('id', id)
+    .select('id, slug, name, is_active')
+    .single();
+  if (error) throw error;
+  return data;
+};
+
 /**
  * Customer Account Helpers (optional — guest uploads never touch these)
  */
