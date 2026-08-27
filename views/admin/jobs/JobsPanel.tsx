@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PrintJob, PrintStatus, PaymentStatus, PaperType, DiscountRule } from "../../../types";
 import {
   calculatePrintPrice,
@@ -59,11 +59,79 @@ interface JobsPanelProps {
   onPreview: (job: PrintJob) => void;
 }
 
+type StatusFilter = "all" | "pending" | "ready" | "printed";
+type PaymentFilter = "all" | "paid" | "partial" | "unpaid";
+type SourceFilter = "all" | "upload" | "gmail" | "cloud";
+
 const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, onPreview }) => {
   const { t, isRtl, lang, settings } = useAdmin();
   const currentSettings = settings;
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filters live in the URL so a refresh (or a shared link) keeps context.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get("q") || "";
+  const statusFilter = (searchParams.get("status") || "all") as StatusFilter;
+  const paymentFilter = (searchParams.get("payment") || "all") as PaymentFilter;
+  const sourceFilter = (searchParams.get("source") || "all") as SourceFilter;
+  const setParam = (key: string, value: string) =>
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (!value || value === "all") p.delete(key);
+        else p.set(key, value);
+        return p;
+      },
+      { replace: true },
+    );
+  const setSearchQuery = (v: string) => setParam("q", v);
+  const filtersActive =
+    statusFilter !== "all" || paymentFilter !== "all" || sourceFilter !== "all" || !!searchQuery.trim();
+  const clearFilters = () =>
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        ["q", "status", "payment", "source"].forEach((k) => p.delete(k));
+        return p;
+      },
+      { replace: true },
+    );
+
+  const jobMatchesFilters = (job: PrintJob): boolean => {
+    if (statusFilter !== "all") {
+      const want =
+        statusFilter === "pending"
+          ? PrintStatus.PENDING
+          : statusFilter === "ready"
+          ? PrintStatus.READY
+          : PrintStatus.PRINTED;
+      if (job.status !== want) return false;
+    }
+    if (paymentFilter !== "all") {
+      const want =
+        paymentFilter === "paid"
+          ? PaymentStatus.PAID
+          : paymentFilter === "partial"
+          ? PaymentStatus.PARTIAL
+          : PaymentStatus.UNPAID;
+      const ps = job.paymentStatus || PaymentStatus.UNPAID;
+      if (ps !== want) return false;
+    }
+    if (sourceFilter !== "all") {
+      const src = (job.source as string) || "upload";
+      if (sourceFilter === "upload" && src !== "upload" && src !== "web") return false;
+      if (sourceFilter === "gmail" && src !== "gmail") return false;
+      if (sourceFilter === "cloud" && src !== "cloud" && src !== "online") return false;
+    }
+    return true;
+  };
+
+  const sendSelectionToStudio = () => {
+    const ids = jobs.groups.flatMap((g) => g.jobs).filter((j) => jobs.selectedJobIds.has(j.id)).map((j) => j.id);
+    if (ids.length === 0) return;
+    sessionStorage.setItem("ps_batch_jobs", JSON.stringify(ids));
+    navigate("/admin/studio");
+  };
 
   const {
     groups,
@@ -188,6 +256,10 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                       </Button>
                     ) : null;
                   })()}
+                  <Button variant="ghost" size="sm" onClick={sendSelectionToStudio} title={isRtl ? "إرسال إلى استوديو الطباعة" : "Send to Print Studio"} className="flex-col gap-1 h-auto text-inherit hover:text-indigo-400 dark:hover:text-indigo-300">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "استوديو" : "Studio"}</span>
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={handleBulkDelete} title={t("bulkDelete")} className="flex-col gap-1 h-auto text-inherit hover:text-red-400 dark:hover:text-red-300">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("delete")}</span>
@@ -266,14 +338,89 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               </div>
             )}
 
+            {/* Filter bar — URL-persisted (?status= &payment= &source=) */}
+            {!loading && groups.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">
+                <div className="flex items-center gap-1">
+                  {([
+                    ["all", isRtl ? "الكل" : "All"],
+                    ["pending", isRtl ? "قيد الانتظار" : "Pending"],
+                    ["ready", isRtl ? "جاهز" : "Ready"],
+                    ["printed", isRtl ? "مطبوع" : "Printed"],
+                  ] as [StatusFilter, string][]).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setParam("status", v)}
+                      className={`px-2.5 py-1 rounded-lg font-medium ${
+                        statusFilter === v
+                          ? "bg-indigo-600 text-white"
+                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  {([
+                    ["all", isRtl ? "كل الدفع" : "Any pay"],
+                    ["paid", isRtl ? "مدفوع" : "Paid"],
+                    ["partial", isRtl ? "جزئي" : "Partial"],
+                    ["unpaid", isRtl ? "غير مدفوع" : "Unpaid"],
+                  ] as [PaymentFilter, string][]).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setParam("payment", v)}
+                      className={`px-2.5 py-1 rounded-lg font-medium ${
+                        paymentFilter === v
+                          ? "bg-green-600 text-white"
+                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setParam("source", e.target.value)}
+                  className="px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                >
+                  <option value="all">{isRtl ? "كل المصادر" : "Any source"}</option>
+                  <option value="upload">{isRtl ? "رفع" : "Upload"}</option>
+                  <option value="gmail">Gmail</option>
+                  <option value="cloud">{isRtl ? "سحابة" : "Cloud"}</option>
+                </select>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="px-2.5 py-1 rounded-lg font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  >
+                    {isRtl ? "مسح التصفية" : "Clear filters"}
+                  </button>
+                )}
+              </div>
+            )}
+
             {(() => {
-              const filteredGroups = searchQuery.trim()
-                ? groups.filter(
-                    (g) =>
-                      g.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      g.phoneNumber.includes(searchQuery)
-                  )
-                : groups;
+              const q = searchQuery.trim().toLowerCase();
+              const filteredGroups = groups
+                .map((g) => {
+                  const groupMatchesSearch =
+                    !q ||
+                    g.customerName.toLowerCase().includes(q) ||
+                    g.phoneNumber.includes(searchQuery.trim());
+                  const jobs = g.jobs.filter(
+                    (job) =>
+                      jobMatchesFilters(job) &&
+                      (groupMatchesSearch || job.fileName.toLowerCase().includes(q)),
+                  );
+                  return { ...g, jobs };
+                })
+                .filter((g) => g.jobs.length > 0);
               return (
             <>
             {loading ? (
