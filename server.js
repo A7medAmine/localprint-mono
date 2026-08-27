@@ -65,36 +65,103 @@ function stripSecretSettings(settings) {
 }
 
 // ── Auth token management (persisted in DB) ──
+// Each token is { token, createdAt, lastUsedAt }. A token dies once it has been
+// idle past TOKEN_IDLE_MS or once it is older than TOKEN_ABSOLUTE_MS, whichever
+// comes first. Expired tokens are pruned on every check and on a timer.
+const TOKEN_IDLE_MS = Number(process.env.ADMIN_TOKEN_IDLE_DAYS || 14) * 86_400_000;
+const TOKEN_ABSOLUTE_MS = Number(process.env.ADMIN_TOKEN_MAX_DAYS || 30) * 86_400_000;
+
 function loadTokens() {
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key = '_admin_tokens'").get();
-    return row ? new Set(JSON.parse(row.value)) : new Set();
-  } catch { return new Set(); }
+    if (!row) return new Map();
+    const parsed = JSON.parse(row.value);
+    const map = new Map();
+    if (Array.isArray(parsed)) {
+      const now = Date.now();
+      for (const entry of parsed) {
+        if (typeof entry === "string") {
+          // legacy: bare token string, no timestamps — treat as fresh once
+          map.set(entry, { token: entry, createdAt: now, lastUsedAt: now });
+        } else if (entry && entry.token) {
+          map.set(entry.token, {
+            token: entry.token,
+            createdAt: entry.createdAt || now,
+            lastUsedAt: entry.lastUsedAt || entry.createdAt || now,
+          });
+        }
+      }
+    }
+    return map;
+  } catch { return new Map(); }
 }
 
 function saveTokens(tokens) {
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('_admin_tokens', ?)").run(JSON.stringify([...tokens]));
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('_admin_tokens', ?)")
+    .run(JSON.stringify([...tokens.values()]));
 }
 
 const adminTokens = loadTokens();
 
+function pruneTokens() {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, meta] of adminTokens) {
+    if (now - meta.lastUsedAt > TOKEN_IDLE_MS || now - meta.createdAt > TOKEN_ABSOLUTE_MS) {
+      adminTokens.delete(token);
+      changed = true;
+    }
+  }
+  if (changed) saveTokens(adminTokens);
+}
+
+// Prune stale tokens hourly.
+setInterval(pruneTokens, 3_600_000);
+pruneTokens();
+
 function generateToken() {
   const token = randomBytes(32).toString("hex");
-  adminTokens.add(token);
+  const now = Date.now();
+  adminTokens.set(token, { token, createdAt: now, lastUsedAt: now });
   saveTokens(adminTokens);
   return token;
 }
 
-function isValidAdminToken(req) {
+// Returns the token string if valid (and bumps lastUsedAt), else null.
+function validAdminToken(req) {
   const auth = req.headers.authorization;
-  if (auth && auth.startsWith("Bearer ") && adminTokens.has(auth.slice(7))) return true;
-  return false;
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+  const token = auth.slice(7);
+  pruneTokens();
+  const meta = adminTokens.get(token);
+  if (!meta) return null;
+  meta.lastUsedAt = Date.now();
+  // Persist the touch lazily — a write per request is wasteful; the hourly
+  // prune and login/logout writes are enough to survive a restart.
+  return token;
 }
+
+function isValidAdminToken(req) {
+  return validAdminToken(req) !== null;
+}
+
+// True while the admin password is still the factory default.
+let mustChangePassword = false;
 
 // Middleware: require valid admin token
 function requireAdmin(req, res, next) {
-  if (!isValidAdminToken(req)) {
+  const token = validAdminToken(req);
+  if (!token) {
     return res.status(401).json({ error: "Unauthorized" });
+  }
+  req.adminToken = token;
+  // While the password is still the default, the only things the operator may
+  // do are change it or log out.
+  if (mustChangePassword) {
+    const allowed = ["/api/settings/password", "/api/auth/logout"];
+    if (!allowed.includes(req.path)) {
+      return res.status(403).json({ error: "Password change required", mustChangePassword: true });
+    }
   }
   next();
 }
@@ -128,6 +195,47 @@ setInterval(() => {
     else rateLimitMap.set(ip, fresh);
   }
 }, 300_000);
+
+// ── Login lockout (per-IP, counts FAILED /api/auth/verify attempts only) ──
+// 5 fails → locked 1 min, 10 fails → locked 15 min. A success clears the count.
+const loginFailMap = new Map(); // ip -> { count, lockedUntil }
+const clientIp = (req) => req.ip || req.socket?.remoteAddress || "unknown";
+
+function loginGuard(req, res, next) {
+  const rec = loginFailMap.get(clientIp(req));
+  if (rec && rec.lockedUntil && rec.lockedUntil > Date.now()) {
+    const retryMs = rec.lockedUntil - Date.now();
+    res.set("Retry-After", String(Math.ceil(retryMs / 1000)));
+    return res.status(429).json({ error: "Too many failed attempts. Try again later.", retryMs });
+  }
+  next();
+}
+
+function recordLoginFailure(req) {
+  const ip = clientIp(req);
+  const rec = loginFailMap.get(ip) || { count: 0, lockedUntil: 0 };
+  rec.count += 1;
+  if (rec.count >= 10) rec.lockedUntil = Date.now() + 15 * 60_000;
+  else if (rec.count >= 5) rec.lockedUntil = Date.now() + 60_000;
+  loginFailMap.set(ip, rec);
+  if (rec.lockedUntil > Date.now()) {
+    console.warn(`🔒 Login lockout for ${ip} (${rec.count} failed attempts) until ${new Date(rec.lockedUntil).toISOString()}`);
+  }
+}
+
+function clearLoginFailures(req) {
+  loginFailMap.delete(clientIp(req));
+}
+
+// Drop lockout records once they have fully expired.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of loginFailMap) {
+    if ((!rec.lockedUntil || rec.lockedUntil < now) && now - (rec.lockedUntil || 0) > 3_600_000) {
+      loginFailMap.delete(ip);
+    }
+  }
+}, 600_000);
 
 // ── Allowed MIME types for upload ──
 const ALLOWED_MIMES = new Set([
@@ -1059,39 +1167,58 @@ function verifyHash(password, stored) {
 }
 
 const DEFAULT_PASSWORD = "admin123";
-const DEFAULT_HASH = hashPassword(DEFAULT_PASSWORD);
+
+function passwordPolicyError(pw) {
+  if (!pw || pw.length < 8) return "Password must be at least 8 characters";
+  if (/^\d+$/.test(pw)) return "Password cannot be all digits";
+  if (pw === DEFAULT_PASSWORD) return "Choose a password other than the default";
+  return null;
+}
+
+// Does `password` match the stored credential? Handles the legacy plaintext
+// default and upgrades it to a hash on first successful login.
+function checkAdminPassword(password) {
+  const stored = getSettings().adminPassword;
+  if (!stored) {
+    // Fresh install — the implicit credential is the default password.
+    return password === DEFAULT_PASSWORD;
+  }
+  if (!stored.includes(":")) {
+    return password === stored;
+  }
+  return verifyHash(password, stored);
+}
+
+// Is the current credential still the factory default?
+function isDefaultPassword() {
+  const stored = getSettings().adminPassword;
+  if (!stored) return true;
+  if (!stored.includes(":")) return stored === DEFAULT_PASSWORD;
+  return verifyHash(DEFAULT_PASSWORD, stored);
+}
+
+mustChangePassword = isDefaultPassword();
+if (mustChangePassword) {
+  console.warn("⚠️  Admin password is the default — operator must change it on next login.");
+}
 
 // Verify admin password — returns a session token on success
-app.post("/api/auth/verify", rateLimit, (req, res) => {
+app.post("/api/auth/verify", loginGuard, (req, res) => {
   const { password } = req.body;
-  const settings = getSettings();
-  let stored = settings.adminPassword;
+  const ok = checkAdminPassword(password);
 
-  if (!stored) {
-    stored = DEFAULT_HASH;
-    updateSetting("adminPassword", stored);
+  if (!ok) {
+    recordLoginFailure(req);
+    return res.status(200).json({ success: false });
   }
 
-  let ok = false;
-  if (!stored.includes(":")) {
-    ok = password === stored;
-    if (ok) {
-      const hashed = hashPassword(password);
-      updateSetting("adminPassword", hashed);
-    }
-  } else {
-    ok = verifyHash(password, stored);
-  }
-
-  if (ok) {
-    const token = generateToken();
-    res.status(200).json({ success: true, token });
-  } else {
-    res.status(200).json({ success: false });
-  }
+  clearLoginFailures(req);
+  mustChangePassword = isDefaultPassword();
+  const token = generateToken();
+  res.status(200).json({ success: true, token, mustChangePassword });
 });
 
-// Logout — invalidate token
+// Logout — invalidate the caller's token
 app.post("/api/auth/logout", (req, res) => {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith("Bearer ")) {
@@ -1101,33 +1228,38 @@ app.post("/api/auth/logout", (req, res) => {
   res.status(200).json({ success: true });
 });
 
+// Logout everywhere else — kill every token except the caller's
+app.post("/api/auth/logout-all", requireAdmin, (req, res) => {
+  for (const token of [...adminTokens.keys()]) {
+    if (token !== req.adminToken) adminTokens.delete(token);
+  }
+  saveTokens(adminTokens);
+  res.status(200).json({ success: true });
+});
+
 // Change admin password
 app.post("/api/settings/password", requireAdmin, (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const settings = getSettings();
-    let stored = settings.adminPassword;
 
-    if (!stored) {
-      stored = DEFAULT_HASH;
-      updateSetting("adminPassword", stored);
-    }
-
-    let valid;
-    if (!stored.includes(":")) {
-      valid = currentPassword === stored;
-    } else {
-      valid = verifyHash(currentPassword, stored);
-    }
-
-    if (!valid) {
+    if (!checkAdminPassword(currentPassword)) {
       return res.status(401).json({ success: false, error: "Current password is incorrect" });
     }
-    if (!newPassword || newPassword.length < 4) {
-      return res.status(400).json({ success: false, error: "New password must be at least 4 characters" });
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) {
+      return res.status(400).json({ success: false, error: policyError });
     }
     updateSetting("adminPassword", hashPassword(newPassword));
-    console.log("🔑 Admin password updated (hashed)");
+    mustChangePassword = false;
+
+    // Invalidate every other session — a password change should log out
+    // anything that might have been using the old one.
+    for (const token of [...adminTokens.keys()]) {
+      if (token !== req.adminToken) adminTokens.delete(token);
+    }
+    saveTokens(adminTokens);
+
+    console.log("🔑 Admin password updated (hashed); other sessions invalidated");
     res.status(200).json({ success: true });
   } catch (err) {
     console.error("❌ Password change error:", err);

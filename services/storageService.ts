@@ -39,6 +39,15 @@ class StorageService {
         throw new Error("Session expired");
       }
 
+      if (response.status === 403) {
+        try {
+          const errBody = JSON.parse(text);
+          if (errBody.mustChangePassword) {
+            window.dispatchEvent(new CustomEvent("must-change-password"));
+          }
+        } catch {}
+      }
+
       if (!response.ok) {
         let msg = `Server error: ${response.status}`;
         try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch {}
@@ -401,7 +410,7 @@ class StorageService {
     });
   }
 
-  async verifyPassword(password: string): Promise<{ success: boolean; token?: string }> {
+  async verifyPassword(password: string): Promise<{ success: boolean; token?: string; mustChangePassword?: boolean }> {
     try {
       const result = await this.safeFetch("/api/auth/verify", {
         method: "POST",
@@ -412,6 +421,10 @@ class StorageService {
     } catch {
       return { success: false };
     }
+  }
+
+  async logoutOthers(): Promise<void> {
+    await this.safeFetch("/api/auth/logout-all", { method: "POST" });
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
