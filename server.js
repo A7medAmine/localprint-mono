@@ -1778,14 +1778,17 @@ app.get('/api/gmail/attachment/:pendingId/:attachmentIndex', async (req, res) =>
   }
 });
 
-// Get Gmail settings (poll interval, reply template, ready-notification template)
+// Get Gmail settings — one template per notification type, each tagged with
+// the language its substituted values should render in ("en" or "ar").
 app.get('/api/gmail/settings', requireAdmin, (req, res) => {
   try {
     const settings = getSettings();
     res.json({
       pollInterval: parseInt(settings.gmailPollInterval) || 60,
       replyTemplate: settings.gmailReplyTemplate || '',
+      replyTemplateLang: settings.gmailReplyTemplateLang || 'en',
       readyTemplate: settings.gmailReadyTemplate || '',
+      readyTemplateLang: settings.gmailReadyTemplateLang || 'en',
     });
   } catch (err) {
     console.error("❌ Error getting Gmail settings:", err);
@@ -1793,7 +1796,6 @@ app.get('/api/gmail/settings', requireAdmin, (req, res) => {
   }
 });
 
-// Save Gmail settings (poll interval, reply template, ready-notification template)
 app.post('/api/gmail/settings', requireAdmin, async (req, res) => {
   try {
     if (req.body.pollInterval) {
@@ -1804,8 +1806,16 @@ app.post('/api/gmail/settings', requireAdmin, async (req, res) => {
     if (req.body.replyTemplate !== undefined) {
       updateSetting('gmailReplyTemplate', req.body.replyTemplate);
     }
+    if (req.body.replyTemplateLang !== undefined) {
+      const lang = req.body.replyTemplateLang === 'ar' ? 'ar' : 'en';
+      updateSetting('gmailReplyTemplateLang', lang);
+    }
     if (req.body.readyTemplate !== undefined) {
       updateSetting('gmailReadyTemplate', req.body.readyTemplate);
+    }
+    if (req.body.readyTemplateLang !== undefined) {
+      const lang = req.body.readyTemplateLang === 'ar' ? 'ar' : 'en';
+      updateSetting('gmailReadyTemplateLang', lang);
     }
     res.json({ success: true });
   } catch (err) {

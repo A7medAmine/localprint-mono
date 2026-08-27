@@ -103,24 +103,64 @@ function containFit(imgW: number, imgH: number, boxW: number, boxH: number) {
   return { w: imgW * scale, h: imgH * scale };
 }
 
-function computeGrid(pw: number, ph: number, margin: number, cols: number, rows: number, hGap: number, vGap: number) {
-  const m = margin * MM_TO_PT;
-  const hg = hGap * MM_TO_PT;
-  const vg = vGap * MM_TO_PT;
-  const cw = (pw - 2 * m - (cols - 1) * hg) / cols;
-  const ch = (ph - 2 * m - (rows - 1) * vg) / rows;
-  const cards: { x: number; y: number; w: number; h: number }[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      cards.push({
-        x: m + col * (cw + hg),
-        y: ph - m - (row + 1) * ch - row * vg,
-        w: cw,
-        h: ch,
+const AUTO_MARGIN_MM = 5;
+const AUTO_GAP_MM = 3;
+
+// Cards keep their real size (cardW x cardH). Pick the cols x rows split that
+// wastes the fewest sheet cells for the requested copy count, then shrink the
+// gap (never the card) if that's what it takes to fit the grid on the page.
+function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph: number) {
+  let margin = AUTO_MARGIN_MM * MM_TO_PT;
+  let gap = AUTO_GAP_MM * MM_TO_PT;
+  const fitCount = (g: number) => ({
+    cols: Math.max(1, Math.floor((pw - 2 * margin + g) / (cardW + g))),
+    rows: Math.max(1, Math.floor((ph - 2 * margin + g) / (cardH + g))),
+  });
+  let { cols: maxCols, rows: maxRows } = fitCount(gap);
+  // Not even a single card fits with the default margin/gap — shrink both
+  // until one does (falls back to 0 rather than ever resizing the card).
+  while (maxCols * maxRows < 1 && (margin > 0 || gap > 0)) {
+    margin = Math.max(0, margin - MM_TO_PT);
+    gap = Math.max(0, gap - MM_TO_PT);
+    ({ cols: maxCols, rows: maxRows } = fitCount(gap));
+  }
+  const capacity = maxCols * maxRows;
+  const wanted = Math.max(1, Math.min(copies, capacity));
+
+  // Among equal-waste splits, prefer the most balanced grid (cols close to
+  // rows) so cards cluster into a compact block instead of a long single
+  // row/column with empty space down the sides.
+  let best = { cols: maxCols, rows: 1, waste: Infinity, balance: Infinity };
+  for (let cols = 1; cols <= maxCols; cols++) {
+    const rows = Math.min(maxRows, Math.ceil(wanted / cols));
+    if (cols * rows < wanted) continue;
+    const waste = cols * rows - wanted;
+    const balance = Math.abs(cols - rows);
+    if (waste < best.waste || (waste === best.waste && balance < best.balance)) {
+      best = { cols, rows, waste, balance };
+    }
+  }
+
+  const hGapPt = best.cols > 1 ? gap : 0;
+  const vGapPt = best.rows > 1 ? gap : 0;
+  const gridW = best.cols * cardW + (best.cols - 1) * hGapPt;
+  const gridH = best.rows * cardH + (best.rows - 1) * vGapPt;
+  const originX = (pw - gridW) / 2;
+  const originY = margin;
+
+  const slots: { x: number; y: number; w: number; h: number }[] = [];
+  for (let row = 0; row < best.rows; row++) {
+    for (let col = 0; col < best.cols; col++) {
+      if (slots.length >= wanted) break;
+      slots.push({
+        x: originX + col * (cardW + hGapPt),
+        y: ph - originY - (row + 1) * cardH - row * vGapPt,
+        w: cardW,
+        h: cardH,
       });
     }
   }
-  return cards;
+  return { slots, capacity, cols: best.cols, rows: best.rows };
 }
 
 const CardIDTool: React.FC = () => {
@@ -140,11 +180,7 @@ const CardIDTool: React.FC = () => {
   const [jobNotes, setJobNotes] = useState("");
   const [lastPdfBlob, setLastPdfBlob] = useState<Blob | null>(null);
   const [multiCard, setMultiCard] = useState(false);
-  const [cols, setCols] = useState(2);
-  const [rows, setRows] = useState(2);
-  const [hGap, setHGap] = useState(5);
-  const [vGap, setVGap] = useState(5);
-  const [margin, setMargin] = useState(10);
+  const [copies, setCopies] = useState(4);
   const [sizeIdx, setSizeIdx] = useState(0);
   const [paperIdx, setPaperIdx] = useState(0);
   // Card printing is duplex by default — front sheet + back sheet on the same
@@ -168,6 +204,7 @@ const CardIDTool: React.FC = () => {
   const PAD = 10 * MM_TO_PT;
   const cardW = CARD_SIZES[sizeIdx].w * MM_TO_PT;
   const cardH = CARD_SIZES[sizeIdx].h * MM_TO_PT;
+  const { capacity: maxCapacity, cols: layoutCols, rows: layoutRows } = autoLayout(copies, cardW, cardH, PP_W, PP_H);
   const frontCanvasRef = useRef<HTMLCanvasElement>(null);
   const backCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -205,7 +242,7 @@ const CardIDTool: React.FC = () => {
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, pw, ph);
     const slots = multiCard
-      ? computeGrid(PP_W, PP_H, margin, cols, rows, hGap, vGap)
+      ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
       : [{
           x: isFront ? PAD : PP_W - PAD - cardW,
           y: PP_H - PAD - cardH,
@@ -240,8 +277,8 @@ const CardIDTool: React.FC = () => {
     img.src = dataUrl;
   };
 
-  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true); }, [frontDataUrl, multiCard, cols, rows, hGap, vGap, margin, sizeIdx, paperIdx]);
-  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false); }, [backDataUrl, multiCard, cols, rows, hGap, vGap, margin, sizeIdx, paperIdx]);
+  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx]);
+  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx]);
 
   // Auto-load front/back images from bulk "Print as Card" action
   useEffect(() => {
@@ -281,7 +318,7 @@ const CardIDTool: React.FC = () => {
     try {
       const pdfDoc = await PDFDocument.create();
       const slots = multiCard
-        ? computeGrid(PP_W, PP_H, margin, cols, rows, hGap, vGap)
+        ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
         : [{
             x: PAD,
             y: PP_H - PAD - cardH,
@@ -517,6 +554,38 @@ const CardIDTool: React.FC = () => {
             onCheckedChange={(on) => setColorMode(on ? "bw" : "color")}
           />
         </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-input px-3 py-2">
+          <div className="min-w-0">
+            <Label className="text-xs font-medium cursor-pointer">
+              {isRtl ? "نسخ متعددة في نفس الورقة" : "Multiple copies per sheet"}
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {isRtl
+                ? "طباعة عدة بطاقات على نفس الصفحة"
+                : "Print several cards on one paper sheet"}
+            </p>
+          </div>
+          <Switch checked={multiCard} onCheckedChange={setMultiCard} />
+        </div>
+
+        {multiCard && (
+          <div className="rounded-xl border border-input px-3 py-3 space-y-2">
+            <Label className="text-xs">{isRtl ? "عدد النسخ" : "Number of copies"}</Label>
+            <Input
+              type="number"
+              min={1}
+              max={maxCapacity}
+              value={copies}
+              onChange={(e) => setCopies(Math.max(1, Math.min(maxCapacity, Number(e.target.value) || 1)))}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {isRtl
+                ? `أقصى عدد يناسب الصفحة: ${maxCapacity} (${layoutCols}×${layoutRows})`
+                : `Fits up to ${maxCapacity} per sheet (${layoutCols}×${layoutRows} layout), packed automatically`}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Button

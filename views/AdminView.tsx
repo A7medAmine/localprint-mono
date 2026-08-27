@@ -60,6 +60,7 @@ interface AdminViewProps {
   onSettingsUpdate: (settings: ShopSettings) => void;
   currentSettings: ShopSettings;
   darkMode?: boolean;
+  themeMode?: "light" | "dark" | "system";
   onToggleDarkMode?: () => void;
   onToggleLang?: (lang: Language) => void;
 }
@@ -78,6 +79,7 @@ const AdminView: React.FC<AdminViewProps> = ({
   onSettingsUpdate,
   currentSettings,
   darkMode = false,
+  themeMode = "system",
   onToggleDarkMode,
   onToggleLang,
 }) => {
@@ -261,7 +263,9 @@ const AdminView: React.FC<AdminViewProps> = ({
       setGmailConnected(status.connected);
       setGmailEmail(status.email || "");
       setGmailReplyTemplate(settings.replyTemplate || "");
+      setGmailReplyTemplateLang(settings.replyTemplateLang || "en");
       setGmailReadyTemplate(settings.readyTemplate || "");
+      setGmailReadyTemplateLang(settings.readyTemplateLang || "en");
       setGmailPollInterval(settings.pollInterval || 60);
     } catch (err) {
       console.error("Failed to load Gmail status:", err);
@@ -495,7 +499,9 @@ const AdminView: React.FC<AdminViewProps> = ({
 
   const [gmailPollInterval, setGmailPollInterval] = useState(60);
   const [gmailReplyTemplate, setGmailReplyTemplate] = useState("");
+  const [gmailReplyTemplateLang, setGmailReplyTemplateLang] = useState<"en" | "ar">("en");
   const [gmailReadyTemplate, setGmailReadyTemplate] = useState("");
+  const [gmailReadyTemplateLang, setGmailReadyTemplateLang] = useState<"en" | "ar">("en");
   const gmailReplyRef = useRef<HTMLTextAreaElement>(null);
   const gmailReadyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -525,7 +531,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
   const handleSaveReplyTemplate = async () => {
     try {
-      await storageService.saveGmailReplyTemplate(gmailReplyTemplate);
+      await storageService.saveGmailReplyTemplate(gmailReplyTemplate, gmailReplyTemplateLang);
       toast({ title: isRtl ? "تم حفظ قالب الرد" : "Reply template saved", variant: "success" });
     } catch (err) {
       toast({ title: "Failed to save", variant: "destructive" });
@@ -534,7 +540,7 @@ const AdminView: React.FC<AdminViewProps> = ({
 
   const handleSaveReadyTemplate = async () => {
     try {
-      await storageService.saveGmailReadyTemplate(gmailReadyTemplate);
+      await storageService.saveGmailReadyTemplate(gmailReadyTemplate, gmailReadyTemplateLang);
       toast({ title: isRtl ? "تم حفظ قالب الإشعار" : "Ready template saved", variant: "success" });
     } catch (err) {
       toast({ title: "Failed to save", variant: "destructive" });
@@ -1597,42 +1603,37 @@ const AdminView: React.FC<AdminViewProps> = ({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Help Card */}
-        <div className="px-3 pb-3">
-          <div className="bg-white/60 dark:bg-white/[0.06] rounded-xl p-3.5 border border-gray-200 dark:border-white/10">
-            <div className="flex items-start gap-2.5 mb-2.5">
-              <svg className="w-4 h-4 mt-0.5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0 9 9 0 0112.728 0zM12 8v4m0 4h.01" />
-              </svg>
-              <div>
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">
-                  {isRtl ? "تحتاج مساعدة؟" : "Need help?"}
-                </p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
-                  {isRtl ? "فريقنا جاهز للمساعدة" : "Our team is here to help"}
-                </p>
-              </div>
-            </div>
-            <button className="w-full text-xs font-semibold py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">
-              {isRtl ? "اتصل بالدعم" : "Contact Support"}
-            </button>
-          </div>
-        </div>
-
         {/* Dark mode + Language toggles */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-800">
           <button
             onClick={onToggleDarkMode}
             className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
-            aria-label={lang === "ar" ? "الوضع الليلي" : "Dark mode"}
+            aria-label={
+              themeMode === "light"
+                ? lang === "ar" ? "الوضع الفاتح" : "Light mode"
+                : themeMode === "dark"
+                ? lang === "ar" ? "الوضع الليلي" : "Dark mode"
+                : lang === "ar" ? "حسب النظام" : "System theme"
+            }
+            title={
+              themeMode === "light"
+                ? lang === "ar" ? "فاتح" : "Light"
+                : themeMode === "dark"
+                ? lang === "ar" ? "داكن" : "Dark"
+                : lang === "ar" ? "حسب النظام" : "System"
+            }
           >
-            {darkMode ? (
+            {themeMode === "light" ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-            ) : (
+            ) : themeMode === "dark" ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             )}
           </button>
@@ -2680,11 +2681,30 @@ const AdminView: React.FC<AdminViewProps> = ({
 
                 {/* Auto-reply Template */}
                 <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 gap-3">
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {isRtl ? "قالب الرد التلقائي" : "Auto-reply Template"}
                     </h4>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
+                      <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        {(["en", "ar"] as const).map((lang) => (
+                          <button
+                            key={lang}
+                            type="button"
+                            onClick={() => setGmailReplyTemplateLang(lang)}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              gmailReplyTemplateLang === lang
+                                ? "bg-indigo-600 text-white"
+                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            {lang === "en" ? "EN" : "ع"}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {[
@@ -2714,7 +2734,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                       </button>
                     ))}
                   </div>
-                  <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
+                  <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} dir={gmailReplyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
                   <div className="flex justify-end mt-2">
                     <Button size="sm" variant="outline" onClick={handleSaveReplyTemplate}>
                       {isRtl ? "حفظ القالب" : "Save Template"}
@@ -2724,11 +2744,30 @@ const AdminView: React.FC<AdminViewProps> = ({
 
                 {/* Ready Notification Template — sent when a gmail-sourced job flips to READY */}
                 <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1 gap-3">
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {isRtl ? "قالب إشعار الجاهزية" : "Ready Notification Template"}
                     </h4>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
+                      <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        {(["en", "ar"] as const).map((lang) => (
+                          <button
+                            key={lang}
+                            type="button"
+                            onClick={() => setGmailReadyTemplateLang(lang)}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              gmailReadyTemplateLang === lang
+                                ? "bg-emerald-600 text-white"
+                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            {lang === "en" ? "EN" : "ع"}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    </div>
                   </div>
                   <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
                     {isRtl
@@ -2759,7 +2798,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                       </button>
                     ))}
                   </div>
-                  <textarea ref={gmailReadyRef} value={gmailReadyTemplate} onChange={(e) => setGmailReadyTemplate(e.target.value)} rows={4} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اترك فارغًا لاستخدام القالب الافتراضي" : "Leave empty to use the built-in default"} />
+                  <textarea ref={gmailReadyRef} value={gmailReadyTemplate} onChange={(e) => setGmailReadyTemplate(e.target.value)} rows={4} dir={gmailReadyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اترك فارغًا لاستخدام القالب الافتراضي" : "Leave empty to use the built-in default"} />
                   <div className="flex justify-end mt-2">
                     <Button size="sm" variant="outline" onClick={handleSaveReadyTemplate}>
                       {isRtl ? "حفظ القالب" : "Save Template"}

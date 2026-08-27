@@ -38,6 +38,35 @@ function formatMoney(amount) {
   return `${(Number(amount) || 0).toFixed(2)} ${CURRENCY}`;
 }
 
+// Language-dependent strings substituted into email templates. The template
+// itself is free text the admin wrote — this only covers *values* we inject.
+const L10N = {
+  en: {
+    colorLabel: "Color",
+    bwLabel: "B&W",
+    pages: (n) => `${n} page(s)`,
+    copies: (n) => `${n} ${n === 1 ? "copy" : "copies"}`,
+    discountFallback: "discount",
+    noRule: "—",
+    bullet: "• ",
+  },
+  ar: {
+    colorLabel: "ملون",
+    bwLabel: "أبيض وأسود",
+    pages: (n) => `${n} صفحة`,
+    copies: (n) => `${n} نسخة`,
+    discountFallback: "خصم",
+    noRule: "—",
+    bullet: "• ",
+  },
+};
+
+function paperTypeLabel(paperTypes, paperTypeId, lang) {
+  const p = paperTypes.find((pt) => pt.id === paperTypeId);
+  if (!p) return paperTypeId;
+  return lang === "ar" ? (p.nameAr || p.name) : p.name;
+}
+
 let pollingInterval = null;
 const DEFAULT_INTERVAL_MS = 60 * 1000;
 export let lastPolledAt = null;
@@ -325,6 +354,9 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
       try {
         const { sendReply } = await import("./gmailService.js");
 
+        const templateLang = settingsSnapshot.gmailReplyTemplateLang === "ar" ? "ar" : "en";
+        const L = L10N[templateLang];
+
         const originalTotal = jobDetails.reduce((sum, j) => sum + j.originalPrice, 0);
         const totalDiscount = jobDetails.reduce((sum, j) => sum + j.discountAmount, 0);
         const finalTotal = jobDetails.reduce((sum, j) => sum + j.finalPrice, 0);
@@ -361,12 +393,12 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
 
         const jobBreakdown = jobDetails
           .map((j) => {
-            const mode = j.colorMode === "blackWhite" ? "B&W" : "Color";
-            const paperLabel = (paperTypesSnapshot.find((p) => p.id === j.paperTypeId)?.name) || j.paperTypeId;
+            const mode = j.colorMode === "blackWhite" ? L.bwLabel : L.colorLabel;
+            const paperLabel = paperTypeLabel(paperTypesSnapshot, j.paperTypeId, templateLang);
             const priceStr = j.discountAmount > 0
-              ? `${formatMoney(j.originalPrice)} → ${formatMoney(j.finalPrice)} (${j.discountRule?.name || "discount"})`
+              ? `${formatMoney(j.originalPrice)} → ${formatMoney(j.finalPrice)} (${j.discountRule?.name || L.discountFallback})`
               : formatMoney(j.finalPrice);
-            return `• ${j.fileName} — ${j.pageCount} page(s) × ${j.copies} cop${j.copies === 1 ? "y" : "ies"} · ${mode} · ${paperLabel} = ${priceStr}`;
+            return `${L.bullet}${j.fileName} — ${L.pages(j.pageCount)} × ${L.copies(j.copies)} · ${mode} · ${paperLabel} = ${priceStr}`;
           })
           .join("\n");
 
@@ -379,13 +411,13 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
           .replace(/\{shopName\}/g, settingsSnapshot.shopName || "Print Shop")
           .replace(/\{fileName\}/g, fileNames || "your file")
           .replace(/\{fileCount\}/g, jobs.length.toString())
-          .replace(/\{jobBreakdown\}/g, jobBreakdown || "—")
+          .replace(/\{jobBreakdown\}/g, jobBreakdown || L.noRule)
           // {totalPrice} = discounted final. Use {originalTotal} for pre-discount.
           .replace(/\{totalPrice\}/g, formatMoney(finalTotal))
           .replace(/\{originalTotal\}/g, formatMoney(originalTotal))
           .replace(/\{discountAmount\}/g, formatMoney(totalDiscount))
           .replace(/\{savingsPercentage\}/g, `${savingsPercentage}%`)
-          .replace(/\{discountRule\}/g, appliedRuleNames || "—")
+          .replace(/\{discountRule\}/g, appliedRuleNames || L.noRule)
           .replace(/\{totalPages\}/g, totalPages.toString())
           .replace(/\{totalCopies\}/g, totalCopies.toString())
           .replace(/\{totalSheets\}/g, totalSheets.toString())

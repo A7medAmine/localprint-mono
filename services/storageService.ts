@@ -432,7 +432,13 @@ class StorageService {
     return this.safeFetch("/api/gmail/poll-status");
   }
 
-  async getGmailSettings(): Promise<{ pollInterval: number; replyTemplate: string; readyTemplate: string }> {
+  async getGmailSettings(): Promise<{
+    pollInterval: number;
+    replyTemplate: string;
+    replyTemplateLang: "en" | "ar";
+    readyTemplate: string;
+    readyTemplateLang: "en" | "ar";
+  }> {
     return this.safeFetch("/api/gmail/settings");
   }
 
@@ -464,19 +470,25 @@ class StorageService {
     });
   }
 
-  async saveGmailReplyTemplate(template: string): Promise<void> {
+  async saveGmailReplyTemplate(
+    template: string,
+    lang: "en" | "ar",
+  ): Promise<void> {
     await this.safeFetch("/api/gmail/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ replyTemplate: template }),
+      body: JSON.stringify({ replyTemplate: template, replyTemplateLang: lang }),
     });
   }
 
-  async saveGmailReadyTemplate(template: string): Promise<void> {
+  async saveGmailReadyTemplate(
+    template: string,
+    lang: "en" | "ar",
+  ): Promise<void> {
     await this.safeFetch("/api/gmail/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ readyTemplate: template }),
+      body: JSON.stringify({ readyTemplate: template, readyTemplateLang: lang }),
     });
   }
 

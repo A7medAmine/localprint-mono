@@ -15,6 +15,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +63,24 @@ const DEV_URL = 'http://localhost:3000';
 
 process.env.PORT = String(SERVER_PORT);
 process.env.HOST = SERVER_BIND_HOST;
+
+// Load .env from the packaged app resources. server.js's own `import 'dotenv/config'`
+// resolves against process.cwd() (the install dir in a packaged build), which does
+// not contain .env — so Gmail OAuth credentials come out undefined and login fails.
+// Loading it here, before we import server.js, puts GOOGLE_CLIENT_ID / SECRET and
+// GMAIL_REDIRECT_URI into process.env in time for the server to pick them up.
+// In dev this is a no-op since server.js already loads .env from cwd.
+if (app.isPackaged) {
+  dotenv.config({ path: path.join(app.getAppPath(), '.env') });
+  // The .env's GMAIL_REDIRECT_URI is set for the dev server (port 3000). The
+  // packaged server binds SERVER_PORT — force the redirect URI to match, or
+  // Google will send the browser to a port nothing is listening on. This URL
+  // must also be registered in the Google Cloud Console OAuth client.
+  // Must match exactly what's registered in the Google Cloud Console OAuth
+  // client. Google treats "localhost" and "127.0.0.1" as different origins,
+  // and the console entry uses "localhost".
+  process.env.GMAIL_REDIRECT_URI = `http://localhost:${SERVER_PORT}/api/gmail/callback`;
+}
 
 // Chromium's auto-dark-mode inverts image + PDF content when the OS is in
 // dark mode. That inversion is what made grayscale prints collapse to a solid

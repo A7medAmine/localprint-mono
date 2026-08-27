@@ -1,7 +1,7 @@
 {
   "name": "printshop-hub",
   "private": true,
-  "version": "0.1.0-test.8",
+  "version": "0.1.0",
   "description": "PrintShop Hub — desktop print-shop management app (jobs, native printing, QR uploads).",
   "author": "PrintShop Hub",
   "type": "module",
@@ -87,7 +87,8 @@
       "utils/**/*",
       "dist/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      ".env"
     ],
     "extraMetadata": {
       "main": "electron/main.js"
@@ -98,7 +99,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",
@@ -107,7 +110,9 @@
     "protocols": [
       {
         "name": "PrintShop Hub",
-        "schemes": ["printshop-hub"]
+        "schemes": [
+          "printshop-hub"
+        ]
       }
     ],
     "nsis": {

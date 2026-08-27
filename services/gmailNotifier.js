@@ -7,17 +7,44 @@ function formatMoney(amount) {
   return `${(Number(amount) || 0).toFixed(2)} ${CURRENCY}`;
 }
 
-const DEFAULT_READY_TEMPLATE = [
-  `Hi {customerName},`,
-  ``,
-  `Your print is ready for pickup:`,
-  `• {fileName} — {pageCount} page(s) × {copies} cop(y/ies)`,
-  ``,
-  `Amount due: {totalPrice}`,
-  ``,
-  `See you soon!`,
-  `{shopName}`,
-].join("\n");
+const L10N = {
+  en: {
+    colorLabel: "Color",
+    bwLabel: "B&W",
+    defaultTemplate: [
+      `Hi {customerName},`,
+      ``,
+      `Your print is ready for pickup:`,
+      `• {fileName} — {pageCount} page(s) × {copies} copy/copies`,
+      ``,
+      `Amount due: {totalPrice}`,
+      ``,
+      `See you soon!`,
+      `{shopName}`,
+    ].join("\n"),
+  },
+  ar: {
+    colorLabel: "ملون",
+    bwLabel: "أبيض وأسود",
+    defaultTemplate: [
+      `مرحباً {customerName}،`,
+      ``,
+      `طلبك جاهز للاستلام:`,
+      `• {fileName} — {pageCount} صفحة × {copies} نسخة`,
+      ``,
+      `المبلغ المستحق: {totalPrice}`,
+      ``,
+      `في انتظارك!`,
+      `{shopName}`,
+    ].join("\n"),
+  },
+};
+
+function paperTypeLabel(paperTypes, paperTypeId, lang) {
+  const p = paperTypes.find((pt) => pt.id === paperTypeId);
+  if (!p) return paperTypeId;
+  return lang === "ar" ? (p.nameAr || p.name) : p.name;
+}
 
 /**
  * Send a "your print is ready" reply on the original Gmail thread.
@@ -36,13 +63,15 @@ export async function sendJobReadyNotification(jobId, { force = false } = {}) {
 
   const settings = getSettings();
   const paperTypes = getPaperTypes();
-  const template = settings.gmailReadyTemplate || DEFAULT_READY_TEMPLATE;
+  const templateLang = settings.gmailReadyTemplateLang === "ar" ? "ar" : "en";
+  const L = L10N[templateLang];
+  const template = settings.gmailReadyTemplate || L.defaultTemplate;
 
   const pageCount = job.pageCount || 1;
   const copies = job.copies || 1;
-  const paperLabel = paperTypes.find((p) => p.id === job.paperType)?.name || job.paperType;
+  const paperLabel = paperTypeLabel(paperTypes, job.paperType, templateLang);
   const totalSheets = pageCount * copies;
-  const mode = job.colorMode === "blackWhite" ? "B&W" : "Color";
+  const mode = job.colorMode === "blackWhite" ? L.bwLabel : L.colorLabel;
 
   const paidAmount = Number(job.paymentAmount) || 0;
   const totalPrice = paidAmount; // paymentAmount holds the admin-recorded charge
