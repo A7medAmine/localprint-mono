@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Language, PrintJob, PrintStatus, PaymentStatus, ShopSettings, DiscountRule, DiscountType, ConditionType, PaperType } from "../types";
+import { Language, PrintJob, PrintStatus, PaymentStatus, ShopSettings, DiscountRule, DiscountType, ConditionType, PaperType, PrinterJobDefaults } from "../types";
 import { TRANSLATIONS } from "../constants";
 import { storageService } from "../services/storageService";
+import { isElectron, getPrinters, printFile, PrinterInfo } from "../lib/electronPrint";
 import {
   calculatePrintPrice,
   getActualPageCount,
@@ -12,6 +13,7 @@ import {
   calculateCustomerTotalWithDiscounts,
 } from "../utils/pricingUtils";
 import { formatRelativeTime } from "../utils/timeUtils";
+import { cn } from "../lib/utils";
 import ImageEditor from "../components/ImageEditor";
 import { toast } from "../components/ui/use-toast";
 import { Toaster } from "../components/ui/toaster";
@@ -38,6 +40,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Switch } from "../components/ui/switch";
+import { Label } from "../components/ui/label";
 import {
   Select,
   SelectContent,
@@ -57,6 +60,7 @@ interface AdminViewProps {
   onSettingsUpdate: (settings: ShopSettings) => void;
   currentSettings: ShopSettings;
   darkMode?: boolean;
+  themeMode?: "light" | "dark" | "system";
   onToggleDarkMode?: () => void;
   onToggleLang?: (lang: Language) => void;
 }
@@ -75,6 +79,7 @@ const AdminView: React.FC<AdminViewProps> = ({
   onSettingsUpdate,
   currentSettings,
   darkMode = false,
+  themeMode = "system",
   onToggleDarkMode,
   onToggleLang,
 }) => {
@@ -162,6 +167,15 @@ const AdminView: React.FC<AdminViewProps> = ({
   const [cloudSyncPollInterval, setCloudSyncPollInterval] = useState(currentSettings.cloudSyncPollInterval || "30000");
   const [autoAcceptCloudJobs, setAutoAcceptCloudJobs] = useState(currentSettings.autoAcceptCloudJobs !== false);
   const [autoDeductStock, setAutoDeductStock] = useState(currentSettings.autoDeductStock === true);
+  // Printers (Electron-only surface). `printers` is populated on demand from
+  // the main-process IPC; empty in a plain browser session.
+  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
+  const [printersLoading, setPrintersLoading] = useState(false);
+  const [printersError, setPrintersError] = useState<string | null>(null);
+  const [defaultPrinterName, setDefaultPrinterName] = useState<string>(currentSettings.defaultPrinterName || "");
+  const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>(
+    currentSettings.printerDefaults || {},
+  );
 
   // Gmail integration state
   const [gmailConnected, setGmailConnected] = useState(false);
@@ -249,6 +263,9 @@ const AdminView: React.FC<AdminViewProps> = ({
       setGmailConnected(status.connected);
       setGmailEmail(status.email || "");
       setGmailReplyTemplate(settings.replyTemplate || "");
+      setGmailReplyTemplateLang(settings.replyTemplateLang || "en");
+      setGmailReadyTemplate(settings.readyTemplate || "");
+      setGmailReadyTemplateLang(settings.readyTemplateLang || "en");
       setGmailPollInterval(settings.pollInterval || 60);
     } catch (err) {
       console.error("Failed to load Gmail status:", err);
@@ -303,13 +320,40 @@ const AdminView: React.FC<AdminViewProps> = ({
   const handleGmailConnect = async () => {
     try {
       const url = await storageService.getGmailAuthUrl();
+      // window.open returns a real Window in a normal browser and null in
+      // Electron (the main process routes OAuth to the OS browser so it
+      // reuses the user's existing Google session). Support both:
+      //   - Browser: watch popup.closed, then refresh status.
+      //   - Electron / popup blocked: poll /api/gmail/status until it flips
+      //     to connected, or give up after 2 min.
       const popup = window.open(url, 'gmail-auth', 'width=600,height=700');
-      const pollTimer = setInterval(async () => {
-        if (popup?.closed) {
-          clearInterval(pollTimer);
-          await loadGmailStatus();
+
+      const started = Date.now();
+      const MAX_WAIT_MS = 2 * 60_000;
+
+      const timer = setInterval(async () => {
+        // Timeout: user closed the browser tab without finishing.
+        if (Date.now() - started > MAX_WAIT_MS) {
+          clearInterval(timer);
+          return;
         }
-      }, 1000);
+        // Browser flow: popup closed → auth done (or user canceled).
+        if (popup && popup.closed) {
+          clearInterval(timer);
+          await loadGmailStatus();
+          return;
+        }
+        // Electron flow (popup === null): poll the server for status change.
+        if (!popup) {
+          try {
+            const status = await storageService.getGmailStatus();
+            if (status.connected) {
+              clearInterval(timer);
+              await loadGmailStatus();
+            }
+          } catch { /* transient — keep polling */ }
+        }
+      }, 1500);
     } catch (err) {
       console.error("Failed to connect Gmail:", err);
     }
@@ -455,27 +499,49 @@ const AdminView: React.FC<AdminViewProps> = ({
 
   const [gmailPollInterval, setGmailPollInterval] = useState(60);
   const [gmailReplyTemplate, setGmailReplyTemplate] = useState("");
+  const [gmailReplyTemplateLang, setGmailReplyTemplateLang] = useState<"en" | "ar">("en");
+  const [gmailReadyTemplate, setGmailReadyTemplate] = useState("");
+  const [gmailReadyTemplateLang, setGmailReadyTemplateLang] = useState<"en" | "ar">("en");
   const gmailReplyRef = useRef<HTMLTextAreaElement>(null);
+  const gmailReadyRef = useRef<HTMLTextAreaElement>(null);
 
-  const insertPlaceholder = (placeholder: string) => {
-    const textarea = gmailReplyRef.current;
+  const insertInto = (
+    ref: React.RefObject<HTMLTextAreaElement>,
+    value: string,
+    setValue: (v: string) => void,
+    placeholder: string,
+  ) => {
+    const textarea = ref.current;
     if (!textarea) return;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const before = gmailReplyTemplate.slice(0, start);
-    const after = gmailReplyTemplate.slice(end);
-    const next = before + placeholder + after;
-    setGmailReplyTemplate(next);
+    const next = value.slice(0, start) + placeholder + value.slice(end);
+    setValue(next);
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.selectionStart = textarea.selectionEnd = start + placeholder.length;
     });
   };
 
+  const insertPlaceholder = (placeholder: string) =>
+    insertInto(gmailReplyRef, gmailReplyTemplate, setGmailReplyTemplate, placeholder);
+
+  const insertReadyPlaceholder = (placeholder: string) =>
+    insertInto(gmailReadyRef, gmailReadyTemplate, setGmailReadyTemplate, placeholder);
+
   const handleSaveReplyTemplate = async () => {
     try {
-      await storageService.saveGmailReplyTemplate(gmailReplyTemplate);
+      await storageService.saveGmailReplyTemplate(gmailReplyTemplate, gmailReplyTemplateLang);
       toast({ title: isRtl ? "تم حفظ قالب الرد" : "Reply template saved", variant: "success" });
+    } catch (err) {
+      toast({ title: "Failed to save", variant: "destructive" });
+    }
+  };
+
+  const handleSaveReadyTemplate = async () => {
+    try {
+      await storageService.saveGmailReadyTemplate(gmailReadyTemplate, gmailReadyTemplateLang);
+      toast({ title: isRtl ? "تم حفظ قالب الإشعار" : "Ready template saved", variant: "success" });
     } catch (err) {
       toast({ title: "Failed to save", variant: "destructive" });
     }
@@ -589,7 +655,30 @@ const AdminView: React.FC<AdminViewProps> = ({
     if (currentSettings.cloudSyncPollInterval) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval);
     setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
     setAutoDeductStock(currentSettings.autoDeductStock === true);
+    setDefaultPrinterName(currentSettings.defaultPrinterName || "");
+    setPrinterDefaults(currentSettings.printerDefaults || {});
   }, [currentSettings]);
+
+  const loadPrinters = React.useCallback(async () => {
+    if (!isElectron()) return;
+    setPrintersLoading(true);
+    setPrintersError(null);
+    try {
+      const list = await getPrinters();
+      setPrinters(list);
+    } catch (err) {
+      setPrintersError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPrintersLoading(false);
+    }
+  }, []);
+
+  // Enumerate printers on mount so the settings section is ready without
+  // an extra click. Cheap enough (Chromium caches it) that eager-loading
+  // is fine.
+  useEffect(() => {
+    loadPrinters();
+  }, [loadPrinters]);
 
   const loadJobs = async () => {
     setLoading(true);
@@ -827,66 +916,229 @@ const AdminView: React.FC<AdminViewProps> = ({
     }
   };
 
-  const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  // Native printing (Electron). Everything below routes through the
+  // print-file IPC — the old "window.open + window.print" flow only made
+  // sense when this ran in a plain browser, and it never gave us silent
+  // printing or per-printer defaults. Office docs get handed to the OS
+  // registered app via shell.openPath (same channel, different branch in
+  // electron/main.js).
 
-  const handlePrint = async (job: PrintJob) => {
-    const url = await storageService.getFileUrl(job.id);
-    if (!url) return;
+  const defaultsForActivePrinter = (): PrinterJobDefaults | null => {
+    if (!defaultPrinterName) return null;
+    return printerDefaults[defaultPrinterName] || null;
+  };
 
-    if (job.fileType === "application/pdf") {
-      window.open(url, "_blank");
-      return;
+  // Return signal for bulk mode. "ok" = queued at driver, "cancelled" = user
+  // dismissed the dialog (bulk should stop, not continue), "error" = failed,
+  // "unsupported" = precondition (no default printer, no file path, not
+  // Electron) — bulk should stop too since the same precondition applies to
+  // every remaining job.
+  type PrintOutcome = "ok" | "cancelled" | "error" | "unsupported";
+
+  const printJobViaIpc = async (
+    job: PrintJob,
+    mode: "quick" | "options" | "open",
+    opts?: { silentToasts?: boolean },
+  ): Promise<PrintOutcome> => {
+    const silentToasts = opts?.silentToasts === true;
+    const maybeToast = (t: Parameters<typeof toast>[0]) => {
+      if (!silentToasts) toast(t);
+    };
+
+    if (!isElectron()) {
+      maybeToast({
+        title: isRtl ? "الطباعة الأصلية غير متوفرة" : "Native printing unavailable",
+        description: isRtl
+          ? "افتح التطبيق من سطح المكتب للطباعة."
+          : "Open the desktop app to print.",
+        variant: "destructive",
+      });
+      return "unsupported";
     }
 
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      const title = escapeHtml(job.fileName);
-      printWindow.document.write(`
-        <html>
-          <head><title>Print - ${title}</title></head>
-          <body style="margin:0; display:flex; justify-content:center;">
-            <img src="${url}" style="max-width:100%; max-height:100vh;" onload="window.print(); window.close();" />
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+    const filePath = await storageService.getFileLocalPath(job.id);
+    if (!filePath) {
+      maybeToast({
+        title: isRtl ? "تعذر تحديد مسار الملف" : "Could not resolve file path",
+        description: job.fileName,
+        variant: "destructive",
+      });
+      return "error";
+    }
+
+    // Office docs — no printer/options; the OS handler takes over.
+    if (mode === "open") {
+      try {
+        const result = await printFile({ filePath, fileType: job.fileType });
+        if (result.ok) {
+          maybeToast({
+            title: isRtl ? "تم فتح الملف في التطبيق الافتراضي" : "Opened in default app",
+            description: job.fileName,
+            variant: "success",
+          });
+          return "ok";
+        }
+        return "error";
+      } catch (err) {
+        maybeToast({
+          title: isRtl ? "تعذر فتح الملف" : "Failed to open file",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+        return "error";
+      }
+    }
+
+    // Quick Print requires a saved default printer — without one, silent
+    // printing would fall through to "whatever Chromium picks" which is
+    // exactly the surprise this feature is supposed to prevent.
+    if (mode === "quick" && !defaultPrinterName) {
+      maybeToast({
+        title: isRtl ? "لم يتم تعيين طابعة افتراضية" : "No default printer set",
+        description: isRtl
+          ? "اختر طابعة افتراضية من الإعدادات."
+          : "Pick a default printer in Settings.",
+        variant: "destructive",
+      });
+      return "unsupported";
+    }
+
+    // The job already carries the customer's chosen copies + color mode
+    // (see printPreferences). Those beat the printer's saved defaults —
+    // duplex/collate/landscape still come from the printer defaults since
+    // they're printer-hardware concerns, not per-order choices.
+    const defaults = defaultsForActivePrinter();
+    const jobCopies = Math.max(1, Number(job.printPreferences?.copies) || 1);
+    const jobColor = job.printPreferences?.colorMode
+      ? job.printPreferences.colorMode !== "blackWhite"
+      : defaults?.color ?? true;
+    const options = {
+      duplexMode: defaults?.duplexMode ?? "simplex",
+      color: jobColor,
+      copies: jobCopies,
+      collate: defaults?.collate ?? true,
+      landscape: defaults?.landscape ?? false,
+    };
+
+    try {
+      const result = await printFile({
+        filePath,
+        fileType: job.fileType,
+        // Options dialog: empty deviceName lets the OS dialog show every
+        // printer, pre-selected to none — the user picks. Silent: always
+        // route to the saved default.
+        printerName: mode === "quick" ? defaultPrinterName : (defaultPrinterName || ""),
+        silent: mode === "quick",
+        options,
+      });
+      if (result.cancelled) {
+        maybeToast({ title: isRtl ? "تم إلغاء الطباعة" : "Print cancelled" });
+        return "cancelled";
+      }
+      if (result.ok) {
+        maybeToast({
+          title: mode === "quick"
+            ? (isRtl ? "تم إرسال المهمة" : "Sent to printer")
+            : (isRtl ? "تم إرسال المهمة" : "Print job submitted"),
+          description: job.fileName,
+          variant: "success",
+        });
+        return "ok";
+      }
+      return "error";
+    } catch (err) {
+      maybeToast({
+        title: isRtl ? "فشل الطباعة" : "Print failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return "error";
     }
   };
+
+  const handleQuickPrint = (job: PrintJob) => printJobViaIpc(job, "quick");
+  const handlePrintOptions = (job: PrintJob) => printJobViaIpc(job, "options");
+  const handleOpenInApp = (job: PrintJob) => printJobViaIpc(job, "open");
+
+  const [bulkPrinting, setBulkPrinting] = useState(false);
 
   const handleBulkPrint = async () => {
     const selectedJobs = groups
       .flatMap((g) => g.jobs)
       .filter((j) => selectedJobIds.has(j.id));
-    if (selectedJobs.length === 0) return;
+    if (selectedJobs.length === 0 || bulkPrinting) return;
 
-    const images = selectedJobs.filter((j) => j.fileType.includes("image"));
-    const pdfs = selectedJobs.filter((j) => j.fileType === "application/pdf");
+    setBulkPrinting(true);
+    let sent = 0;
+    let failed = 0;
+    const failedNames: string[] = [];
+    let cancelled = false;
 
-    if (images.length > 0) {
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        const doc = printWindow.document;
-        doc.write("<!DOCTYPE html><html><head><title>Bulk Print Images</title></head><body style='margin:0'>");
-        for (const img of images) {
-          const url = await storageService.getFileUrl(img.id);
-          const div = doc.createElement("div");
-          div.style.cssText = "page-break-after:always;display:flex;justify-content:center;align-items:center;height:100vh";
-          const imgEl = doc.createElement("img");
-          imgEl.src = url;
-          imgEl.style.cssText = "max-width:100%;max-height:100%";
-          div.appendChild(imgEl);
-          doc.body.appendChild(div);
+    // Sequential + inter-job settle. Two back-to-back nativePrint windows
+    // race Chromium's compositor teardown/spinup and reproduce the "second
+    // job prints black" bug we thought we killed. A short pause between
+    // jobs (>= the print window's own settle) is enough to keep them from
+    // clobbering each other. Also: stop early on a cancel — the user
+    // dismissed a dialog, they don't want the rest to keep firing.
+    const INTER_JOB_MS = 400;
+
+    try {
+      for (let i = 0; i < selectedJobs.length; i++) {
+        const job = selectedJobs[i];
+        const mode = isOfficeFile(job.fileType) ? "open" : "quick";
+        const outcome = await printJobViaIpc(job, mode, { silentToasts: true });
+        if (outcome === "cancelled") {
+          cancelled = true;
+          break;
         }
-        const script = doc.createElement("script");
-        script.textContent = "window.onload=function(){window.print();window.close()}";
-        doc.body.appendChild(script);
-        doc.close();
+        if (outcome === "unsupported") {
+          // Same precondition will fail every remaining job — bail with a
+          // single explanatory toast instead of N identical ones.
+          toast({
+            title: isRtl ? "الطباعة السريعة غير متاحة" : "Quick Print unavailable",
+            description: isRtl
+              ? "اختر طابعة افتراضية من الإعدادات."
+              : "Set a default printer in Settings, then try again.",
+            variant: "destructive",
+          });
+          setBulkPrinting(false);
+          return;
+        }
+        if (outcome === "ok") sent++;
+        else {
+          failed++;
+          failedNames.push(job.fileName);
+        }
+        // Don't sleep after the last job.
+        if (i < selectedJobs.length - 1) {
+          await new Promise((r) => setTimeout(r, INTER_JOB_MS));
+        }
       }
+    } finally {
+      setBulkPrinting(false);
     }
 
-    for (const pdf of pdfs) {
-      const url = await storageService.getFileUrl(pdf.id);
-      if (url) window.open(url, "_blank");
+    // One summary toast at the end instead of N per-job toasts.
+    if (cancelled) {
+      toast({
+        title: isRtl ? "تم إيقاف الطباعة الجماعية" : "Bulk print stopped",
+        description: isRtl
+          ? `أُرسل ${sent} من ${selectedJobs.length} قبل الإلغاء.`
+          : `Sent ${sent} of ${selectedJobs.length} before cancel.`,
+      });
+    } else if (failed === 0) {
+      toast({
+        title: isRtl ? `تم إرسال ${sent} مهمة` : `Sent ${sent} job${sent === 1 ? "" : "s"}`,
+        variant: "success",
+      });
+    } else {
+      toast({
+        title: isRtl
+          ? `أُرسل ${sent}، فشل ${failed}`
+          : `${sent} sent, ${failed} failed`,
+        description: failedNames.slice(0, 3).join(", ") + (failedNames.length > 3 ? "…" : ""),
+        variant: "destructive",
+      });
     }
   };
 
@@ -970,10 +1222,37 @@ const AdminView: React.FC<AdminViewProps> = ({
   };
 
   const handleStatusChange = async (jobId: string, newStatus: PrintStatus) => {
-    await storageService.updateStatus(jobId, newStatus);
-    loadJobs();
-    // Marking a job printed can auto-deduct paper, so the badge may have moved.
-    if (newStatus === PrintStatus.PRINTED) loadLowStockCount();
+    // Optimistic update — patch the single job in-place so the list doesn't
+    // rebuild (avoids the skeleton flash, scroll jump, and lost expand state).
+    let previousStatus: PrintStatus | undefined;
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        jobs: g.jobs.map((j) => {
+          if (j.id !== jobId) return j;
+          previousStatus = j.status;
+          return { ...j, status: newStatus };
+        }),
+      })),
+    );
+
+    try {
+      await storageService.updateStatus(jobId, newStatus);
+      // Marking a job printed can auto-deduct paper, so the badge may have moved.
+      if (newStatus === PrintStatus.PRINTED) loadLowStockCount();
+    } catch (err) {
+      // Roll back on failure.
+      if (previousStatus !== undefined) {
+        const rollbackTo = previousStatus;
+        setGroups((prev) =>
+          prev.map((g) => ({
+            ...g,
+            jobs: g.jobs.map((j) => (j.id === jobId ? { ...j, status: rollbackTo } : j)),
+          })),
+        );
+      }
+      toast({ title: isRtl ? "فشل تحديث الحالة" : "Failed to update status", variant: "destructive" });
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -1181,8 +1460,8 @@ const AdminView: React.FC<AdminViewProps> = ({
   };
 
   const saveSettings = async () => {
-    await storageService.saveSettings({ shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock });
-    onSettingsUpdate({ ...currentSettings, shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock });
+    await storageService.saveSettings({ shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock, defaultPrinterName, printerDefaults });
+    onSettingsUpdate({ ...currentSettings, shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock, defaultPrinterName, printerDefaults });
     toast({ title: isRtl ? "تم الحفظ بنجاح" : "Settings saved successfully", variant: "success" });
   };
 
@@ -1324,42 +1603,37 @@ const AdminView: React.FC<AdminViewProps> = ({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Help Card */}
-        <div className="px-3 pb-3">
-          <div className="bg-white/60 dark:bg-white/[0.06] rounded-xl p-3.5 border border-gray-200 dark:border-white/10">
-            <div className="flex items-start gap-2.5 mb-2.5">
-              <svg className="w-4 h-4 mt-0.5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0 9 9 0 0112.728 0zM12 8v4m0 4h.01" />
-              </svg>
-              <div>
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">
-                  {isRtl ? "تحتاج مساعدة؟" : "Need help?"}
-                </p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
-                  {isRtl ? "فريقنا جاهز للمساعدة" : "Our team is here to help"}
-                </p>
-              </div>
-            </div>
-            <button className="w-full text-xs font-semibold py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">
-              {isRtl ? "اتصل بالدعم" : "Contact Support"}
-            </button>
-          </div>
-        </div>
-
         {/* Dark mode + Language toggles */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-800">
           <button
             onClick={onToggleDarkMode}
             className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
-            aria-label={lang === "ar" ? "الوضع الليلي" : "Dark mode"}
+            aria-label={
+              themeMode === "light"
+                ? lang === "ar" ? "الوضع الفاتح" : "Light mode"
+                : themeMode === "dark"
+                ? lang === "ar" ? "الوضع الليلي" : "Dark mode"
+                : lang === "ar" ? "حسب النظام" : "System theme"
+            }
+            title={
+              themeMode === "light"
+                ? lang === "ar" ? "فاتح" : "Light"
+                : themeMode === "dark"
+                ? lang === "ar" ? "داكن" : "Dark"
+                : lang === "ar" ? "حسب النظام" : "System"
+            }
           >
-            {darkMode ? (
+            {themeMode === "light" ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
-            ) : (
+            ) : themeMode === "dark" ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             )}
           </button>
@@ -1584,8 +1858,62 @@ const AdminView: React.FC<AdminViewProps> = ({
                 ))}
               </div>
             ) : groups.length === 0 ? (
-              <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <p>{t("noJobs")}</p>
+              <div className="px-6 py-14 sm:py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div className="max-w-sm mx-auto flex flex-col items-center text-center">
+                  <div className="relative w-40 h-40 sm:w-48 sm:h-48 mb-5">
+                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-100 via-sky-100 to-transparent dark:from-indigo-500/10 dark:via-sky-500/10 dark:to-transparent rounded-full blur-2xl" />
+                    <svg viewBox="0 0 200 200" className="relative w-full h-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="epPaper" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#ffffff" />
+                          <stop offset="100%" stopColor="#eef2ff" />
+                        </linearGradient>
+                        <linearGradient id="epBody" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#6366f1" />
+                          <stop offset="100%" stopColor="#4f46e5" />
+                        </linearGradient>
+                        <linearGradient id="epTop" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#818cf8" />
+                          <stop offset="100%" stopColor="#6366f1" />
+                        </linearGradient>
+                      </defs>
+                      <ellipse cx="100" cy="172" rx="62" ry="8" fill="currentColor" className="text-gray-200 dark:text-gray-900/60" />
+                      <rect x="52" y="46" width="96" height="46" rx="6" fill="url(#epPaper)" stroke="#c7d2fe" strokeWidth="1.5" />
+                      <line x1="64" y1="60" x2="122" y2="60" stroke="#c7d2fe" strokeWidth="3" strokeLinecap="round" />
+                      <line x1="64" y1="70" x2="112" y2="70" stroke="#dbeafe" strokeWidth="3" strokeLinecap="round" />
+                      <line x1="64" y1="80" x2="100" y2="80" stroke="#dbeafe" strokeWidth="3" strokeLinecap="round" />
+                      <rect x="42" y="86" width="116" height="56" rx="10" fill="url(#epBody)" />
+                      <rect x="42" y="86" width="116" height="14" rx="10" fill="url(#epTop)" />
+                      <rect x="58" y="118" width="84" height="34" rx="5" fill="url(#epPaper)" stroke="#c7d2fe" strokeWidth="1.5" />
+                      <circle cx="138" cy="107" r="3" fill="#34d399" />
+                      <circle cx="138" cy="107" r="6" fill="#34d399" opacity="0.25">
+                        <animate attributeName="r" values="4;9;4" dur="2.4s" repeatCount="indefinite" />
+                        <animate attributeName="opacity" values="0.35;0;0.35" dur="2.4s" repeatCount="indefinite" />
+                      </circle>
+                      <circle cx="52" cy="107" r="2" fill="#f472b6" opacity="0.7" />
+                      <path d="M76 132 h48" stroke="#c7d2fe" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M76 140 h32" stroke="#e0e7ff" strokeWidth="2" strokeLinecap="round" />
+                      <g opacity="0.9">
+                        <path d="M40 40 l4 -4 M40 40 l4 4 M40 40 l-4 4 M40 40 l-4 -4" stroke="#a5b4fc" strokeWidth="2" strokeLinecap="round">
+                          <animateTransform attributeName="transform" type="rotate" from="0 40 40" to="360 40 40" dur="8s" repeatCount="indefinite" />
+                        </path>
+                        <path d="M164 58 l3 -3 M164 58 l3 3 M164 58 l-3 3 M164 58 l-3 -3" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round">
+                          <animateTransform attributeName="transform" type="rotate" from="0 164 58" to="-360 164 58" dur="10s" repeatCount="indefinite" />
+                        </path>
+                        <circle cx="30" cy="120" r="2.5" fill="#f472b6" />
+                        <circle cx="172" cy="130" r="2.5" fill="#34d399" />
+                      </g>
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    {isRtl ? "لا توجد طلبات طباعة بعد" : "No print jobs yet"}
+                  </h3>
+                  <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                    {isRtl
+                      ? "الطابعة مرتاحة الآن. أول طلب يصل سيظهر هنا مباشرة."
+                      : "Your printer is taking a breather. New jobs will land here the moment they arrive."}
+                  </p>
+                </div>
               </div>
             ) : filteredGroups.length === 0 ? (
               <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
@@ -1958,7 +2286,7 @@ const AdminView: React.FC<AdminViewProps> = ({
                                           if (isOffice) return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
                                           const pageCount = jobPageCounts[job.id] || 1;
                                           const priceCalc = calculatePrintPrice(job, currentSettings, pageCount);
-                                          const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, pageCount, discountRules);
+                                          const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, priceCalc.totalPages, discountRules);
                                           const hasDiscount = discountResult.discountAmount > 0;
 
                                           return (
@@ -2041,10 +2369,37 @@ const AdminView: React.FC<AdminViewProps> = ({
                                     </td>
                                     <td className="px-4 py-2 align-middle">
                                       <div className="flex items-center gap-0.5 w-max">
-                                        {!officeFile && (
-                                          <Button variant="ghost" size="icon" onClick={() => handlePrint(job)} title={t("print")} className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                                        {officeFile ? (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleOpenInApp(job)}
+                                            title={isRtl ? "فتح في التطبيق" : "Open in default app"}
+                                            className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
+                                          >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
                                           </Button>
+                                        ) : (
+                                          <>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              onClick={() => handleQuickPrint(job)}
+                                              title={isRtl ? `طباعة سريعة${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}` : `Quick Print${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}`}
+                                              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              onClick={() => handlePrintOptions(job)}
+                                              title={isRtl ? "خيارات الطباعة" : "Print options"}
+                                              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                                            </Button>
+                                          </>
                                         )}
                                         <Button variant="ghost" size="icon" onClick={() => handlePreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-8 h-8">
                                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
@@ -2111,8 +2466,43 @@ const AdminView: React.FC<AdminViewProps> = ({
             </div>
 
             {reviewJobs.length === 0 ? (
-              <div className="p-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <p>{isRtl ? "لا توجد طلبات بانتظار المراجعة" : "No jobs awaiting review"}</p>
+              <div className="px-6 py-14 sm:py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div className="max-w-sm mx-auto flex flex-col items-center text-center">
+                  <div className="relative w-36 h-36 sm:w-44 sm:h-44 mb-5">
+                    <div className="absolute inset-0 bg-gradient-to-br from-amber-100 via-emerald-100 to-transparent dark:from-amber-500/10 dark:via-emerald-500/10 dark:to-transparent rounded-full blur-2xl" />
+                    <svg viewBox="0 0 200 200" className="relative w-full h-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <defs>
+                        <linearGradient id="rvTray" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#fef3c7" />
+                          <stop offset="100%" stopColor="#fde68a" />
+                        </linearGradient>
+                      </defs>
+                      <ellipse cx="100" cy="170" rx="66" ry="8" fill="currentColor" className="text-gray-200 dark:text-gray-900/60" />
+                      <path d="M40 110 h120 l-10 46 a6 6 0 0 1 -6 5 h-88 a6 6 0 0 1 -6 -5 z" fill="url(#rvTray)" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
+                      <path d="M40 110 h120 v-4 a4 4 0 0 0 -4 -4 h-112 a4 4 0 0 0 -4 4 z" fill="#fbbf24" />
+                      <g>
+                        <circle cx="100" cy="78" r="26" fill="#d1fae5" stroke="#10b981" strokeWidth="2" />
+                        <path d="M88 78 l8 8 l16 -18" stroke="#059669" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      </g>
+                      <g>
+                        <path d="M52 54 l3 -3 M52 54 l3 3 M52 54 l-3 3 M52 54 l-3 -3" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round">
+                          <animateTransform attributeName="transform" type="rotate" from="0 52 54" to="360 52 54" dur="9s" repeatCount="indefinite" />
+                        </path>
+                        <circle cx="150" cy="46" r="2.5" fill="#34d399" />
+                        <circle cx="160" cy="70" r="2" fill="#fbbf24" opacity="0.8" />
+                        <circle cx="34" cy="88" r="2" fill="#f472b6" opacity="0.8" />
+                      </g>
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    {isRtl ? "لا شيء للمراجعة" : "Inbox zero"}
+                  </h3>
+                  <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                    {isRtl
+                      ? "لا توجد طلبات بانتظار المراجعة. أحسنت — كل شيء تحت السيطرة."
+                      : "No jobs awaiting review. Nice work — you're all caught up."}
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="grid gap-3">
@@ -2291,14 +2681,49 @@ const AdminView: React.FC<AdminViewProps> = ({
 
                 {/* Auto-reply Template */}
                 <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 gap-3">
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {isRtl ? "قالب الرد التلقائي" : "Auto-reply Template"}
                     </h4>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
+                      <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        {(["en", "ar"] as const).map((lang) => (
+                          <button
+                            key={lang}
+                            type="button"
+                            onClick={() => setGmailReplyTemplateLang(lang)}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              gmailReplyTemplateLang === lang
+                                ? "bg-indigo-600 text-white"
+                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            {lang === "en" ? "EN" : "ع"}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {["{shopName}", "{fileName}", "{fileCount}", "{estimatedPrice}"].map((v) => (
+                    {[
+                      "{shopName}",
+                      "{fileName}",
+                      "{fileCount}",
+                      "{jobBreakdown}",
+                      "{totalPrice}",
+                      "{originalTotal}",
+                      "{discountAmount}",
+                      "{savingsPercentage}",
+                      "{discountRule}",
+                      "{totalPages}",
+                      "{totalCopies}",
+                      "{totalSheets}",
+                      "{pageCount}",
+                      "{copies}",
+                      "{currency}",
+                    ].map((v) => (
                       <button
                         key={v}
                         type="button"
@@ -2309,9 +2734,73 @@ const AdminView: React.FC<AdminViewProps> = ({
                       </button>
                     ))}
                   </div>
-                  <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
+                  <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} dir={gmailReplyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
                   <div className="flex justify-end mt-2">
                     <Button size="sm" variant="outline" onClick={handleSaveReplyTemplate}>
+                      {isRtl ? "حفظ القالب" : "Save Template"}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Ready Notification Template — sent when a gmail-sourced job flips to READY */}
+                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between mb-1 gap-3">
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {isRtl ? "قالب إشعار الجاهزية" : "Ready Notification Template"}
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
+                      <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        {(["en", "ar"] as const).map((lang) => (
+                          <button
+                            key={lang}
+                            type="button"
+                            onClick={() => setGmailReadyTemplateLang(lang)}
+                            className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              gmailReadyTemplateLang === lang
+                                ? "bg-emerald-600 text-white"
+                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            {lang === "en" ? "EN" : "ع"}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
+                    {isRtl
+                      ? "يُرسَل تلقائيًا عند تحديد الطلب كـ«جاهز». يُرسَل مرة واحدة لكل طلب."
+                      : "Sent automatically when a job's status becomes READY. Fires once per job."}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {[
+                      "{shopName}",
+                      "{customerName}",
+                      "{fileName}",
+                      "{pageCount}",
+                      "{copies}",
+                      "{totalSheets}",
+                      "{paperType}",
+                      "{colorMode}",
+                      "{status}",
+                      "{totalPrice}",
+                      "{currency}",
+                    ].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => insertReadyPlaceholder(v)}
+                        className="px-2 py-0.5 text-xs font-mono bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-md hover:bg-emerald-200 dark:hover:bg-emerald-800/60 transition-colors active:scale-95"
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea ref={gmailReadyRef} value={gmailReadyTemplate} onChange={(e) => setGmailReadyTemplate(e.target.value)} rows={4} dir={gmailReadyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اترك فارغًا لاستخدام القالب الافتراضي" : "Leave empty to use the built-in default"} />
+                  <div className="flex justify-end mt-2">
+                    <Button size="sm" variant="outline" onClick={handleSaveReadyTemplate}>
                       {isRtl ? "حفظ القالب" : "Save Template"}
                     </Button>
                   </div>
@@ -3013,6 +3502,153 @@ const AdminView: React.FC<AdminViewProps> = ({
                     className="shrink-0"
                   />
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Printers Card (Electron-only surface) */}
+            <Card className="lg:col-span-2 border-0">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">{isRtl ? "الطابعات" : "Printers"}</CardTitle>
+                    <CardDescription>{isRtl ? "اختر الطابعة الافتراضية واضبط إعدادات المهمة لكل طابعة" : "Choose a default printer and set per-printer job defaults"}</CardDescription>
+                  </div>
+                  <div className="ms-auto">
+                    <Button variant="outline" size="sm" onClick={loadPrinters} disabled={printersLoading} className="gap-2">
+                      <svg className={cn("w-4 h-4", printersLoading && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {isRtl ? "تحديث" : "Refresh"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!isElectron() ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {isRtl
+                      ? "الطباعة الأصلية متاحة فقط داخل تطبيق سطح المكتب."
+                      : "Native printing is only available inside the desktop app."}
+                  </p>
+                ) : printersError ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">{printersError}</p>
+                ) : printers.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {printersLoading
+                      ? (isRtl ? "جارٍ اكتشاف الطابعات..." : "Detecting printers…")
+                      : (isRtl ? "لم يتم العثور على طابعات مثبتة." : "No installed printers were found.")}
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {printers.map((p) => {
+                      const isDefault = defaultPrinterName === p.name;
+                      const d: PrinterJobDefaults = printerDefaults[p.name] || {
+                        duplexMode: "simplex",
+                        color: true,
+                        copies: 1,
+                        collate: true,
+                        landscape: false,
+                      };
+                      const patchDefaults = (patch: Partial<PrinterJobDefaults>) => {
+                        setPrinterDefaults((prev) => ({ ...prev, [p.name]: { ...d, ...patch } }));
+                      };
+                      return (
+                        <div
+                          key={p.name}
+                          className={cn(
+                            "rounded-xl border p-4",
+                            isDefault
+                              ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20"
+                              : "border-gray-200 dark:border-gray-700",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-gray-900 dark:text-gray-100">
+                                  {p.displayName || p.name}
+                                </span>
+                                {p.isDefault && (
+                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                    {isRtl ? "افتراضي النظام" : "System default"}
+                                  </span>
+                                )}
+                                {isDefault && (
+                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
+                                    {isRtl ? "الطباعة السريعة" : "Quick Print"}
+                                  </span>
+                                )}
+                              </div>
+                              {p.description && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{p.description}</p>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant={isDefault ? "secondary" : "outline"}
+                              onClick={() => setDefaultPrinterName(isDefault ? "" : p.name)}
+                            >
+                              {isDefault
+                                ? (isRtl ? "الطابعة الافتراضية" : "Default printer")
+                                : (isRtl ? "تعيين كافتراضية" : "Set as default")}
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+                            <div>
+                              <Label className="text-xs">{isRtl ? "الوجهين" : "Duplex"}</Label>
+                              <Select
+                                value={d.duplexMode}
+                                onValueChange={(v) => patchDefaults({ duplexMode: v as PrinterJobDefaults["duplexMode"] })}
+                              >
+                                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="simplex">{isRtl ? "وجه واحد" : "Single-sided"}</SelectItem>
+                                  <SelectItem value="longEdge">{isRtl ? "وجهين (الحافة الطويلة)" : "Two-sided (long edge)"}</SelectItem>
+                                  <SelectItem value="shortEdge">{isRtl ? "وجهين (الحافة القصيرة)" : "Two-sided (short edge)"}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs">{isRtl ? "نسخ" : "Copies"}</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                className="mt-1"
+                                value={d.copies}
+                                onChange={(e) => patchDefaults({ copies: Math.max(1, parseInt(e.target.value || "1", 10) || 1) })}
+                              />
+                            </div>
+                            <div className="flex flex-col justify-between gap-2">
+                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                                <Label className="text-xs cursor-pointer">{isRtl ? "ألوان" : "Color"}</Label>
+                                <Switch checked={d.color} onCheckedChange={(c) => patchDefaults({ color: c })} />
+                              </div>
+                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                                <Label className="text-xs cursor-pointer">{isRtl ? "ترتيب" : "Collate"}</Label>
+                                <Switch checked={d.collate} onCheckedChange={(c) => patchDefaults({ collate: c })} />
+                              </div>
+                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                                <Label className="text-xs cursor-pointer">{isRtl ? "أفقي" : "Landscape"}</Label>
+                                <Switch checked={d.landscape} onCheckedChange={(c) => patchDefaults({ landscape: c })} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {isRtl
+                        ? "تُستخدم هذه الإعدادات كنقطة بداية للطباعة السريعة ولمربع حوار خيارات الطباعة."
+                        : "These defaults are the starting point for Quick Print and pre-fill the Options print dialog."}
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -30,9 +30,35 @@ const App: React.FC = () => {
     logoUrl: null,
   });
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem("ps_dark_mode") === "true";
+  type ThemeMode = "light" | "dark" | "system";
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem("ps_theme");
+    if (saved === "light" || saved === "dark" || saved === "system") return saved;
+    // Migrate legacy boolean preference. Absence of the old key => "system".
+    const legacy = localStorage.getItem("ps_dark_mode");
+    if (legacy === "true") return "dark";
+    if (legacy === "false") return "light";
+    return "system";
   });
+
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false
+  );
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const darkMode = themeMode === "system" ? systemPrefersDark : themeMode === "dark";
+
+  const cycleTheme = () =>
+    setThemeMode((prev) => (prev === "light" ? "dark" : prev === "dark" ? "system" : "light"));
 
   const [isTransitioning, setIsTransitioning] = useState(false);
 
@@ -56,8 +82,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
-    localStorage.setItem("ps_dark_mode", String(darkMode));
   }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem("ps_theme", themeMode);
+    // Clear the legacy key so a stale value never overrides the tri-state one.
+    localStorage.removeItem("ps_dark_mode");
+  }, [themeMode]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -173,17 +204,34 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={cycleTheme}
               className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-all active:scale-95"
-              aria-label={lang === "ar" ? "الوضع الليلي" : "Dark mode"}
+              aria-label={
+                themeMode === "light"
+                  ? lang === "ar" ? "الوضع الفاتح" : "Light mode"
+                  : themeMode === "dark"
+                  ? lang === "ar" ? "الوضع الليلي" : "Dark mode"
+                  : lang === "ar" ? "حسب النظام" : "System theme"
+              }
+              title={
+                themeMode === "light"
+                  ? lang === "ar" ? "فاتح" : "Light"
+                  : themeMode === "dark"
+                  ? lang === "ar" ? "داكن" : "Dark"
+                  : lang === "ar" ? "حسب النظام" : "System"
+              }
             >
-              {darkMode ? (
+              {themeMode === "light" ? (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
-              ) : (
+              ) : themeMode === "dark" ? (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
               )}
             </button>
@@ -215,7 +263,10 @@ const App: React.FC = () => {
       )}
 
       <main className={`flex-grow flex flex-col transition-opacity duration-150 ${isAdminRoute ? "" : "container mx-auto py-6 px-4"} ${isTransitioning ? "opacity-0" : "opacity-100"}`}>
-        <div key={lang} className="animate-[langFadeIn_0.25s_ease-out] flex-1 flex flex-col">
+        {/* No key={lang} here — that was remounting every route (including
+            the PDF Studio) on language change and wiping local state like
+            the loaded PDF. `useLanguage` already re-renders in place. */}
+        <div className="flex-1 flex flex-col">
           <Routes>
             <Route path="/upload" element={<UploadView lang={lang} shopSettings={settings} />} />
             <Route
@@ -234,7 +285,7 @@ const App: React.FC = () => {
               path="/admin/dashboard"
               element={
                 <ProtectedRoute isAdmin={isAdmin}>
-                  <AdminView lang={lang} onLogout={handleLogout} currentSettings={settings} onSettingsUpdate={setSettings} darkMode={darkMode} onToggleDarkMode={() => setDarkMode((p) => !p)} onToggleLang={setLang} />
+                  <AdminView lang={lang} onLogout={handleLogout} currentSettings={settings} onSettingsUpdate={setSettings} darkMode={darkMode} themeMode={themeMode} onToggleDarkMode={cycleTheme} onToggleLang={setLang} />
                 </ProtectedRoute>
               }
             />
@@ -244,7 +295,8 @@ const App: React.FC = () => {
                 <ProtectedRoute isAdmin={isAdmin}>
                   <PrintStudio
                     darkMode={darkMode}
-                    onToggleDarkMode={() => setDarkMode((p) => !p)}
+                    themeMode={themeMode}
+                    onToggleDarkMode={cycleTheme}
                     lang={lang}
                     onToggleLang={setLang}
                     currentSettings={settings}

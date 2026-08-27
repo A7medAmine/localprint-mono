@@ -1,5 +1,7 @@
 import { fetchUnreadEmails } from "./gmailService.js";
-import { saveAttachment } from "./attachmentService.js";
+import { saveAttachment, getAttachmentFullPath } from "./attachmentService.js";
+import { countPagesForFile } from "./pageCountService.js";
+import { calculateJobDiscount } from "../utils/discountLogic.js";
 import db, {
   getGmailAccount,
   isEmailProcessed,
@@ -10,7 +12,60 @@ import db, {
   softDeletePendingEmail,
   getPendingEmailById,
   getSettings,
+  getPaperTypes,
+  getActiveDiscountRules,
 } from "../db.js";
+
+const CURRENCY = "DZD";
+
+function resolvePricePerPage(paperTypes, pricing, paperTypeId, colorMode) {
+  const isBW = colorMode === "blackWhite";
+  const paper = paperTypes.find((pt) => pt.id === paperTypeId);
+  if (paper) {
+    return isBW ? paper.blackWhitePerPage : paper.colorPerPage;
+  }
+  // Fallback to top-level pricing keys when the paper type is unknown.
+  const fallback = paperTypeId === "glossy"
+    ? pricing.glossyPerPage
+    : paperTypeId === "cardboard"
+      ? pricing.cardboardPerPage
+      : (isBW ? pricing.blackWhitePerPage : pricing.colorPerPage);
+  if (typeof fallback === "number") return fallback;
+  return isBW ? 15 : 30;
+}
+
+function formatMoney(amount) {
+  return `${(Number(amount) || 0).toFixed(2)} ${CURRENCY}`;
+}
+
+// Language-dependent strings substituted into email templates. The template
+// itself is free text the admin wrote — this only covers *values* we inject.
+const L10N = {
+  en: {
+    colorLabel: "Color",
+    bwLabel: "B&W",
+    pages: (n) => `${n} page(s)`,
+    copies: (n) => `${n} ${n === 1 ? "copy" : "copies"}`,
+    discountFallback: "discount",
+    noRule: "—",
+    bullet: "• ",
+  },
+  ar: {
+    colorLabel: "ملون",
+    bwLabel: "أبيض وأسود",
+    pages: (n) => `${n} صفحة`,
+    copies: (n) => `${n} نسخة`,
+    discountFallback: "خصم",
+    noRule: "—",
+    bullet: "• ",
+  },
+};
+
+function paperTypeLabel(paperTypes, paperTypeId, lang) {
+  const p = paperTypes.find((pt) => pt.id === paperTypeId);
+  if (!p) return paperTypeId;
+  return lang === "ar" ? (p.nameAr || p.name) : p.name;
+}
 
 let pollingInterval = null;
 const DEFAULT_INTERVAL_MS = 60 * 1000;
@@ -169,6 +224,13 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
 
       const jobs = [];
       const jobFileNames = [];
+      const jobDetails = []; // { fileName, pageCount, copies, colorMode, paperTypeId, pricePerPage, totalPrice }
+
+      // Snapshot pricing config once per email so all attachments quote the same rates.
+      const settingsSnapshot = getSettings();
+      const pricingSnapshot = settingsSnapshot.pricing || {};
+      const paperTypesSnapshot = getPaperTypes();
+      const activeDiscountRules = getActiveDiscountRules();
 
       for (
         let attIdx = 0;
@@ -204,13 +266,31 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
           const copies = parseInt(ov.copies) || 1;
           const paperType = ov.paperType || "normal";
 
+          const pageCount = await countPagesForFile(
+            getAttachmentFullPath(savedPath),
+            att.mimeType
+          );
+          const pricePerPage = resolvePricePerPage(
+            paperTypesSnapshot,
+            pricingSnapshot,
+            paperType,
+            colorMode
+          );
+          const totalPrice = pricePerPage * pageCount * copies;
+          const totalSheets = pageCount * copies;
+          const discountResult = calculateJobDiscount(
+            totalPrice,
+            totalSheets,
+            activeDiscountRules
+          );
+
           db.prepare(
             `
             INSERT INTO jobs (
               id, customerName, customerEmail, notes, fileName, fileType,
               fileSize, uploadDate, status, serverFileName, pageCount,
-              colorMode, copies, paperType, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              colorMode, copies, paperType, source, gmailMessageId
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
           ).run(
             jobId,
@@ -223,15 +303,28 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
             new Date().toISOString(),
             "PENDING",
             savedPath,
-            null,
+            pageCount,
             colorMode,
             copies,
             paperType,
-            "gmail"
+            "gmail",
+            pending.gmail_message_id
           );
 
           jobs.push(jobId);
           jobFileNames.push(att.filename);
+          jobDetails.push({
+            fileName: att.filename,
+            pageCount,
+            copies,
+            colorMode,
+            paperTypeId: paperType,
+            pricePerPage,
+            originalPrice: totalPrice,
+            discountAmount: discountResult.discountAmount,
+            finalPrice: discountResult.finalAmount,
+            discountRule: discountResult.rule,
+          });
         } catch (err) {
           console.error(
             `  ❌ Failed to import attachment ${att.filename}:`,
@@ -259,17 +352,36 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
 
       // Auto-reply using template
       try {
-        const settings = getSettings();
         const { sendReply } = await import("./gmailService.js");
-        const pricing = settings.pricing || {};
+
+        const templateLang = settingsSnapshot.gmailReplyTemplateLang === "ar" ? "ar" : "en";
+        const L = L10N[templateLang];
+
+        const originalTotal = jobDetails.reduce((sum, j) => sum + j.originalPrice, 0);
+        const totalDiscount = jobDetails.reduce((sum, j) => sum + j.discountAmount, 0);
+        const finalTotal = jobDetails.reduce((sum, j) => sum + j.finalPrice, 0);
+        const savingsPercentage = originalTotal > 0
+          ? Math.round((totalDiscount / originalTotal) * 10000) / 100
+          : 0;
+        const totalPages = jobDetails.reduce((sum, j) => sum + j.pageCount, 0);
+        const totalCopies = jobDetails.reduce((sum, j) => sum + j.copies, 0);
+        const totalSheets = jobDetails.reduce(
+          (sum, j) => sum + j.pageCount * j.copies,
+          0
+        );
+        const appliedRuleNames = Array.from(
+          new Set(jobDetails.map((j) => j.discountRule?.name).filter(Boolean))
+        ).join(", ");
+
         const template =
-          settings.gmailReplyTemplate ||
+          settingsSnapshot.gmailReplyTemplate ||
           [
             `Thank you for your print request!`,
             ``,
             `We have received your file(s) and will process them shortly.`,
             jobs.length > 0 ? `Files received: {fileCount}` : "",
-            `Estimated price: Starting from {estimatedPrice} per page (color)`,
+            jobDetails.length > 0 ? `{jobBreakdown}` : "",
+            jobDetails.length > 0 ? `Estimated total: {totalPrice}` : "",
             ``,
             `We will notify you when your prints are ready.`,
             ``,
@@ -278,14 +390,48 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
           ]
             .filter(Boolean)
             .join("\n");
+
+        const jobBreakdown = jobDetails
+          .map((j) => {
+            const mode = j.colorMode === "blackWhite" ? L.bwLabel : L.colorLabel;
+            const paperLabel = paperTypeLabel(paperTypesSnapshot, j.paperTypeId, templateLang);
+            const priceStr = j.discountAmount > 0
+              ? `${formatMoney(j.originalPrice)} → ${formatMoney(j.finalPrice)} (${j.discountRule?.name || L.discountFallback})`
+              : formatMoney(j.finalPrice);
+            return `${L.bullet}${j.fileName} — ${L.pages(j.pageCount)} × ${L.copies(j.copies)} · ${mode} · ${paperLabel} = ${priceStr}`;
+          })
+          .join("\n");
+
+        // First priced job — powers single-value placeholders like {pageCount}/{copies}
+        // when the email carries only one attachment (the typical case).
+        const first = jobDetails[0] || null;
         const fileNames = jobFileNames.join(", ");
+
         const replyBody = template
-          .replace(/\{shopName\}/g, settings.shopName || "Print Shop")
+          .replace(/\{shopName\}/g, settingsSnapshot.shopName || "Print Shop")
           .replace(/\{fileName\}/g, fileNames || "your file")
           .replace(/\{fileCount\}/g, jobs.length.toString())
-          .replace(/\{estimatedPrice\}/g, `${pricing.colorPerPage || 30}`);
+          .replace(/\{jobBreakdown\}/g, jobBreakdown || L.noRule)
+          // {totalPrice} = discounted final. Use {originalTotal} for pre-discount.
+          .replace(/\{totalPrice\}/g, formatMoney(finalTotal))
+          .replace(/\{originalTotal\}/g, formatMoney(originalTotal))
+          .replace(/\{discountAmount\}/g, formatMoney(totalDiscount))
+          .replace(/\{savingsPercentage\}/g, `${savingsPercentage}%`)
+          .replace(/\{discountRule\}/g, appliedRuleNames || L.noRule)
+          .replace(/\{totalPages\}/g, totalPages.toString())
+          .replace(/\{totalCopies\}/g, totalCopies.toString())
+          .replace(/\{totalSheets\}/g, totalSheets.toString())
+          .replace(/\{pageCount\}/g, (first?.pageCount ?? totalPages).toString())
+          .replace(/\{copies\}/g, (first?.copies ?? totalCopies).toString())
+          .replace(/\{currency\}/g, CURRENCY)
+          // Back-compat: legacy templates using {estimatedPrice} now get the
+          // discounted total (formatted) — matching what the dashboard shows.
+          .replace(/\{estimatedPrice\}/g, formatMoney(finalTotal));
+
         await sendReply(pending.gmail_message_id, replyBody);
-        console.log(`  📧 Auto-reply sent for "${pending.subject}"`);
+        console.log(
+          `  📧 Auto-reply sent for "${pending.subject}" — quoted ${formatMoney(finalTotal)}${totalDiscount > 0 ? ` (saved ${formatMoney(totalDiscount)})` : ""} across ${jobDetails.length} file(s)`
+        );
       } catch (err) {
         console.warn(`⚠️  Could not send auto-reply:`, err.message);
       }

@@ -7,7 +7,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.join(__dirname, 'database.sqlite');
+// PRINTSHOP_DB_PATH is set by the Electron main process for packaged builds
+// (so the DB lives under %APPDATA%\PrintShop Hub\ instead of Program Files).
+// Falls back to the repo-relative file for `npm run dev` / plain node.
+const dbPath = process.env.PRINTSHOP_DB_PATH || path.join(__dirname, 'database.sqlite');
 let db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -103,6 +106,8 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentStatus TEXT DEFAULT 'UNPAID'`)
 try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentAmount REAL`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentDate TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch (e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch (e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch (e) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS cloud_imports (

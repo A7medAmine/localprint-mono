@@ -7,7 +7,12 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Label } from "../components/ui/label";
+import { Switch } from "../components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { toast } from "../components/ui/use-toast";
+import { isElectron, printData } from "../lib/electronPrint";
+import { storageService } from "../services/storageService";
+import type { PrinterJobDefaults } from "../types";
 import {
   Dialog,
   DialogContent,
@@ -98,28 +103,69 @@ function containFit(imgW: number, imgH: number, boxW: number, boxH: number) {
   return { w: imgW * scale, h: imgH * scale };
 }
 
-function computeGrid(pw: number, ph: number, margin: number, cols: number, rows: number, hGap: number, vGap: number) {
-  const m = margin * MM_TO_PT;
-  const hg = hGap * MM_TO_PT;
-  const vg = vGap * MM_TO_PT;
-  const cw = (pw - 2 * m - (cols - 1) * hg) / cols;
-  const ch = (ph - 2 * m - (rows - 1) * vg) / rows;
-  const cards: { x: number; y: number; w: number; h: number }[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      cards.push({
-        x: m + col * (cw + hg),
-        y: ph - m - (row + 1) * ch - row * vg,
-        w: cw,
-        h: ch,
+const AUTO_MARGIN_MM = 5;
+const AUTO_GAP_MM = 3;
+
+// Cards keep their real size (cardW x cardH). Pick the cols x rows split that
+// wastes the fewest sheet cells for the requested copy count, then shrink the
+// gap (never the card) if that's what it takes to fit the grid on the page.
+function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph: number) {
+  let margin = AUTO_MARGIN_MM * MM_TO_PT;
+  let gap = AUTO_GAP_MM * MM_TO_PT;
+  const fitCount = (g: number) => ({
+    cols: Math.max(1, Math.floor((pw - 2 * margin + g) / (cardW + g))),
+    rows: Math.max(1, Math.floor((ph - 2 * margin + g) / (cardH + g))),
+  });
+  let { cols: maxCols, rows: maxRows } = fitCount(gap);
+  // Not even a single card fits with the default margin/gap — shrink both
+  // until one does (falls back to 0 rather than ever resizing the card).
+  while (maxCols * maxRows < 1 && (margin > 0 || gap > 0)) {
+    margin = Math.max(0, margin - MM_TO_PT);
+    gap = Math.max(0, gap - MM_TO_PT);
+    ({ cols: maxCols, rows: maxRows } = fitCount(gap));
+  }
+  const capacity = maxCols * maxRows;
+  const wanted = Math.max(1, Math.min(copies, capacity));
+
+  // Among equal-waste splits, prefer the most balanced grid (cols close to
+  // rows) so cards cluster into a compact block instead of a long single
+  // row/column with empty space down the sides.
+  let best = { cols: maxCols, rows: 1, waste: Infinity, balance: Infinity };
+  for (let cols = 1; cols <= maxCols; cols++) {
+    const rows = Math.min(maxRows, Math.ceil(wanted / cols));
+    if (cols * rows < wanted) continue;
+    const waste = cols * rows - wanted;
+    const balance = Math.abs(cols - rows);
+    if (waste < best.waste || (waste === best.waste && balance < best.balance)) {
+      best = { cols, rows, waste, balance };
+    }
+  }
+
+  const hGapPt = best.cols > 1 ? gap : 0;
+  const vGapPt = best.rows > 1 ? gap : 0;
+  const gridW = best.cols * cardW + (best.cols - 1) * hGapPt;
+  const gridH = best.rows * cardH + (best.rows - 1) * vGapPt;
+  const originX = (pw - gridW) / 2;
+  const originY = margin;
+
+  const slots: { x: number; y: number; w: number; h: number }[] = [];
+  for (let row = 0; row < best.rows; row++) {
+    for (let col = 0; col < best.cols; col++) {
+      if (slots.length >= wanted) break;
+      slots.push({
+        x: originX + col * (cardW + hGapPt),
+        y: ph - originY - (row + 1) * cardH - row * vGapPt,
+        w: cardW,
+        h: cardH,
       });
     }
   }
-  return cards;
+  return { slots, capacity, cols: best.cols, rows: best.rows };
 }
 
 const CardIDTool: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const isRtl = lang === "ar";
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
   const [frontDataUrl, setFrontDataUrl] = useState<string | null>(null);
@@ -134,18 +180,31 @@ const CardIDTool: React.FC = () => {
   const [jobNotes, setJobNotes] = useState("");
   const [lastPdfBlob, setLastPdfBlob] = useState<Blob | null>(null);
   const [multiCard, setMultiCard] = useState(false);
-  const [cols, setCols] = useState(2);
-  const [rows, setRows] = useState(2);
-  const [hGap, setHGap] = useState(5);
-  const [vGap, setVGap] = useState(5);
-  const [margin, setMargin] = useState(10);
+  const [copies, setCopies] = useState(4);
   const [sizeIdx, setSizeIdx] = useState(0);
   const [paperIdx, setPaperIdx] = useState(0);
+  // Card printing is duplex by default — front sheet + back sheet on the same
+  // physical card. Kept togglable in case someone's printer can't duplex or
+  // they're printing to two separate sheets.
+  const [duplex, setDuplex] = useState(true);
+  const [colorMode, setColorMode] = useState<"color" | "bw">("color");
+  const [printing, setPrinting] = useState(false);
+  const [defaultPrinter, setDefaultPrinter] = useState<string>("");
+  const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>({});
+
+  useEffect(() => {
+    if (!isElectron()) return;
+    storageService.getSettings().then((s) => {
+      setDefaultPrinter(s.defaultPrinterName || "");
+      setPrinterDefaults(s.printerDefaults || {});
+    }).catch(() => {});
+  }, []);
   const PP_W = PAPER_SIZES[paperIdx].w;
   const PP_H = PAPER_SIZES[paperIdx].h;
   const PAD = 10 * MM_TO_PT;
   const cardW = CARD_SIZES[sizeIdx].w * MM_TO_PT;
   const cardH = CARD_SIZES[sizeIdx].h * MM_TO_PT;
+  const { capacity: maxCapacity, cols: layoutCols, rows: layoutRows } = autoLayout(copies, cardW, cardH, PP_W, PP_H);
   const frontCanvasRef = useRef<HTMLCanvasElement>(null);
   const backCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -183,7 +242,7 @@ const CardIDTool: React.FC = () => {
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, pw, ph);
     const slots = multiCard
-      ? computeGrid(PP_W, PP_H, margin, cols, rows, hGap, vGap)
+      ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
       : [{
           x: isFront ? PAD : PP_W - PAD - cardW,
           y: PP_H - PAD - cardH,
@@ -218,8 +277,8 @@ const CardIDTool: React.FC = () => {
     img.src = dataUrl;
   };
 
-  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true); }, [frontDataUrl, multiCard, cols, rows, hGap, vGap, margin, sizeIdx, paperIdx]);
-  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false); }, [backDataUrl, multiCard, cols, rows, hGap, vGap, margin, sizeIdx, paperIdx]);
+  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx]);
+  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx]);
 
   // Auto-load front/back images from bulk "Print as Card" action
   useEffect(() => {
@@ -259,7 +318,7 @@ const CardIDTool: React.FC = () => {
     try {
       const pdfDoc = await PDFDocument.create();
       const slots = multiCard
-        ? computeGrid(PP_W, PP_H, margin, cols, rows, hGap, vGap)
+        ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
         : [{
             x: PAD,
             y: PP_H - PAD - cardH,
@@ -313,8 +372,52 @@ const CardIDTool: React.FC = () => {
   const handlePrint = async () => {
     const blob = await generatePdf();
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    // Browser fallback — no native bridge available.
+    if (!isElectron()) {
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      return;
+    }
+    setPrinting(true);
+    try {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const printer = defaultPrinter;
+      const saved = printer ? printerDefaults[printer] : undefined;
+      // Duplex: user's toggle wins. Long-edge is the standard for card layouts
+      // where front is on the left half and back on the right half of the same
+      // page, so flipping along the long edge aligns them.
+      // Color: pane toggle wins over the printer's saved default. `color: false`
+      // is translated in electron/main.js into a CSS grayscale filter on the
+      // hidden print window (Chromium's own color:false path prints solid
+      // black on this driver stack).
+      const options = {
+        duplexMode: duplex ? "longEdge" : "simplex",
+        color: colorMode !== "bw",
+        copies: saved?.copies ?? 1,
+        collate: saved?.collate ?? true,
+        landscape: saved?.landscape ?? false,
+      } as const;
+      const result = await printData({
+        data: bytes,
+        fileType: "application/pdf",
+        printerName: printer,
+        silent: !!printer,
+        options,
+      });
+      if (result.cancelled) {
+        toast({ title: isRtl ? "تم إلغاء الطباعة" : "Print cancelled" });
+      } else if (result.ok) {
+        toast({ title: isRtl ? "تم إرسال المهمة" : "Sent to printer", variant: "success" });
+      }
+    } catch (err: any) {
+      toast({
+        title: isRtl ? "فشل الطباعة" : "Print failed",
+        description: err?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setPrinting(false);
+    }
   };
 
   const handleAddToJobs = async () => {
@@ -421,6 +524,69 @@ const CardIDTool: React.FC = () => {
           </CardContent>
         </Card>
 
+        <div className="flex items-center justify-between rounded-xl border border-input px-3 py-2">
+          <div className="min-w-0">
+            <Label className="text-xs font-medium cursor-pointer">
+              {isRtl ? "طباعة على الوجهين" : "Duplex printing"}
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {isRtl
+                ? "الأمام والخلف على نفس البطاقة (افتراضي)"
+                : "Front and back on the same card (default)"}
+            </p>
+          </div>
+          <Switch checked={duplex} onCheckedChange={setDuplex} />
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-input px-3 py-2">
+          <div className="min-w-0">
+            <Label className="text-xs font-medium cursor-pointer">
+              {isRtl ? "أبيض وأسود" : "Black & white"}
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {isRtl
+                ? "طباعة رمادية بدلاً من الألوان"
+                : "Print grayscale instead of color"}
+            </p>
+          </div>
+          <Switch
+            checked={colorMode === "bw"}
+            onCheckedChange={(on) => setColorMode(on ? "bw" : "color")}
+          />
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-input px-3 py-2">
+          <div className="min-w-0">
+            <Label className="text-xs font-medium cursor-pointer">
+              {isRtl ? "نسخ متعددة في نفس الورقة" : "Multiple copies per sheet"}
+            </Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {isRtl
+                ? "طباعة عدة بطاقات على نفس الصفحة"
+                : "Print several cards on one paper sheet"}
+            </p>
+          </div>
+          <Switch checked={multiCard} onCheckedChange={setMultiCard} />
+        </div>
+
+        {multiCard && (
+          <div className="rounded-xl border border-input px-3 py-3 space-y-2">
+            <Label className="text-xs">{isRtl ? "عدد النسخ" : "Number of copies"}</Label>
+            <Input
+              type="number"
+              min={1}
+              max={maxCapacity}
+              value={copies}
+              onChange={(e) => setCopies(Math.max(1, Math.min(maxCapacity, Number(e.target.value) || 1)))}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {isRtl
+                ? `أقصى عدد يناسب الصفحة: ${maxCapacity} (${layoutCols}×${layoutRows})`
+                : `Fits up to ${maxCapacity} per sheet (${layoutCols}×${layoutRows} layout), packed automatically`}
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Button
             disabled={(!frontDataUrl && !backDataUrl) || exporting}
@@ -429,11 +595,11 @@ const CardIDTool: React.FC = () => {
             {exporting ? "..." : t("download")}
           </Button>
           <Button
-            disabled={(!frontDataUrl && !backDataUrl) || exporting}
+            disabled={(!frontDataUrl && !backDataUrl) || exporting || printing}
             variant="secondary"
             onClick={handlePrint}
           >
-            {t("print")}
+            {printing ? "..." : t("print")}
           </Button>
           <Button
             disabled={(!frontDataUrl && !backDataUrl) || exporting}

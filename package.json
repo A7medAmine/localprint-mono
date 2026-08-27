@@ -1,8 +1,11 @@
 {
   "name": "printshop-hub",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "PrintShop Hub — desktop print-shop management app (jobs, native printing, QR uploads).",
+  "author": "PrintShop Hub",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "start": "cross-env NODE_ENV=production node server.js",
     "dev": "cross-env NODE_ENV=development concurrently \"vite\" \"node server.js\"",
@@ -10,7 +13,13 @@
     "preview": "vite preview",
     "server": "node server.js",
     "frontend": "vite",
-    "backend": "node server.js"
+    "backend": "node server.js",
+    "electron": "cross-env NODE_ENV=production electron .",
+    "electron:dev": "cross-env NODE_ENV=development VITE_API_TARGET=http://localhost:47821 concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron .\"",
+    "electron:build": "npm run build && electron-builder --win nsis",
+    "rebuild:node": "npm rebuild better-sqlite3 --build-from-source",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/patch-pdfjs-worker.js"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -44,13 +53,78 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.3",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "build": {
+    "appId": "com.printshop.hub",
+    "productName": "PrintShop Hub",
+    "copyright": "Copyright © PrintShop Hub",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "server.js",
+      "db.js",
+      "services/**/*",
+      "utils/**/*",
+      "dist/**/*",
+      "public/**/*",
+      "package.json",
+      ".env"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "PrintShop-Hub-Setup-${version}.${ext}"
+    },
+    "protocols": [
+      {
+        "name": "PrintShop Hub",
+        "schemes": [
+          "printshop-hub"
+        ]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PrintShop Hub",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

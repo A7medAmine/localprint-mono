@@ -28,6 +28,8 @@ env
 AGENTS.md
 *.sqlite
 *.sqlite-shm
+release/
+build/icon.ico
 *.sqlite-wal
 client_secret_539243491583-8ud5jak3qeuucpm8j5q99icjiugeuatm.apps.googleusercontent.com.json
 database.sqlite.before_restore

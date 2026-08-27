@@ -211,13 +211,18 @@ Thank you for your print request!
 
 We have received your file(s) and will process them shortly.
 Files received: {fileCount}
-Estimated price: Starting from {estimatedPrice} per page (color)
+{jobBreakdown}
+Estimated total: {totalPrice}
 
 We will notify you when your prints are ready.
 
 Best regards,
 {shopName}
 ```
+
+### Price calculation
+
+Prices in the reply are computed per attachment using **the admin's import settings** (color mode, copies, paper type) chosen in the review panel, multiplied by the **real page count** of the file (PDFs via `pdf-lib`, images = 1 page, DOCX estimated from file size). The per-page rate comes from the matching row in `paper_types`, falling back to `settings.pricing.*PerPage`. Active discount rules are then applied per-attachment using the shared logic in `utils/discountLogic.js` (matches what the admin dashboard shows). The same `pageCount` is persisted on the job row, so the dashboard and the customer email quote the same number.
 
 ### Placeholders
 
@@ -226,7 +231,19 @@ Best regards,
 | `{shopName}` | `settings.shopName` (or "Print Shop") |
 | `{fileName}` | Comma-separated filenames from the created jobs |
 | `{fileCount}` | Number of jobs created |
-| `{estimatedPrice}` | `settings.pricing.colorPerPage` (or 30) |
+| `{jobBreakdown}` | Multi-line per-file breakdown; discounted lines show `original → final (rule name)` |
+| `{totalPrice}` | Grand total **after discount** — this is the number the customer pays |
+| `{originalTotal}` | Grand total **before discount** |
+| `{discountAmount}` | Total money saved across all attachments |
+| `{savingsPercentage}` | e.g. `20%` — savings share of the original total |
+| `{discountRule}` | Comma-separated names of the rules that fired (or `—`) |
+| `{totalPages}` | Sum of page counts across imported files |
+| `{totalCopies}` | Sum of copies across imported files |
+| `{totalSheets}` | Sum of `pageCount × copies` across imported files |
+| `{pageCount}` | Page count of the first imported file (single-attachment shortcut) |
+| `{copies}` | Copies chosen for the first imported file |
+| `{currency}` | Currency code (currently `DZD`) |
+| `{estimatedPrice}` | **Deprecated alias for `{totalPrice}`** — kept so old templates keep working |
 
 ### How it's sent
 

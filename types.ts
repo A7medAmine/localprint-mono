@@ -62,6 +62,19 @@ export interface ShopSettings {
   cloudSyncPollInterval?: string;
   autoAcceptCloudJobs?: boolean;
   autoDeductStock?: boolean;
+  // Native printing (Electron). defaultPrinterName is Chromium's deviceName
+  // for Quick Print; printerDefaults holds the pre-filled job settings per
+  // printer, reused for both Quick Print and the Options dialog.
+  defaultPrinterName?: string;
+  printerDefaults?: Record<string, PrinterJobDefaults>;
+}
+
+export interface PrinterJobDefaults {
+  duplexMode: "simplex" | "shortEdge" | "longEdge";
+  color: boolean;
+  copies: number;
+  collate: boolean;
+  landscape: boolean;
 }
 
 export type InventoryCategory = "paper" | "ink_toner" | "custom";

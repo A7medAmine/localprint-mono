@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { getPdfWorkerUrl } from "../../../lib/pdfWorker";
 
 let pdfjsLib: any = null;
 
 async function loadPdfjs() {
   if (pdfjsLib) return pdfjsLib;
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
+  // Shared polyfilled worker — see lib/pdfWorker.ts for why.
+  pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl();
   pdfjsLib = pdfjs;
   return pdfjsLib;
 }
@@ -67,35 +66,37 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
     let cancelled = false;
 
     async function renderPage() {
-      if (renderTaskRef.current) {
-        try { await renderTaskRef.current.cancel(); } catch {}
-      }
-      const page = await pdf.getPage(currentPage);
-      if (cancelled) return;
-
-      const viewport = page.getViewport({ scale: zoom });
-      const canvas = canvasRef.current!;
-      const ctx = canvas.getContext("2d")!;
-
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = viewport.width * dpr;
-      canvas.height = viewport.height * dpr;
-      canvas.style.width = viewport.width + "px";
-      canvas.style.height = viewport.height + "px";
-
-      ctx.scale(dpr, dpr);
-
-      const renderContext = {
-        canvasContext: ctx,
-        viewport,
-      };
-
       try {
-        renderTaskRef.current = page.render(renderContext);
-        await renderTaskRef.current.promise;
-        renderTaskRef.current = null;
+        if (renderTaskRef.current) {
+          try { await renderTaskRef.current.cancel(); } catch {}
+        }
+        const page = await pdf.getPage(currentPage);
+        if (cancelled) return;
+
+        const viewport = page.getViewport({ scale: zoom });
+        const canvas = canvasRef.current!;
+        const ctx = canvas.getContext("2d")!;
+
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = viewport.width * dpr;
+        canvas.height = viewport.height * dpr;
+        canvas.style.width = viewport.width + "px";
+        canvas.style.height = viewport.height + "px";
+
+        ctx.scale(dpr, dpr);
+
+        try {
+          renderTaskRef.current = page.render({ canvasContext: ctx, viewport });
+          await renderTaskRef.current.promise;
+          renderTaskRef.current = null;
+        } catch (err: any) {
+          if (err?.name === "RenderingCancelledException") return;
+          throw err;
+        }
       } catch (err: any) {
-        if (err.name !== "RenderingCancelledException") throw err;
+        if (cancelled) return;
+        console.error("PdfRenderer render failed", err);
+        setError(err?.message || "Failed to render PDF page");
       }
     }
 

@@ -116,8 +116,12 @@ const isDev = NODE_ENV === "development";
 const PORT = process.env.PORT || (isDev ? 3001 : 3000);
 
 // Path configuration
+// PRINTSHOP_UPLOADS_DIR / PRINTSHOP_DB_PATH are set by the Electron main
+// process for packaged builds (so runtime data lives under userData, not
+// Program Files). Fall back to repo-relative paths for `npm run dev`.
 const DIST_DIR = path.join(__dirname, "dist");
-const UPLOADS_DIR = path.join(__dirname, "uploads");
+const UPLOADS_DIR = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, "uploads");
+const DB_PATH = process.env.PRINTSHOP_DB_PATH || path.join(__dirname, "database.sqlite");
 
 const app = express();
 
@@ -147,7 +151,14 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-src 'self';");
+  // pdf.js needs: 'wasm-unsafe-eval' (openjpeg/qcms WASM) in script-src,
+  // blob: in worker-src (it spins module workers from Blob URLs) and img-src
+  // (rendered page images) and connect-src (fetches its own worker chunks as
+  // blob URLs on some paths). Without these, the preview + Studio thumbnails
+  // load metadata but silently fail at page.render() inside Electron, where
+  // this CSP is enforced (Vite dev bypasses it, which is why the browser
+  // dev flow looked fine).
+  res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' blob:; frame-src 'self';");
   next();
 });
 
@@ -477,8 +488,39 @@ app.put("/api/jobs/:id/status", requireAdmin, (req, res) => {
         if (isEnabled()) updateCloudStatus(cloudOrderId, status).catch(() => {});
       }).catch(() => {});
     }
+
+    // Auto-notify the customer when a gmail-sourced job becomes READY.
+    // Idempotent via notifiedReadyAt — safe if the admin toggles status.
+    if (
+      status === "READY" &&
+      previousStatus !== "READY" &&
+      updatedJob?.source === "gmail" &&
+      updatedJob?.gmailMessageId &&
+      !updatedJob?.notifiedReadyAt
+    ) {
+      import('./services/gmailNotifier.js')
+        .then(({ sendJobReadyNotification }) => sendJobReadyNotification(jobId))
+        .then((r) => {
+          if (r.sent) console.log(`  📧 Ready notification sent for job ${jobId}`);
+          else if (r.reason !== "already_notified") console.warn(`⚠️  Ready notification skipped for ${jobId}: ${r.reason}`);
+        })
+        .catch((err) => console.warn(`⚠️  Ready notification failed for ${jobId}:`, err.message));
+    }
   } else {
     res.status(404).json({ success: false, error: "Job not found" });
+  }
+});
+
+// Manual re-send of the "ready" notification (admin can force from the UI
+// if the automatic send failed or the template was updated afterwards).
+app.post("/api/jobs/:id/notify-ready", requireAdmin, async (req, res) => {
+  try {
+    const { sendJobReadyNotification } = await import('./services/gmailNotifier.js');
+    const result = await sendJobReadyNotification(req.params.id, { force: true });
+    if (result.sent) return res.json({ success: true });
+    res.status(400).json({ success: false, error: result.reason });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -700,11 +742,10 @@ app.post("/api/jobs/bulk/payment", requireAdmin, (req, res) => {
 
 // Database backup download
 app.get("/api/backup/download", requireAdmin, (req, res) => {
-  const dbPath = path.join(__dirname, 'database.sqlite');
-  if (!fs.existsSync(dbPath)) {
+  if (!fs.existsSync(DB_PATH)) {
     return res.status(404).json({ success: false, error: "Database not found" });
   }
-  res.download(dbPath, `printshop-backup-${new Date().toISOString().slice(0, 10)}.sqlite`);
+  res.download(DB_PATH, `printshop-backup-${new Date().toISOString().slice(0, 10)}.sqlite`);
 });
 
 // Database backup restore
@@ -712,7 +753,7 @@ app.post("/api/backup/restore", requireAdmin, uploadMemory.single("file"), (req,
   if (!req.file) {
     return res.status(400).json({ success: false, error: "No file uploaded" });
   }
-  const _dbPath = path.join(__dirname, 'database.sqlite');
+  const _dbPath = DB_PATH;
   const _backupPath = _dbPath + '.before_restore';
   // Close the current connection before writing
   try { db.close(); } catch (e) {}
@@ -731,6 +772,29 @@ app.post("/api/backup/restore", requireAdmin, uploadMemory.single("file"), (req,
 });
 
 // Public file access by job ID — anyone with the job ID can download (must be before the admin catch-all)
+// Resolve a job to its absolute path on this machine. Admin-only — this
+// leaks the local FS layout, so the renderer only calls it inside the
+// Electron desktop app to feed the native print IPC. Path-traversal
+// protected same way as /api/files/*.
+app.get("/api/files/localpath/:id", requireAdmin, (req, res) => {
+  try {
+    const job = db.prepare('SELECT serverFileName FROM jobs WHERE id = ?').get(req.params.id);
+    if (!job || !job.serverFileName) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    const filePath = path.resolve(path.join(UPLOADS_DIR, job.serverFileName));
+    if (!filePath.startsWith(path.resolve(UPLOADS_DIR))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on disk" });
+    }
+    res.json({ path: filePath });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/api/files/public/:id", (req, res) => {
   try {
     const job = db.prepare('SELECT serverFileName, fileName FROM jobs WHERE id = ?').get(req.params.id);
@@ -858,6 +922,32 @@ app.post("/api/settings", requireAdmin, (req, res) => {
     }
     if (req.body.autoDeductStock !== undefined) {
       updateSetting('autoDeductStock', !!req.body.autoDeductStock);
+    }
+    // Printer settings — see electron/main.js for the print IPC that
+    // consumes these. defaultPrinterName is a plain string (Chromium's
+    // deviceName). printerDefaults is a { [printerName]: { duplexMode,
+    // color, copies, collate, landscape } } map used as the starting
+    // point for both Quick Print and the Options dialog.
+    if (req.body.defaultPrinterName !== undefined) {
+      updateSetting('defaultPrinterName', String(req.body.defaultPrinterName || ''));
+    }
+    if (req.body.printerDefaults !== undefined && typeof req.body.printerDefaults === 'object') {
+      const clean = {};
+      for (const [name, raw] of Object.entries(req.body.printerDefaults || {})) {
+        if (!name || typeof raw !== 'object' || raw === null) continue;
+        const duplex = ['simplex', 'shortEdge', 'longEdge'].includes(raw.duplexMode)
+          ? raw.duplexMode
+          : 'simplex';
+        const copiesNum = Number(raw.copies);
+        clean[name] = {
+          duplexMode: duplex,
+          color: raw.color !== false,
+          copies: Number.isFinite(copiesNum) && copiesNum >= 1 ? Math.floor(copiesNum) : 1,
+          collate: raw.collate !== false,
+          landscape: raw.landscape === true,
+        };
+      }
+      updateSetting('printerDefaults', clean);
     }
 
     const settings = getSettings();
@@ -1458,22 +1548,44 @@ app.get('/api/gmail/callback', async (req, res) => {
     startPolling(30_000);
 
     const safeEmail = escapeHtml(email);
-    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connected</title><style>
+    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Gmail connected — PrintShop Hub</title><style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0fdf4;color:#166534}
-.card{text-align:center;background:#fff;padding:40px 48px;border-radius:24px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
-.icon{width:56px;height:56px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
-.icon svg{width:28px;height:28px;stroke:#16a34a;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-h2{font-size:20px;margin-bottom:6px}
-p{font-size:14px;color:#6b7280}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(1200px 800px at 20% 0%,#eef2ff 0%,transparent 60%),radial-gradient(1000px 700px at 100% 100%,#ecfdf5 0%,transparent 55%),#f8fafc;color:#0f172a}
+.card{width:100%;max-width:440px;background:#fff;padding:36px 32px 28px;border-radius:20px;border:1px solid #e2e8f0;box-shadow:0 20px 50px -20px rgba(15,23,42,.18);text-align:center}
+.icon{width:64px;height:64px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;border:6px solid #f0fdf4}
+.icon svg{width:32px;height:32px;stroke:#16a34a;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+h1{font-size:22px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+.email{display:inline-block;margin-top:2px;padding:4px 10px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:13px;font-weight:500}
+.sub{margin-top:14px;font-size:14px;line-height:1.55;color:#64748b}
+.actions{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border-radius:12px;font-size:14px;font-weight:600;text-decoration:none;cursor:pointer;border:1px solid transparent;transition:transform .06s ease,background .12s ease}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:#4f46e5;color:#fff}
+.btn-primary:hover{background:#4338ca}
+.btn-ghost{background:transparent;color:#475569;border-color:#e2e8f0}
+.btn-ghost:hover{background:#f8fafc}
+.hint{margin-top:16px;font-size:12px;color:#94a3b8}
+.tab-note{margin-top:8px;font-size:11px;color:#cbd5e1}
 </style></head><body>
 <div class="card">
-<div class="icon"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
-<h2>Gmail Connected</h2>
-<p>${safeEmail}</p>
+  <div class="icon"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+  <h1>Gmail connected</h1>
+  <span class="email">${safeEmail}</span>
+  <p class="sub">PrintShop Hub will now pull print jobs from this inbox automatically. You can head back to the app.</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="printshop-hub://return" id="returnBtn">Return to PrintShop Hub</a>
+    <button class="btn btn-ghost" id="closeBtn" type="button">Close this tab</button>
+  </div>
+  <p class="hint">This tab will close automatically in a few seconds.</p>
+  <p class="tab-note">If the button above doesn't open the app, switch to it manually from the taskbar.</p>
 </div>
 <script>
-setTimeout(function(){window.close()},1500);
+  document.getElementById('closeBtn').addEventListener('click', function(){ window.close(); });
+  // Auto-close after 4s. Modern browsers only allow window.close() on windows
+  // opened by script — the OAuth flow qualifies (Google popped this tab from
+  // window.open on accounts.google.com), so this usually works.
+  setTimeout(function(){ try { window.close(); } catch(e) {} }, 4000);
 <\/script>
 </body></html>`);
   } catch (err) {
@@ -1666,13 +1778,17 @@ app.get('/api/gmail/attachment/:pendingId/:attachmentIndex', async (req, res) =>
   }
 });
 
-// Get Gmail settings (poll interval, reply template)
+// Get Gmail settings — one template per notification type, each tagged with
+// the language its substituted values should render in ("en" or "ar").
 app.get('/api/gmail/settings', requireAdmin, (req, res) => {
   try {
     const settings = getSettings();
     res.json({
       pollInterval: parseInt(settings.gmailPollInterval) || 60,
       replyTemplate: settings.gmailReplyTemplate || '',
+      replyTemplateLang: settings.gmailReplyTemplateLang || 'en',
+      readyTemplate: settings.gmailReadyTemplate || '',
+      readyTemplateLang: settings.gmailReadyTemplateLang || 'en',
     });
   } catch (err) {
     console.error("❌ Error getting Gmail settings:", err);
@@ -1680,7 +1796,6 @@ app.get('/api/gmail/settings', requireAdmin, (req, res) => {
   }
 });
 
-// Save Gmail settings (poll interval, reply template)
 app.post('/api/gmail/settings', requireAdmin, async (req, res) => {
   try {
     if (req.body.pollInterval) {
@@ -1690,6 +1805,17 @@ app.post('/api/gmail/settings', requireAdmin, async (req, res) => {
     }
     if (req.body.replyTemplate !== undefined) {
       updateSetting('gmailReplyTemplate', req.body.replyTemplate);
+    }
+    if (req.body.replyTemplateLang !== undefined) {
+      const lang = req.body.replyTemplateLang === 'ar' ? 'ar' : 'en';
+      updateSetting('gmailReplyTemplateLang', lang);
+    }
+    if (req.body.readyTemplate !== undefined) {
+      updateSetting('gmailReadyTemplate', req.body.readyTemplate);
+    }
+    if (req.body.readyTemplateLang !== undefined) {
+      const lang = req.body.readyTemplateLang === 'ar' ? 'ar' : 'en';
+      updateSetting('gmailReadyTemplateLang', lang);
     }
     res.json({ success: true });
   } catch (err) {
