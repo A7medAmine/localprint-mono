@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PrintJob, PrintStatus, PaymentStatus, ShopSettings, PrinterJobDefaults } from "../../../types";
 import { storageService } from "../../../services/storageService";
-import { isElectron, printFile } from "../../../lib/electronPrint";
+import { isElectron, printFile, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
 import { getActualPageCount } from "../../../utils/pricingUtils";
 import { toast } from "../../../components/ui/use-toast";
 
@@ -27,6 +27,31 @@ export const isOfficeFile = (fileType: string | null | undefined) => {
 };
 
 type PrintOutcome = "ok" | "cancelled" | "error" | "unsupported";
+
+export interface StudioPrintOptions {
+  printerName: string;
+  copies: number;
+  color: boolean;
+  duplexMode: "simplex" | "longEdge" | "shortEdge";
+  collate: boolean;
+  landscape: boolean;
+  pageSize: string;
+  pageRanges: string;
+}
+
+/** "1-3, 5, 8-10" -> [{from:0,to:2},{from:4,to:4},{from:7,to:9}] (0-indexed). */
+function parsePageRanges(spec: string): { from: number; to: number }[] {
+  if (!spec || !spec.trim()) return [];
+  const out: { from: number; to: number }[] = [];
+  for (const part of spec.split(",")) {
+    const m = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    if (!m) continue;
+    const from = parseInt(m[1], 10) - 1;
+    const to = (m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10)) - 1;
+    if (from >= 0 && to >= from) out.push({ from, to });
+  }
+  return out;
+}
 
 interface UseAdminJobsOptions {
   currentSettings: ShopSettings;
@@ -62,6 +87,17 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const [paymentEditAmount, setPaymentEditAmount] = useState<number>(0);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [singleDeleteConfirm, setSingleDeleteConfirm] = useState<string | null>(null);
+  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
+  const [printOptionsJob, setPrintOptionsJob] = useState<PrintJob | null>(null);
+
+  const loadPrinters = useCallback(async () => {
+    if (!isElectron()) return;
+    try {
+      setPrinters(await getPrinters());
+    } catch (err) {
+      console.error("Failed to enumerate printers:", err);
+    }
+  }, []);
 
   // Locale for toast copy. Read from storage so a mid-session switch is honoured.
   const rtl =
@@ -135,6 +171,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
   useEffect(() => {
     loadJobsRef.current();
+    loadPrinters();
     const es = new EventSource("/api/events");
     es.addEventListener("new-job", () => loadJobsRef.current());
     es.addEventListener("cloud-job-imported", (e) => {
@@ -314,6 +351,70 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const handleQuickPrint = (job: PrintJob) => printJobViaIpc(job, "quick");
   const handlePrintOptions = (job: PrintJob) => printJobViaIpc(job, "options");
   const handleOpenInApp = (job: PrintJob) => printJobViaIpc(job, "open");
+
+  /**
+   * Print a job with an explicit option set gathered from the Print Options
+   * dialog. Silent (routes straight to the chosen printer) with an honest
+   * success / cancel / driver-error toast.
+   */
+  const printJobWithOptions = async (job: PrintJob, opts: StudioPrintOptions): Promise<PrintOutcome> => {
+    if (!isElectron()) {
+      toast({
+        title: rtl ? "الطباعة الأصلية غير متوفرة" : "Native printing unavailable",
+        description: rtl ? "افتح التطبيق من سطح المكتب للطباعة." : "Open the desktop app to print.",
+        variant: "destructive",
+      });
+      return "unsupported";
+    }
+    const filePath = await storageService.getFileLocalPath(job.id);
+    if (!filePath) {
+      toast({
+        title: rtl ? "تعذر تحديد مسار الملف" : "Could not resolve file path",
+        description: job.fileName,
+        variant: "destructive",
+      });
+      return "error";
+    }
+    const printOptions: Record<string, unknown> = {
+      duplexMode: opts.duplexMode,
+      color: opts.color,
+      copies: Math.max(1, Number(opts.copies) || 1),
+      collate: opts.collate,
+      landscape: opts.landscape,
+    };
+    if (opts.pageSize && opts.pageSize !== "default") printOptions.pageSize = opts.pageSize;
+    const ranges = parsePageRanges(opts.pageRanges);
+    if (ranges.length) printOptions.pageRanges = ranges;
+    try {
+      const result = await printFile({
+        filePath,
+        fileType: job.fileType,
+        printerName: opts.printerName || defaultPrinterName || "",
+        silent: !!opts.printerName,
+        options: printOptions,
+      });
+      if (result.cancelled) {
+        toast({ title: rtl ? "تم إلغاء الطباعة" : "Print cancelled" });
+        return "cancelled";
+      }
+      if (result.ok) {
+        toast({
+          title: rtl ? `أُرسلت إلى ${opts.printerName || (rtl ? "الطابعة الافتراضية" : "default printer")}` : `Sent to ${opts.printerName || "default printer"}`,
+          description: job.fileName,
+          variant: "success",
+        });
+        return "ok";
+      }
+      return "error";
+    } catch (err) {
+      toast({
+        title: rtl ? "فشل الطباعة" : "Print failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      return "error";
+    }
+  };
 
   const handleBulkPrint = async () => {
     const selectedJobs = groups.flatMap((g) => g.jobs).filter((j) => selectedJobIds.has(j.id));
@@ -608,6 +709,10 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     setBulkDeleteConfirm,
     singleDeleteConfirm,
     setSingleDeleteConfirm,
+    printers,
+    printOptionsJob,
+    setPrintOptionsJob,
+    printJobWithOptions,
     loadJobs,
     toggleGroup,
     toggleSelectJob,
