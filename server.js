@@ -6,7 +6,9 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import os from "os";
 import { PDFDocument } from "pdf-lib";
-import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
+import { randomBytes, randomUUID, createHash, scryptSync, timingSafeEqual } from "crypto";
+
+const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount } from './db.js';
 
@@ -195,6 +197,33 @@ setInterval(() => {
     else rateLimitMap.set(ip, fresh);
   }
 }, 300_000);
+
+// ── Generic sliding-window limiter factory (per-IP) ──
+function makeRateLimiter({ windowMs, max, message }) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, ts] of hits) {
+      const fresh = ts.filter(t => now - t < windowMs);
+      if (fresh.length === 0) hits.delete(ip); else hits.set(ip, fresh);
+    }
+  }, Math.max(windowMs, 60_000));
+  return (req, res, next) => {
+    const ip = req.ip || req.socket?.remoteAddress || "unknown";
+    const now = Date.now();
+    const ts = (hits.get(ip) || []).filter(t => now - t < windowMs);
+    if (ts.length >= max) {
+      return res.status(429).json({ error: message || "Too many requests. Try again later." });
+    }
+    ts.push(now);
+    hits.set(ip, ts);
+    next();
+  };
+}
+
+// Public upload: 30 files / 5 min / IP is generous for a walk-in customer but
+// caps disk-fill / job-spam from the LAN.
+const uploadLimit = makeRateLimiter({ windowMs: 300_000, max: 30, message: "Upload limit reached. Please wait a few minutes." });
 
 // ── Login lockout (per-IP, counts FAILED /api/auth/verify attempts only) ──
 // 5 fails → locked 1 min, 10 fails → locked 15 min. A success clears the count.
@@ -485,7 +514,7 @@ app.post("/api/jobs/query", (req, res) => {
 });
 
 // Upload new job
-app.post("/api/upload", upload.single("file"), async (req, res) => {
+app.post("/api/upload", uploadLimit, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res
@@ -493,7 +522,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
         .json({ success: false, error: "No file uploaded" });
     }
 
-    const metadata = JSON.parse(req.body.metadata);
+    const metadata = JSON.parse(req.body.metadata || "{}");
     const filePath = path.join(UPLOADS_DIR, req.file.filename);
 
     // Validate magic bytes match the claimed MIME type
@@ -508,42 +537,52 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
       pageCount = await getPdfPageCount(filePath);
     }
 
+    // The server owns the primary key and the delete secret — never the client.
+    const id = randomUUID();
+    const deleteToken = randomBytes(16).toString("hex");
+    const prefs = metadata.printPreferences || {};
+
     const newJob = {
-      ...metadata,
-      serverFileName: req.file.filename,
-      uploadDate: new Date().toISOString(),
-      fileSize: req.file.size,
+      id,
+      customerName: String(metadata.customerName || metadata.customer || "").trim(),
+      phoneNumber: String(metadata.phoneNumber || metadata.phone || "").trim(),
+      notes: String(metadata.notes || "").trim(),
+      fileName: String(metadata.fileName || req.file.originalname || "upload").trim(),
       fileType: req.file.mimetype,
-      pageCount: pageCount,
+      fileSize: req.file.size,
+      uploadDate: new Date().toISOString(),
+      status: metadata.status || "PENDING",
+      serverFileName: req.file.filename,
+      pageCount,
+      colorMode: prefs.colorMode || metadata.colorMode || "color",
+      copies: Number(prefs.copies || metadata.copies) >= 1 ? Math.floor(Number(prefs.copies || metadata.copies)) : 1,
+      paperType: prefs.paperType || metadata.paperType || "normal",
+      source: metadata.source || "upload",
     };
 
     const insertStmt = db.prepare(`
       INSERT INTO jobs (
-        id, customerName, phoneNumber, notes, fileName, fileType, 
-        fileSize, uploadDate, status, serverFileName, pageCount, 
-        colorMode, copies, paperType
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, customerName, phoneNumber, notes, fileName, fileType,
+        fileSize, uploadDate, status, serverFileName, pageCount,
+        colorMode, copies, paperType, source, deleteTokenHash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertStmt.run(
-      newJob.id,
-      newJob.customerName,
-      newJob.phoneNumber,
-      newJob.notes,
-      newJob.fileName,
-      newJob.fileType,
-      newJob.fileSize,
-      newJob.uploadDate,
-      newJob.status,
-      newJob.serverFileName,
-      newJob.pageCount,
-      newJob.printPreferences?.colorMode || 'color',
-      newJob.printPreferences?.copies || 1,
-      newJob.printPreferences?.paperType || 'normal'
+      newJob.id, newJob.customerName, newJob.phoneNumber, newJob.notes,
+      newJob.fileName, newJob.fileType, newJob.fileSize, newJob.uploadDate,
+      newJob.status, newJob.serverFileName, newJob.pageCount,
+      newJob.colorMode, newJob.copies, newJob.paperType, newJob.source,
+      hashDeleteToken(deleteToken)
     );
 
     broadcastEvent("new-job", { id: newJob.id });
-    res.status(200).json({ success: true, job: newJob });
+    // deleteToken is returned exactly once — the client keeps it in localStorage.
+    res.status(200).json({
+      success: true,
+      job: { ...newJob, printPreferences: { colorMode: newJob.colorMode, copies: newJob.copies, paperType: newJob.paperType } },
+      deleteToken,
+    });
   } catch (err) {
     console.error("❌ Upload Error:", err);
     res.status(400).json({ success: false, error: "Invalid upload metadata" });
@@ -707,35 +746,34 @@ app.put("/api/jobs/:id/preferences", requireAdmin, (req, res) => {
   });
 });
 
-// Delete job - accessible to customers (verifies ownership via myIds)
+// Delete job — customer proves ownership with the per-upload deleteToken
+// (handed back once at upload time). Admin token also works.
 app.delete("/api/jobs/:id", (req, res) => {
   const jobId = req.params.id;
-  const { myIds } = req.body || {};
+  const { deleteToken } = req.body || {};
 
-  if (!Array.isArray(myIds) || !myIds.includes(jobId)) {
+  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: "Job not found" });
+  }
+
+  const isAdmin = isValidAdminToken(req);
+  const tokenOk = job.deleteTokenHash && deleteToken &&
+    hashDeleteToken(deleteToken) === job.deleteTokenHash;
+  if (!isAdmin && !tokenOk) {
     return res.status(403).json({ success: false, error: "Not authorized to delete this job" });
   }
 
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
-
-  if (job) {
-    const filePath = path.join(UPLOADS_DIR, job.serverFileName);
-
-    // Delete physical file
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (e) {
-      console.warn("⚠️  Could not delete physical file");
-    }
-
-    db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
-    broadcastEvent("job-deleted", { id: jobId });
-    res.status(200).json({ success: true });
-  } else {
-    res.status(404).json({ success: false, error: "Job not found" });
+  const filePath = job.serverFileName ? path.join(UPLOADS_DIR, job.serverFileName) : null;
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn("⚠️  Could not delete physical file");
   }
+
+  db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+  broadcastEvent("job-deleted", { id: jobId });
+  res.status(200).json({ success: true });
 });
 
 // Accept a job awaiting review (cloud-sync jobs held back by auto_accept_cloud_jobs=false)
@@ -937,17 +975,22 @@ app.get("/api/files/localpath/:id", requireAdmin, (req, res) => {
 
 app.get("/api/files/public/:id", (req, res) => {
   try {
-    const job = db.prepare('SELECT serverFileName, fileName FROM jobs WHERE id = ?').get(req.params.id);
+    const job = db.prepare('SELECT serverFileName, fileName, fileType, status FROM jobs WHERE id = ?').get(req.params.id);
     if (!job || !job.serverFileName) {
       return res.status(404).json({ error: "File not found" });
+    }
+    // Don't serve files for jobs that haven't cleared review or were rejected.
+    if (["pending_review", "rejected", "REJECTED"].includes(job.status)) {
+      return res.status(404).json({ error: "File not available" });
     }
     const filePath = path.resolve(path.join(UPLOADS_DIR, job.serverFileName));
     if (!filePath.startsWith(path.resolve(UPLOADS_DIR))) {
       return res.status(403).json({ error: "Forbidden" });
     }
     if (fs.existsSync(filePath)) {
-      const safeName = job.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-      res.set("Content-Disposition", `inline; filename="${safeName}"`);
+      const safeName = (job.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, '_');
+      const inline = /^image\//.test(job.fileType || "") || job.fileType === "application/pdf";
+      res.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${safeName}"`);
       res.sendFile(filePath);
     } else {
       res.status(404).json({ error: "File not found" });

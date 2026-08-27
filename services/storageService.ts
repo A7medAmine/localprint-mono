@@ -101,6 +101,9 @@ class StorageService {
             const myJobs = this.getMyJobIds();
             myJobs.push(response.job.id);
             localStorage.setItem("my_upload_ids", JSON.stringify(myJobs));
+            if (response.deleteToken) {
+              this.setMyDeleteToken(response.job.id, response.deleteToken);
+            }
             resolve();
           } catch (e) {
             reject(new Error("Malformed response from server"));
@@ -138,6 +141,20 @@ class StorageService {
     } catch (e) {
       return [];
     }
+  }
+
+  private getMyDeleteTokens(): Record<string, string> {
+    try {
+      return JSON.parse(localStorage.getItem("my_upload_tokens") || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  private setMyDeleteToken(id: string, token: string) {
+    const map = this.getMyDeleteTokens();
+    map[id] = token;
+    localStorage.setItem("my_upload_tokens", JSON.stringify(map));
   }
 
   async getMyRecentJobs(): Promise<Partial<PrintJob>[]> {
@@ -214,13 +231,17 @@ class StorageService {
   }
 
   async deleteJob(id: string): Promise<void> {
-    const myJobs = this.getMyJobIds();
+    const deleteToken = this.getMyDeleteTokens()[id];
     await this.safeFetch(`/api/jobs/${id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ myIds: myJobs }),
+      body: JSON.stringify({ deleteToken }),
     });
-    localStorage.setItem("my_upload_ids", JSON.stringify(myJobs.filter((mid) => mid !== id)));
+    const myJobs = this.getMyJobIds().filter((mid) => mid !== id);
+    localStorage.setItem("my_upload_ids", JSON.stringify(myJobs));
+    const tokens = this.getMyDeleteTokens();
+    delete tokens[id];
+    localStorage.setItem("my_upload_tokens", JSON.stringify(tokens));
   }
 
   async acceptReviewJob(id: string): Promise<PrintJob> {

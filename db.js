@@ -108,6 +108,21 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentDate TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch (e) {}
+// Per-upload delete secret: sha256 of the token handed to the uploader once.
+try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch (e) {}
+
+// Clean up ghost rows from the old client-supplied-id bug (see Phase 2.1):
+// a row with a NULL id is unreachable from the admin UI. Remove their files too.
+try {
+  const uploadsDir = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, 'uploads');
+  const orphans = db.prepare(`SELECT serverFileName FROM jobs WHERE id IS NULL`).all();
+  for (const row of orphans) {
+    if (!row.serverFileName) continue;
+    try { fs.unlinkSync(path.join(uploadsDir, row.serverFileName)); } catch (e) {}
+  }
+  const del = db.prepare(`DELETE FROM jobs WHERE id IS NULL`).run();
+  if (del.changes) console.warn(`🧹 Removed ${del.changes} ghost job row(s) with NULL id`);
+} catch (e) { console.warn('⚠️  NULL-id job cleanup skipped:', e.message); }
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS cloud_imports (
