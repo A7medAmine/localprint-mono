@@ -231,7 +231,20 @@ class StorageService {
 
   async getSettings(): Promise<ShopSettings> {
     try {
-      const settings = await this.safeFetch("/api/settings");
+      // The public endpoint only returns allowlisted keys. When an admin token
+      // is present, fetch the full set (cloud config, printer defaults, ...);
+      // fall back to the public view if that call fails.
+      const hasToken = !!(this.authToken || localStorage.getItem("ps_admin_token"));
+      let settings: any;
+      if (hasToken) {
+        try {
+          settings = await this.safeFetch("/api/settings/admin");
+        } catch {
+          settings = await this.safeFetch("/api/settings");
+        }
+      } else {
+        settings = await this.safeFetch("/api/settings");
+      }
       const pricing = settings?.pricing
         ? {
             colorPerPage: Number(settings.pricing.colorPerPage) || 30.0,

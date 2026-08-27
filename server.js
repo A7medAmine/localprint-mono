@@ -32,6 +32,38 @@ function validateMagicBytes(filePath, mimeType) {
   );
 }
 
+// ── Settings exposure control ──
+// Keys the UNAUTHENTICATED public upload page is allowed to read. Anything not
+// listed here (secrets, cloud credentials, internal state) never leaves the
+// server on the public endpoint.
+const PUBLIC_SETTINGS_KEYS = new Set([
+  "shopName", "logoUrl", "pricing", "discounts",
+  "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
+  "currency",
+]);
+
+// Keys that must NEVER be serialized into any HTTP response, even for admins.
+const SECRET_SETTINGS_KEYS = new Set([
+  "_admin_tokens", "adminPassword", "gmailTokens", "gmailToken",
+]);
+
+function pickPublicSettings(settings) {
+  const out = {};
+  for (const key of PUBLIC_SETTINGS_KEYS) {
+    if (settings[key] !== undefined) out[key] = settings[key];
+  }
+  return out;
+}
+
+function stripSecretSettings(settings) {
+  const out = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (SECRET_SETTINGS_KEYS.has(key)) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 // ── Auth token management (persisted in DB) ──
 function loadTokens() {
   try {
@@ -853,8 +885,16 @@ function triggerCloudSettingsSync() {
   }).catch(() => {});
 }
 
+// Public settings — allowlisted keys only, no auth (used by the upload page)
 app.get("/api/settings", (req, res) => {
-  const settings = getSettings();
+  const settings = pickPublicSettings(getSettings());
+  settings.paperTypes = getPaperTypes();
+  res.status(200).json(settings);
+});
+
+// Full settings for the admin UI — secrets stripped, admin token required
+app.get("/api/settings/admin", requireAdmin, (req, res) => {
+  const settings = stripSecretSettings(getSettings());
   settings.paperTypes = getPaperTypes();
   res.status(200).json(settings);
 });
@@ -950,7 +990,7 @@ app.post("/api/settings", requireAdmin, (req, res) => {
       updateSetting('printerDefaults', clean);
     }
 
-    const settings = getSettings();
+    const settings = stripSecretSettings(getSettings());
     settings.paperTypes = getPaperTypes();
     res.status(200).json({ success: true, settings });
 
