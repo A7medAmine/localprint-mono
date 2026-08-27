@@ -87,8 +87,7 @@
       "utils/**/*",
       "dist/**/*",
       "public/**/*",
-      "package.json",
-      ".env"
+      "package.json"
     ],
     "extraMetadata": {
       "main": "electron/main.js"

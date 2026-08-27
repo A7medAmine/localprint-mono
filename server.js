@@ -294,14 +294,17 @@ const DB_PATH = process.env.PRINTSHOP_DB_PATH || path.join(__dirname, "database.
 
 const app = express();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Middleware — cap body sizes; uploads go through multer, not these.
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
-// CORS for development (allow frontend on different port)
+// CORS for development only (allow the Vite dev server on its own port).
+// Never enabled in a packaged build.
+// Vite dev server runs on :3000 and proxies /api to this server on :3001.
+const DEV_ORIGIN = process.env.DEV_CORS_ORIGIN || "http://localhost:3000";
 if (isDev) {
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "http://localhost:3000");
+    res.header("Access-Control-Allow-Origin", DEV_ORIGIN);
     res.header(
       "Access-Control-Allow-Methods",
       "GET, POST, PUT, DELETE, OPTIONS",
@@ -318,7 +321,8 @@ if (isDev) {
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
+  // X-XSS-Protection is deprecated and can introduce vulnerabilities — omitted
+  // deliberately; the CSP below is the real defence.
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   // pdf.js needs: 'wasm-unsafe-eval' (openjpeg/qcms WASM) in script-src,
   // blob: in worker-src (it spins module workers from Blob URLs) and img-src
