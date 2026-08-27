@@ -47,6 +47,24 @@ function validateMagicBytes(filePath, mimeType) {
   );
 }
 
+// ── Settings exposure control ──
+// The per-shop `settings` KV bag also holds internal keys (`_logo_filename`,
+// cached tokens, ...). The public price-calculator endpoint gets an allowlist
+// only; the shop's own desktop app pulls the full set over its shop token.
+const PUBLIC_SETTINGS_KEYS = new Set([
+  "shopName", "logoUrl", "pricing", "discounts",
+  "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
+  "currency",
+]);
+
+function pickPublicSettings(settings) {
+  const out = {};
+  for (const key of PUBLIC_SETTINGS_KEYS) {
+    if (settings[key] !== undefined) out[key] = settings[key];
+  }
+  return out;
+}
+
 // ── Shop token middleware — resolves which shop a Bearer token belongs to ──
 async function requireShopToken(req, res, next) {
   const auth = req.headers.authorization;
@@ -550,6 +568,13 @@ app.get("/api/s/:shopSlug/logo", resolveShopBySlug, async (req, res) => {
 
 // Get settings (public — used by price calculator)
 app.get("/api/s/:shopSlug/settings", resolveShopBySlug, async (req, res) => {
+  const settings = pickPublicSettings(await getSettings(req.shop.id));
+  settings.paperTypes = await getPaperTypes(req.shop.id);
+  res.status(200).json(settings);
+});
+
+// Full settings for the shop's own desktop app (shop token required)
+app.get("/api/shop/settings", requireShopToken, async (req, res) => {
   const settings = await getSettings(req.shop.id);
   settings.paperTypes = await getPaperTypes(req.shop.id);
   res.status(200).json(settings);
