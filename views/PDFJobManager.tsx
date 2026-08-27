@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { PDFDocument, PageSizes, degrees } from "pdf-lib";
-import * as pdfjsLib from "pdfjs-dist";
-import { getPdfWorkerUrl } from "../lib/pdfWorker";
+import { getPdfjs } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
 import { useLanguage } from "../lib/useLanguage";
 import { Button } from "../components/ui/button";
@@ -29,8 +28,6 @@ import { storageService } from "../services/storageService";
 import { toast } from "../components/ui/use-toast";
 import { isElectron, printData } from "../lib/electronPrint";
 import type { PrintJob, PrinterJobDefaults } from "../types";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl();
 
 interface PageEntry {
   id: string;
@@ -129,6 +126,7 @@ const PDFJobManager: React.FC = () => {
 
   const renderThumbnails = useCallback(async (buf: ArrayBuffer, pageEntries: PageEntry[]) => {
     try {
+      const pdfjsLib = await getPdfjs();
       const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
       const results: Record<string, string> = {};
       for (const entry of pageEntries) {
@@ -377,6 +375,7 @@ const PDFJobManager: React.FC = () => {
     if (!pdfBytes || pages.length === 0) return;
     setExporting(true);
     try {
+      const pdfjsLib = await getPdfjs();
       const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
       const scale = 2;
       for (let i = 0; i < pages.length; i++) {

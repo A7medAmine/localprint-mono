@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getPdfWorkerUrl } from "../../../lib/pdfWorker";
-
-let pdfjsLib: any = null;
-
-async function loadPdfjs() {
-  if (pdfjsLib) return pdfjsLib;
-  const pdfjs = await import("pdfjs-dist");
-  // Shared polyfilled worker — see lib/pdfWorker.ts for why.
-  pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl();
-  pdfjsLib = pdfjs;
-  return pdfjsLib;
-}
+import { getPdfjs } from "../../../lib/pdfRender";
 
 interface PdfRendererProps {
   src: string;
@@ -37,7 +26,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
       try {
         setLoading(true);
         setError(null);
-        const pdfjs = await loadPdfjs();
+        const pdfjs = await getPdfjs();
         const data = await fetch(src).then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.arrayBuffer();

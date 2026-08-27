@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { PDFDocument } from "pdf-lib";
+import { renderPdfFirstPageToDataUrl } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
 import { useLanguage } from "../lib/useLanguage";
 import { cn } from "../lib/utils";
@@ -38,33 +39,6 @@ const CARD_SIZES: { label: string; w: number; h: number }[] = [
   { label: "ID-3 (Passport) 125x88mm", w: 125, h: 88 },
 ];
 
-function renderPdfPageToDataUrl(buf: ArrayBuffer): Promise<string> {
-  return PDFDocument.load(buf).then(async (pdf) => {
-    const pages = pdf.getPages();
-    if (!pages.length) throw new Error("PDF has no pages");
-    const first = pages[0];
-    const { width, height } = first.getSize();
-    const s = 200 / 72;
-    const canvas = document.createElement("canvas");
-    canvas.width = width * s;
-    canvas.height = height * s;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Failed to get canvas context");
-    const blob = new Blob([buf], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    return new Promise<string>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/png"));
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Failed to render PDF")); };
-      img.src = url;
-    });
-  });
-}
-
 function readFileAsDataUrl(f: File | null | undefined): Promise<string> {
   if (!f) return Promise.reject(new Error("No file provided"));
   return new Promise((resolve, reject) => {
@@ -73,7 +47,8 @@ function readFileAsDataUrl(f: File | null | undefined): Promise<string> {
       reader.onerror = () => reject(new Error("Failed to read file"));
       reader.onload = (e) => {
         const buf = e.target?.result as ArrayBuffer;
-        renderPdfPageToDataUrl(buf).then(resolve).catch(reject);
+        // <img> can't rasterise PDF — go through the shared pdf.js path.
+        renderPdfFirstPageToDataUrl(buf).then(resolve).catch(reject);
       };
       reader.readAsArrayBuffer(f);
     } else if (f.type.startsWith("image/")) {
@@ -421,23 +396,37 @@ const CardIDTool: React.FC = () => {
   };
 
   const handleAddToJobs = async () => {
+    // Only open the form if we actually have a fresh PDF — a failed
+    // generatePdf() used to still open the form and let submitJob upload a
+    // stale blob (or nothing).
     const blob = await generatePdf();
     if (!blob) return;
     setShowJobForm(true);
   };
 
   const submitJob = async () => {
-    if (!lastPdfBlob || !jobName.trim()) return;
+    if (!jobName.trim()) return;
     setExportError("");
     setExporting(true);
     try {
-      const file = new File([lastPdfBlob], "id-cards.pdf", { type: "application/pdf" });
+      // Regenerate from current state — the user may have changed size/color/
+      // layout between opening the form and hitting "Add job".
+      const blob = await generatePdf();
+      if (!blob) throw new Error(exportError || "Could not generate the card PDF");
+      const file = new File([blob], "id-cards.pdf", { type: "application/pdf" });
       const metadata = JSON.stringify({
-        customer: jobName.trim(),
-        phone: jobPhone.trim(),
+        customerName: jobName.trim(),
+        phoneNumber: jobPhone.trim(),
         notes: jobNotes.trim(),
-        copies: 1,
-        duplex: true,
+        fileName: "id-cards.pdf",
+        status: "PENDING",
+        source: "card-tool",
+        printPreferences: {
+          // Server/pricing expect "blackWhite"/"color", not this tool's "bw".
+          colorMode: colorMode === "bw" ? "blackWhite" : "color",
+          copies: 1,
+          paperType: "cardboard",
+        },
       });
       const body = new FormData();
       body.append("file", file);
@@ -449,6 +438,7 @@ const CardIDTool: React.FC = () => {
       setJobPhone("");
       setJobNotes("");
       setLastPdfBlob(null);
+      toast({ title: isRtl ? "تمت إضافة المهمة" : "Job added", variant: "success" });
     } catch (e: any) {
       setExportError(e?.message || "Failed to add job");
     } finally {
