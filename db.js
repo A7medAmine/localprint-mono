@@ -3,6 +3,13 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { checkEnv } from './checkEnv.js';
+
+// db.js is the first module to touch process.env in anger (TOKEN_ENCRYPTION_KEY
+// below throws on a bad value). ESM evaluates imported modules before the
+// importer's body, so this is the earliest reliable point to fail loudly with
+// an actionable message instead of a raw throw / Electron white screen.
+checkEnv();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -384,6 +391,16 @@ export const adjustInventoryStock = (id, { amount, reason, note, jobId } = {}) =
   return tx();
 };
 
+// True if this job already had an auto-deduct applied to this item. Used to
+// keep applyAutoDeductForJob idempotent — toggling a job PRINTED→PENDING→PRINTED
+// must not deduct stock twice.
+export const hasAutoDeductForJob = (jobId, itemId) => {
+  if (!jobId || !itemId) return false;
+  return !!db.prepare(
+    "SELECT 1 FROM inventory_adjustments WHERE jobId = ? AND itemId = ? AND reason = 'auto_deduct' LIMIT 1"
+  ).get(jobId, itemId);
+};
+
 export const getInventoryAdjustments = (itemId, limit = 50) => {
   if (itemId) {
     return db.prepare('SELECT * FROM inventory_adjustments WHERE itemId = ? ORDER BY createdAt DESC, id DESC LIMIT ?').all(itemId, limit);
@@ -559,12 +576,18 @@ export const getPendingEmailById = (id) => {
   return row;
 };
 
-export function reopenDb() {
+// Fold the WAL back into the main database file, then close.
+// Do NOT delete the -wal / -shm files: if a checkpoint hasn't merged every
+// frame (readers still open, checkpoint starved), removing the WAL discards
+// those committed transactions. SQLite recreates and manages both files on
+// the next open — leave them alone.
+export function checkpointAndClose() {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (e) { /* best effort */ }
   try { db.close(); } catch (e) { /* already closed */ }
-  for (const ext of ['-wal', '-shm']) {
-    const p = dbPath + ext;
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-  }
+}
+
+export function reopenDb() {
+  checkpointAndClose();
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');

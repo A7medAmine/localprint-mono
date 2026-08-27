@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import dotenv from 'dotenv';
+import { checkEnv } from '../checkEnv.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -322,6 +323,27 @@ function isChromiumPrintable(fileType) {
 // Native print for a pdf/image on disk. A hidden BrowserWindow renders the
 // file, prints it, and is destroyed regardless of outcome so we don't leak
 // windows on driver errors.
+async function assertPrinterExists(printerName) {
+  if (!printerName) return; // empty === OS default, always valid
+  let list = [];
+  try {
+    const source = mainWindow?.webContents;
+    if (source) {
+      list = await source.getPrintersAsync();
+    } else {
+      const tmp = new BrowserWindow({ show: false });
+      try { list = await tmp.webContents.getPrintersAsync(); }
+      finally { tmp.destroy(); }
+    }
+  } catch { return; /* can't enumerate — let the print attempt surface it */ }
+  if (!list.some((p) => p.name === printerName)) {
+    throw new Error(
+      `Printer "${printerName}" was not found. It may be offline or removed — ` +
+      `pick a printer again in Settings.`,
+    );
+  }
+}
+
 function nativePrint({ filePath, printerName, silent, options }) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
@@ -489,6 +511,7 @@ ipcMain.handle('print-data', async (_event, payload) => {
       setTimeout(cleanup, 60_000);
       return { ok: true, handedOff: true };
     }
+    await assertPrinterExists(printerName);
     const result = await nativePrint({ filePath: tmpPath, printerName, silent, options });
     cleanup();
     return result;
@@ -517,11 +540,25 @@ ipcMain.handle('print-file', async (_event, payload) => {
     return { ok: true, handedOff: true };
   }
 
+  await assertPrinterExists(printerName);
   return nativePrint({ filePath, printerName, silent, options });
 });
 
 app.whenReady().then(async () => {
   buildMenu();
+
+  // Surface bad/missing env as a dialog instead of a white-screen window.
+  // (Packaged builds have already injected TOKEN_ENCRYPTION_KEY above.)
+  const envProblems = checkEnv({ exit: false });
+  if (envProblems.length) {
+    crashHandler(new Error(
+      'Cannot start — environment problems:\n\n' +
+      envProblems.map((p, i) => `${i + 1}. ${p}`).join('\n\n'),
+    ));
+    app.quit();
+    return;
+  }
+
   try {
     // Always embed the Express server in the Electron process. This keeps a
     // single better-sqlite3 build (against Electron's Node ABI) — running a
@@ -556,7 +593,7 @@ app.on('window-all-closed', () => {
 // a second handle.
 app.on('will-quit', async () => {
   try {
-    const { default: db } = await import('../db.js');
-    db.close();
+    const { checkpointAndClose } = await import('../db.js');
+    checkpointAndClose();
   } catch { /* nothing to close */ }
 });

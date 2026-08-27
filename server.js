@@ -6,11 +6,12 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import os from "os";
 import { PDFDocument } from "pdf-lib";
+import Database from "better-sqlite3";
 import { randomBytes, randomUUID, createHash, scryptSync, timingSafeEqual } from "crypto";
 
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
-import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount } from './db.js';
+import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
 
 // ── Magic byte signatures for file validation ──
 const MAGIC_BYTES = {
@@ -167,36 +168,6 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
-
-// ── Rate limiter (in-memory, per-IP) ──
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 5;         // 5 attempts per window
-
-function rateLimit(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || "unknown";
-  const now = Date.now();
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, []);
-  }
-  const timestamps = rateLimitMap.get(ip).filter(t => now - t < RATE_LIMIT_WINDOW);
-  if (timestamps.length >= RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: "Too many requests. Try again later." });
-  }
-  timestamps.push(now);
-  rateLimitMap.set(ip, timestamps);
-  next();
-}
-
-// Clean up stale rate-limit entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, timestamps] of rateLimitMap) {
-    const fresh = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
-    if (fresh.length === 0) rateLimitMap.delete(ip);
-    else rateLimitMap.set(ip, fresh);
-  }
-}, 300_000);
 
 // ── Generic sliding-window limiter factory (per-IP) ──
 function makeRateLimiter({ windowMs, max, message }) {
@@ -847,17 +818,24 @@ app.post("/api/jobs/bulk/delete", requireAdmin, (req, res) => {
   }
   const deleteStmt = db.prepare('SELECT * FROM jobs WHERE id = ?');
   const runStmt = db.prepare('DELETE FROM jobs WHERE id = ?');
+  // Collect file names inside the transaction, unlink AFTER it commits —
+  // filesystem ops aren't transactional, so a throw mid-loop would otherwise
+  // leave files deleted for rows that got rolled back.
+  const filesToDelete = [];
   const txn = db.transaction((jobIds) => {
     for (const id of jobIds) {
       const job = deleteStmt.get(id);
       if (job) {
-        const filePath = path.join(UPLOADS_DIR, job.serverFileName);
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+        if (job.serverFileName) filesToDelete.push(job.serverFileName);
         runStmt.run(id);
       }
     }
   });
   txn(ids);
+  for (const name of filesToDelete) {
+    const filePath = path.join(UPLOADS_DIR, name);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+  }
   res.status(200).json({ success: true, deleted: ids.length });
 });
 
@@ -937,13 +915,39 @@ app.post("/api/backup/restore", requireAdmin, uploadMemory.single("file"), (req,
   }
   const _dbPath = DB_PATH;
   const _backupPath = _dbPath + '.before_restore';
-  // Close the current connection before writing
-  try { db.close(); } catch (e) {}
+  const _incomingPath = _dbPath + '.incoming';
+
+  // 1. Write the upload to a scratch file and prove it's a healthy SQLite
+  //    database with our schema BEFORE touching the live file. A truncated
+  //    upload or a wrong-file paste used to overwrite the DB unconditionally.
   try {
-    if (fs.existsSync(_dbPath)) {
-      fs.copyFileSync(_dbPath, _backupPath);
+    fs.writeFileSync(_incomingPath, req.file.buffer);
+    const probe = new Database(_incomingPath, { readonly: true, fileMustExist: true });
+    try {
+      const integrity = probe.pragma('integrity_check', { simple: true });
+      if (integrity !== 'ok') throw new Error(`integrity_check failed: ${integrity}`);
+      const hasJobs = probe.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'"
+      ).get();
+      if (!hasJobs) throw new Error("not a PrintShop backup (no 'jobs' table)");
+    } finally {
+      probe.close();
     }
-    fs.writeFileSync(_dbPath, req.file.buffer);
+  } catch (e) {
+    try { fs.unlinkSync(_incomingPath); } catch (e2) {}
+    return res.status(400).json({ success: false, error: `Invalid backup file — ${e.message}` });
+  }
+
+  // 2. Checkpoint the WAL into the live file, close, swap, reopen.
+  checkpointAndClose();
+  try {
+    if (fs.existsSync(_dbPath)) fs.copyFileSync(_dbPath, _backupPath);
+    fs.renameSync(_incomingPath, _dbPath);
+    // A fresh restore starts from a clean file — stale WAL/SHM from the old
+    // database must not be replayed on top of it.
+    for (const ext of ['-wal', '-shm']) {
+      try { fs.unlinkSync(_dbPath + ext); } catch (e2) {}
+    }
     reopenDb();
     res.status(200).json({ success: true });
   } catch (e) {
@@ -1695,6 +1699,8 @@ function applyAutoDeductForJob(job, previousStatus) {
     if (sheets <= 0) return;
 
     for (const item of items) {
+      // Idempotency: never auto-deduct the same job/item twice (status toggles).
+      if (hasAutoDeductForJob(job.id, item.id)) continue;
       adjustInventoryStock(item.id, {
         amount: -sheets,
         reason: 'auto_deduct',
