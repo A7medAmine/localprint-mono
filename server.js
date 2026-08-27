@@ -934,18 +934,34 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
     }
 
     if (Array.isArray(discountRules)) {
+      // supabase-js has no client-side transaction, so do this defensively:
+      // snapshot the current rules, replace them, and restore the snapshot if
+      // the insert fails — otherwise a bad insert leaves the shop with zero
+      // discount rules.
+      const rows = discountRules.map(r => ({
+        ...r,
+        shop_id: shopId,
+        is_active: r.is_active ? 1 : 0,
+        created_at: r.created_at || new Date().toISOString(),
+      }));
+
+      const { data: prevRules, error: readErr } = await supabase
+        .from('discount_rules').select('*').eq('shop_id', shopId);
+      if (readErr) throw readErr;
+
       const { error: delErr } = await supabase.from('discount_rules').delete().eq('shop_id', shopId);
       if (delErr && delErr.code !== 'PGRST116') throw delErr;
-      if (discountRules.length > 0) {
-        const { error: insErr } = await supabase.from('discount_rules').insert(
-          discountRules.map(r => ({
-            ...r,
-            shop_id: shopId,
-            is_active: r.is_active ? 1 : 0,
-            created_at: r.created_at || new Date().toISOString(),
-          }))
-        );
-        if (insErr) throw insErr;
+
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase.from('discount_rules').insert(rows);
+        if (insErr) {
+          // Roll back to the snapshot before surfacing the error.
+          if (prevRules && prevRules.length > 0) {
+            await supabase.from('discount_rules').delete().eq('shop_id', shopId);
+            await supabase.from('discount_rules').insert(prevRules);
+          }
+          throw insErr;
+        }
       }
     }
 

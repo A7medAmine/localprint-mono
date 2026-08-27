@@ -2,6 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { createRemoteJWKSet, jwtVerify, errors as joseErrors } from 'jose';
 import { WebSocket } from 'ws';
 import { randomBytes, randomUUID, createHash } from 'crypto';
+import { checkEnv } from './checkEnv.js';
+
+// db.js is the first module to require real env values. ESM evaluates imported
+// modules before the importer's body, so this is the earliest reliable point
+// to fail with an actionable list instead of a raw throw.
+checkEnv();
 
 // Provide native WebSocket for environments that lack it (Alpine Node < 22)
 if (typeof globalThis.WebSocket === 'undefined') {
