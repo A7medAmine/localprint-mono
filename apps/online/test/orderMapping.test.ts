@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { ORDER_FIELD_MAP, toApiOrder, fromApiOrder } from "../utils/orderMapping.js";
+import {
+  ORDER_FIELDS,
+  ONLINE_ORDER_COLUMNS,
+  DESKTOP_ORDER_COLUMNS,
+  makeOrderMappers,
+} from "@localprint/shared/orderShape";
 
 // This round-trip is load-bearing: Phase 4.3 replaces the hand-built order
 // serializers in server.js with these mappers, so the camelCase <-> column
@@ -59,3 +65,42 @@ describe("order field mapping", () => {
     }
   });
 });
+
+// Phase 4.3: the canonical mappers now live in @localprint/shared/orderShape and
+// each app's db.js builds its toApi/fromApi from a column map. Guarantee the
+// lossless round-trip for BOTH backends (online lowercase columns, desktop
+// camelCase columns) and that neither map invents a field outside the canonical
+// order shape.
+const BACKENDS = [
+  ["online", ONLINE_ORDER_COLUMNS],
+  ["desktop", DESKTOP_ORDER_COLUMNS],
+] as const;
+
+for (const [name, columnMap] of BACKENDS) {
+  describe(`shared order mappers (${name})`, () => {
+    const { toApi, fromApi } = makeOrderMappers(columnMap);
+    const fields = Object.keys(columnMap);
+    const columns = Object.values(columnMap);
+
+    it("only maps fields in the canonical ORDER_FIELDS list", () => {
+      for (const field of fields) expect(ORDER_FIELDS).toContain(field);
+    });
+
+    it("round-trips a full db row db -> API -> db losslessly", () => {
+      const row: Record<string, unknown> = {};
+      for (const col of columns) row[col] = `v_${col}`;
+      expect(fromApi(toApi(row))).toEqual(row);
+    });
+
+    it("round-trips a full API object API -> db -> API losslessly", () => {
+      const api: Record<string, unknown> = {};
+      for (const field of fields) api[field] = `v_${field}`;
+      expect(toApi(fromApi(api))).toEqual(api);
+    });
+
+    it("drops unknown / server-internal keys in both directions", () => {
+      expect(toApi({ shop_id: "s", user_id: "u", nope: 1 })).toEqual({});
+      expect(fromApi({ somethingEntirelyUnknown: 1 })).toEqual({});
+    });
+  });
+}

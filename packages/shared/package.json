@@ -12,6 +12,7 @@
     "./http": "./src/http.js",
     "./pricing": "./src/pricing.js",
     "./discountLogic": "./src/discountLogic.js",
+    "./orderShape": "./src/orderShape.js",
     "./tailwind-preset": "./tailwind-preset.js"
   },
   "dependencies": {
