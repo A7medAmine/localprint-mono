@@ -10,6 +10,7 @@ uploads
 node_modules
 dist
 dist-ssr
+.codegraph
 *.local
 db.json
 uploads

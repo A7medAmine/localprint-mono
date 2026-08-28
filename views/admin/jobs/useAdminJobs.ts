@@ -89,6 +89,44 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const [singleDeleteConfirm, setSingleDeleteConfirm] = useState<string | null>(null);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printOptionsJob, setPrintOptionsJob] = useState<PrintJob | null>(null);
+  const [recentlyChanged, setRecentlyChanged] = useState<Set<string>>(new Set());
+
+  // Job ids present at the last load, so a soft refresh can highlight only the
+  // rows that are genuinely new. Timers clear each highlight after a short beat.
+  const prevJobIdsRef = useRef<Set<string>>(new Set());
+  const highlightTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const markRecentlyChanged = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setRecentlyChanged((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+    ids.forEach((id) => {
+      if (highlightTimersRef.current[id]) clearTimeout(highlightTimersRef.current[id]);
+      highlightTimersRef.current[id] = setTimeout(() => {
+        setRecentlyChanged((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        delete highlightTimersRef.current[id];
+      }, 2500);
+    });
+  }, []);
+
+  // Remove a single job in place (SSE job-deleted) without a full refetch,
+  // dropping the customer group once its last job is gone.
+  const removeJobById = useCallback((id: string) => {
+    setGroups((prev) =>
+      prev
+        .map((g) => ({ ...g, jobs: g.jobs.filter((j) => j.id !== id) }))
+        .filter((g) => g.jobs.length > 0),
+    );
+    setReviewJobs((prev) => prev.filter((j) => j.id !== id));
+    prevJobIdsRef.current.delete(id);
+  }, []);
 
   const loadPrinters = useCallback(async () => {
     if (!isElectron()) return;
@@ -135,8 +173,11 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     setJobPageCounts(pageCounts);
   }, []);
 
-  const loadJobs = useCallback(async () => {
-    setLoading(true);
+  const loadJobs = useCallback(async (opts?: { soft?: boolean }) => {
+    const soft = opts?.soft === true;
+    // A soft refresh (SSE-driven) skips the skeleton so the list doesn't flash
+    // and scroll-jump; a hard load (mount / explicit action) shows it.
+    if (!soft) setLoading(true);
     const allData = await storageService.getMetadata();
     const data = allData.filter((j) => (j.status as string) !== "pending_review");
     setReviewJobs(allData.filter((j) => (j.status as string) === "pending_review"));
@@ -161,10 +202,17 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     sortedGroups.forEach((group) => {
       group.jobs.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
     });
+    // On a soft refresh, highlight rows that weren't in the previous snapshot.
+    const nextIds = new Set(data.map((j) => j.id));
+    if (soft) {
+      const added = data.filter((j) => !prevJobIdsRef.current.has(j.id)).map((j) => j.id);
+      markRecentlyChanged(added);
+    }
+    prevJobIdsRef.current = nextIds;
     setGroups(sortedGroups);
-    setLoading(false);
+    if (!soft) setLoading(false);
     countPagesForAllJobs(sortedGroups);
-  }, [countPagesForAllJobs]);
+  }, [countPagesForAllJobs, markRecentlyChanged]);
 
   const loadJobsRef = useRef(loadJobs);
   loadJobsRef.current = loadJobs;
@@ -173,7 +221,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     loadJobsRef.current();
     loadPrinters();
     const es = new EventSource("/api/events");
-    es.addEventListener("new-job", () => loadJobsRef.current());
+    es.addEventListener("new-job", () => loadJobsRef.current({ soft: true }));
     es.addEventListener("cloud-job-imported", (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data);
@@ -181,11 +229,21 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         toast({ title: rtl ? `طلب جديد من الرفع الإلكتروني: ${label}` : `New online upload: ${label}`, variant: "success" });
         new Audio("/notification.mp3").play().catch(() => {});
       } catch {}
-      loadJobsRef.current();
+      loadJobsRef.current({ soft: true });
     });
-    es.addEventListener("job-deleted", () => loadJobsRef.current());
+    es.addEventListener("job-deleted", (e) => {
+      let id: string | undefined;
+      try {
+        id = JSON.parse((e as MessageEvent).data)?.id;
+      } catch {}
+      if (id) removeJobById(id);
+      else loadJobsRef.current({ soft: true });
+    });
     es.onerror = () => {};
-    return () => es.close();
+    return () => {
+      es.close();
+      Object.values(highlightTimersRef.current).forEach((t) => clearTimeout(t));
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -710,6 +768,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     singleDeleteConfirm,
     setSingleDeleteConfirm,
     printers,
+    recentlyChanged,
     printOptionsJob,
     setPrintOptionsJob,
     printJobWithOptions,
