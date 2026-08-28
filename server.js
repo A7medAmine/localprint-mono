@@ -1107,6 +1107,9 @@ app.post("/api/settings", requireAdmin, (req, res) => {
     if (req.body.returnPolicy !== undefined) {
       updateSetting('returnPolicy', req.body.returnPolicy);
     }
+    if (req.body.currency !== undefined) {
+      updateSetting('currency', String(req.body.currency || ''));
+    }
     if (req.body.cloudSyncUrl !== undefined) {
       updateSetting('cloudSyncUrl', req.body.cloudSyncUrl);
     }

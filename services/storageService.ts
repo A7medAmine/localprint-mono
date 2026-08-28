@@ -215,6 +215,7 @@ class StorageService {
     address?: string;
     workingHours?: string;
     returnPolicy?: string;
+    currency?: string;
     cloudSyncUrl?: string;
     shopApiToken?: string;
     cloudSyncPollInterval?: string;
@@ -302,6 +303,7 @@ class StorageService {
         address: settings?.address || undefined,
         workingHours: settings?.workingHours || undefined,
         returnPolicy: settings?.returnPolicy || undefined,
+        currency: settings?.currency || undefined,
         cloudSyncUrl: settings?.cloudSyncUrl || undefined,
         shopApiToken: settings?.shopApiToken || undefined,
         cloudSyncPollInterval: settings?.cloudSyncPollInterval || undefined,

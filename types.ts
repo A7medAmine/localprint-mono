@@ -57,6 +57,8 @@ export interface ShopSettings {
   address?: string;
   workingHours?: string;
   returnPolicy?: string;
+  /** ISO-ish currency label shown next to prices (e.g. "DZD", "USD"). */
+  currency?: string;
   cloudSyncUrl?: string;
   shopApiToken?: string;
   cloudSyncPollInterval?: string;
