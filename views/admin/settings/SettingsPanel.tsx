@@ -141,7 +141,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     if (clean(returnPolicy, prev?.returnPolicy ?? "")) setReturnPolicy(currentSettings.returnPolicy || "");
     if (clean(cloudSyncUrl, prev?.cloudSyncUrl ?? "")) setCloudSyncUrl(currentSettings.cloudSyncUrl || "");
     if (clean(shopApiToken, prev?.shopApiToken ?? "")) setShopApiToken(currentSettings.shopApiToken || "");
-    if (clean(cloudSyncPollInterval, prev?.cloudSyncPollInterval ?? "30000")) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval || "30000");
+    if (clean(cloudSyncPollInterval, prev?.cloudSyncPollInterval || "30000")) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval || "30000");
     if (clean(autoAcceptCloudJobs, prev ? prev.autoAcceptCloudJobs !== false : undefined)) setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
     if (clean(autoDeductStock, prev ? prev.autoDeductStock === true : undefined)) setAutoDeductStock(currentSettings.autoDeductStock === true);
     if (clean(defaultPrinterName, prev?.defaultPrinterName ?? "")) setDefaultPrinterName(currentSettings.defaultPrinterName || "");

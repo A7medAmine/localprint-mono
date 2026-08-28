@@ -247,13 +247,15 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
               <h1 className="text-xl font-bold mt-0.5">{step.title}</h1>
               <p className="text-sm text-indigo-100 mt-0.5">{step.subtitle}</p>
             </div>
-            <button
-              type="button"
-              onClick={finish}
-              className="text-xs font-medium text-indigo-100 hover:text-white underline underline-offset-2"
-            >
-              {tr("تخطٍّ الآن", "Skip for now")}
-            </button>
+            {step.id !== "password" && (
+              <button
+                type="button"
+                onClick={finish}
+                className="text-xs font-medium text-indigo-100 hover:text-white underline underline-offset-2"
+              >
+                {tr("تخطٍّ الآن", "Skip for now")}
+              </button>
+            )}
           </div>
           {/* Progress dots */}
           <div className="flex items-center gap-1.5 mt-4">
