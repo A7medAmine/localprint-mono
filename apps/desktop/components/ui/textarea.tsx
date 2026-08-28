@@ -1,18 +1,2 @@
-import * as React from "react";
-import { cn } from "@localprint/shared";
-
-const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => (
-    <textarea
-      className={cn(
-        "flex min-h-[80px] w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-        className,
-      )}
-      ref={ref}
-      {...props}
-    />
-  ),
-);
-Textarea.displayName = "Textarea";
-
-export { Textarea };
+// Re-export shim. Real module lives in @localprint/shared (packages/shared/src/components/ui/textarea).
+export * from "@localprint/shared/components/ui/textarea";

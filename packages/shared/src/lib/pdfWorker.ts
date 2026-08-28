@@ -18,7 +18,10 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 // with "getOrInsertComputed is not a function" on the main thread's
 // rendering path. Mirror the worker patch here — see
 // scripts/patch-pdfjs-worker.js for the full rationale.
-if (typeof Uint8Array.prototype.toHex !== "function") {
+// Cast the guard so this file carries no dependency on a global
+// `interface Uint8Array { toHex }` augmentation — it now compiles inside both
+// apps' tsc programs (desktop declares that global, online does not).
+if (typeof (Uint8Array.prototype as { toHex?: unknown }).toHex !== "function") {
   // eslint-disable-next-line no-extend-native
   Object.defineProperty(Uint8Array.prototype, "toHex", {
     value: function toHex(this: Uint8Array) {
