@@ -23,7 +23,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../components/ui/dialog";
-import { cn } from "../lib/utils";
+import { cn } from "@localprint/shared";
 import { storageService } from "../services/storageService";
 import { toast } from "../components/ui/use-toast";
 import { isElectron, printData } from "../lib/electronPrint";

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { DiscountRule, DiscountType, ConditionType, PaperType, PrinterJobDefaults } from "../../../types";
 import { storageService } from "../../../services/storageService";
 import { isElectron, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
-import { cn } from "../../../lib/utils";
+import { cn } from "@localprint/shared";
 import { toast } from "../../../components/ui/use-toast";
 import {
   AlertDialog,

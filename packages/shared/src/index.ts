@@ -1,7 +1,6 @@
 // @localprint/shared
 //
-// Phase 4.2 relocates the deduplicated modules here — file validation, pricing
-// and discount math, order-field mapping, and the PDF page-count helper — each
-// as its own module re-exported below. For the 4.1 scaffold this is an empty
-// placeholder so the workspace resolves.
-export {};
+// Phase 4.2 relocates the deduplicated modules here — each as its own module
+// re-exported below. Both apps import them via the "@localprint/shared"
+// specifier (mapped to ./src in each app's tsconfig paths + vite alias).
+export * from "./utils";

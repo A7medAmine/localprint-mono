@@ -3,7 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import { renderPdfFirstPageToDataUrl } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
 import { useLanguage } from "../lib/useLanguage";
-import { cn } from "../lib/utils";
+import { cn } from "@localprint/shared";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
