@@ -33,6 +33,7 @@ import supabase, {
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
 import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
+import { calculatePrintPrice, calculateJobDiscount } from '@localprint/shared/pricing';
 
 // ── Magic byte validation ──
 // Signature table + matcher live in @localprint/shared/validation (shared, tested).
@@ -469,13 +470,43 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
       profile = await getProfile(req.userId);
     }
 
-    // Customer-quoted price (may include discounts) sent by the client.
-    // Stored so past-uploads views don't have to refetch shop settings just
-    // to recompute the number the customer already saw.
-    const quotedPrice =
-      typeof metadata.quotedPrice === 'number' && Number.isFinite(metadata.quotedPrice) && metadata.quotedPrice >= 0
-        ? metadata.quotedPrice
-        : null;
+    // Server-side price authority. Rather than trusting the client's quoted
+    // number, recompute the price here with the SAME shared calculator the
+    // client uses (@localprint/shared/pricing) against this shop's real
+    // settings, paper types and active discount rules. The client quote is
+    // advisory only; the number we persist is ours.
+    const priceSettings = await getSettings(req.shop.id);
+    priceSettings.paperTypes = await getPaperTypes(req.shop.id);
+    const activeRules = await getActiveDiscountRules(req.shop.id);
+
+    // Best page count the server can stand behind: exact for PDFs (counted
+    // above), 1 for images, size-estimate otherwise (we can't render a DOCX to
+    // count it, so we mirror the shared getActualPageCount fallback).
+    const authoritativePages =
+      pageCount && pageCount > 0
+        ? pageCount
+        : req.file.mimetype.includes('image')
+        ? 1
+        : Math.max(1, Math.ceil(req.file.size / 75000));
+
+    const priceJob = {
+      printPreferences: {
+        colorMode: metadata.printPreferences?.colorMode || 'color',
+        copies: metadata.printPreferences?.copies || 1,
+        paperType: metadata.printPreferences?.paperType || 'normal',
+      },
+    };
+    const priceCalc = calculatePrintPrice(priceJob, priceSettings, authoritativePages);
+    const discountResult = calculateJobDiscount(priceJob, priceCalc.totalPrice, priceCalc.totalPages, activeRules);
+    const serverPrice = discountResult.finalAmount;
+
+    // Surface tampering / stale quotes without failing the upload.
+    const clientQuote = typeof metadata.quotedPrice === 'number' && Number.isFinite(metadata.quotedPrice)
+      ? metadata.quotedPrice
+      : null;
+    if (clientQuote !== null && Math.abs(clientQuote - serverPrice) > 0.01) {
+      console.warn(`⚠️  Price mismatch on upload (shop ${req.shop.id}): client quoted ${clientQuote}, server computed ${serverPrice}. Using server price.`);
+    }
 
     // Server owns the id and the delete secret — never the client.
     const orderId = randomUUID();
@@ -500,7 +531,7 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
       colormode: metadata.printPreferences?.colorMode || 'color',
       copies: metadata.printPreferences?.copies || 1,
       papertype: metadata.printPreferences?.paperType || 'normal',
-      total_price: quotedPrice,
+      total_price: serverPrice,
       source: 'upload',
       shopsyncstatus: 'pending',
     };
@@ -524,6 +555,7 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
       colorMode: newOrder.colormode,
       copies: newOrder.copies,
       paperType: newOrder.papertype,
+      totalPrice: newOrder.total_price,
       source: newOrder.source,
       shopSyncStatus: newOrder.shopsyncstatus,
     };
