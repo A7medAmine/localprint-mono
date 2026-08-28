@@ -25,7 +25,6 @@ uploads
 *.sw?
 .env
 env
-AGENTS.md
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
