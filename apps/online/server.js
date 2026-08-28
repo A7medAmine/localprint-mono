@@ -31,7 +31,7 @@ import supabase, {
   getCustomerOrders,
 } from './db.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
-import { countPdfPagesFromBuffer } from './utils/pdfPageCount.js';
+import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
 
 // ── Magic byte validation ──
 // Signature table + matcher live in @localprint/shared/validation (shared, tested).

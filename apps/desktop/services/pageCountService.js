@@ -1,10 +1,9 @@
 import fs from 'fs';
-import { PDFDocument } from 'pdf-lib';
+import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
 
 async function countPdfPages(fullPath) {
   const bytes = fs.readFileSync(fullPath);
-  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
-  return pdf.getPageCount();
+  return countPdfPagesFromBuffer(bytes);
 }
 
 function estimateDocxPages(fullPath) {

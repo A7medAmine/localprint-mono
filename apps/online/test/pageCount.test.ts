@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { countPdfPagesFromBuffer } from "../utils/pdfPageCount.js";
+import { countPdfPagesFromBuffer } from "@localprint/shared/pdf";
 
 async function makePdf(pages: number): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
