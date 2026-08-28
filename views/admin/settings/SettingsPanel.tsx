@@ -65,6 +65,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
   const [shopName, setShopName] = useState(currentSettings.shopName);
   const [logoUrl, setLogoUrl] = useState<string | null>(currentSettings.logoUrl);
+  const [currency, setCurrency] = useState(currentSettings.currency || "");
+  // Which section is mid-save — drives the per-section button spinners/disabled
+  // state. Each card owns its own Save now; there is no global save.
+  const [savingSection, setSavingSection] = useState<string | null>(null);
   const [paperTypes, setPaperTypes] = useState<PaperType[]>(
     currentSettings.paperTypes && currentSettings.paperTypes.length > 0
       ? currentSettings.paperTypes
@@ -112,26 +116,38 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   });
   const [deleteRuleConfirm, setDeleteRuleConfirm] = useState<string | null>(null);
 
-  // Re-sync the draft when the saved settings change (e.g. after another save,
-  // or a cloud settings pull).
+  // Re-sync the draft when the SAVED settings change — initial load, a cloud
+  // settings pull, a logo upload, or (now that each card saves on its own) a
+  // sibling section's save. Only adopt the incoming value for a field the user
+  // hasn't edited since the last sync, so saving one section never wipes out
+  // another section's in-progress edits.
+  const prevSyncedRef = React.useRef<typeof currentSettings | null>(null);
   useEffect(() => {
-    setShopName(currentSettings.shopName);
-    setLogoUrl(currentSettings.logoUrl);
-    if (currentSettings.paperTypes && currentSettings.paperTypes.length > 0) {
+    const prev = prevSyncedRef.current;
+    // "clean" = the draft still matches what we last synced, i.e. untouched.
+    const clean = (local: any, prevVal: any) =>
+      prev === null || JSON.stringify(local) === JSON.stringify(prevVal);
+
+    if (clean(shopName, prev?.shopName)) setShopName(currentSettings.shopName);
+    if (clean(logoUrl, prev?.logoUrl ?? null)) setLogoUrl(currentSettings.logoUrl);
+    if (clean(currency, prev?.currency ?? "")) setCurrency(currentSettings.currency || "");
+    if (currentSettings.paperTypes && currentSettings.paperTypes.length > 0 && clean(paperTypes, prev?.paperTypes)) {
       setPaperTypes(currentSettings.paperTypes);
     }
-    if (currentSettings.phoneNumbers) setPhoneNumbers(currentSettings.phoneNumbers);
-    if (currentSettings.email) setEmail(currentSettings.email);
-    if (currentSettings.address) setAddress(currentSettings.address);
-    if (currentSettings.workingHours) setWorkingHours(currentSettings.workingHours);
-    if (currentSettings.returnPolicy) setReturnPolicy(currentSettings.returnPolicy);
-    if (currentSettings.cloudSyncUrl) setCloudSyncUrl(currentSettings.cloudSyncUrl);
-    if (currentSettings.shopApiToken) setShopApiToken(currentSettings.shopApiToken);
-    if (currentSettings.cloudSyncPollInterval) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval);
-    setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
-    setAutoDeductStock(currentSettings.autoDeductStock === true);
-    setDefaultPrinterName(currentSettings.defaultPrinterName || "");
-    setPrinterDefaults(currentSettings.printerDefaults || {});
+    if (clean(phoneNumbers, prev?.phoneNumbers ?? [])) setPhoneNumbers(currentSettings.phoneNumbers || []);
+    if (clean(email, prev?.email ?? "")) setEmail(currentSettings.email || "");
+    if (clean(address, prev?.address ?? "")) setAddress(currentSettings.address || "");
+    if (clean(workingHours, prev?.workingHours ?? "")) setWorkingHours(currentSettings.workingHours || "");
+    if (clean(returnPolicy, prev?.returnPolicy ?? "")) setReturnPolicy(currentSettings.returnPolicy || "");
+    if (clean(cloudSyncUrl, prev?.cloudSyncUrl ?? "")) setCloudSyncUrl(currentSettings.cloudSyncUrl || "");
+    if (clean(shopApiToken, prev?.shopApiToken ?? "")) setShopApiToken(currentSettings.shopApiToken || "");
+    if (clean(cloudSyncPollInterval, prev?.cloudSyncPollInterval ?? "30000")) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval || "30000");
+    if (clean(autoAcceptCloudJobs, prev ? prev.autoAcceptCloudJobs !== false : undefined)) setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
+    if (clean(autoDeductStock, prev ? prev.autoDeductStock === true : undefined)) setAutoDeductStock(currentSettings.autoDeductStock === true);
+    if (clean(defaultPrinterName, prev?.defaultPrinterName ?? "")) setDefaultPrinterName(currentSettings.defaultPrinterName || "");
+    if (clean(printerDefaults, prev?.printerDefaults ?? {})) setPrinterDefaults(currentSettings.printerDefaults || {});
+
+    prevSyncedRef.current = currentSettings;
   }, [currentSettings]);
 
   const loadPrinters = React.useCallback(async () => {
@@ -278,32 +294,120 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     }
   };
 
-  const handleAddPaperType = () => {
+  // Paper types persist immediately via the granular /api/paper-types endpoints
+  // (create/update/delete) instead of the old bulk settings save, which wiped
+  // and rebuilt the whole table — and every inventory link — on every save. Keep
+  // the App-level settings in sync so job cost calc / upload see edits at once.
+  const syncPaperTypes = (next: PaperType[]) => {
+    setPaperTypes(next);
+    onSettingsUpdate({ ...currentSettings, paperTypes: next });
+  };
+
+  const handleAddPaperType = async () => {
     if (!newPaperTypeForm.name.trim()) return;
-    const newId = `pt_${Date.now()}`;
-    const newPt: PaperType = { id: newId, name: newPaperTypeForm.name.trim(), nameAr: newPaperTypeForm.nameAr.trim() || newPaperTypeForm.name.trim(), colorPerPage: newPaperTypeForm.colorPerPage, blackWhitePerPage: newPaperTypeForm.blackWhitePerPage };
-    setPaperTypes((prev) => [...prev, newPt]);
-    setShowAddPaperTypeForm(false);
-    setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
-    toast({ title: isRtl ? "تم إضافة نوع الورق. لا تنس حفظ الإعدادات!" : "Paper type added. Don't forget to save settings!", variant: "success" });
+    const newPt: PaperType = {
+      id: `pt_${Date.now()}`,
+      name: newPaperTypeForm.name.trim(),
+      nameAr: newPaperTypeForm.nameAr.trim() || newPaperTypeForm.name.trim(),
+      colorPerPage: newPaperTypeForm.colorPerPage,
+      blackWhitePerPage: newPaperTypeForm.blackWhitePerPage,
+    };
+    try {
+      const created = await storageService.createPaperType(newPt);
+      syncPaperTypes([...paperTypes, created || newPt]);
+      setShowAddPaperTypeForm(false);
+      setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
+      toast({ title: isRtl ? "تم إضافة نوع الورق" : "Paper type added", variant: "success" });
+    } catch (err: any) {
+      toast({ title: isRtl ? "فشل إضافة نوع الورق" : "Failed to add paper type", description: err?.message, variant: "destructive" });
+    }
   };
 
-  const handleSavePaperType = (id: string) => {
+  const handleSavePaperType = async (id: string) => {
     if (!editingPaperTypeForm) return;
-    setPaperTypes((prev) => prev.map((pt) => (pt.id === id ? { ...pt, ...editingPaperTypeForm } : pt)));
-    setEditingPaperTypeId(null);
-    setEditingPaperTypeForm(null);
+    try {
+      const updated = await storageService.updatePaperType(id, editingPaperTypeForm);
+      syncPaperTypes(paperTypes.map((pt) => (pt.id === id ? { ...pt, ...(updated || editingPaperTypeForm) } : pt)));
+      setEditingPaperTypeId(null);
+      setEditingPaperTypeForm(null);
+      toast({ title: isRtl ? "تم حفظ نوع الورق" : "Paper type saved", variant: "success" });
+    } catch (err: any) {
+      toast({ title: isRtl ? "فشل حفظ نوع الورق" : "Failed to save paper type", description: err?.message, variant: "destructive" });
+    }
   };
 
-  const handleDeletePaperType = (id: string) => {
-    setPaperTypes((prev) => prev.filter((pt) => pt.id !== id));
+  const handleDeletePaperType = async (id: string) => {
+    try {
+      await storageService.deletePaperType(id);
+      syncPaperTypes(paperTypes.filter((pt) => pt.id !== id));
+      toast({ title: isRtl ? "تم حذف نوع الورق" : "Paper type deleted", variant: "success" });
+    } catch (err: any) {
+      toast({ title: isRtl ? "فشل حذف نوع الورق" : "Failed to delete paper type", description: err?.message, variant: "destructive" });
+    }
   };
 
-  const saveSettings = async () => {
-    await storageService.saveSettings({ shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock, defaultPrinterName, printerDefaults });
-    onSettingsUpdate({ ...currentSettings, shopName, paperTypes, phoneNumbers, email, address, workingHours, returnPolicy, cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs, autoDeductStock, defaultPrinterName, printerDefaults });
-    toast({ title: isRtl ? "تم الحفظ بنجاح" : "Settings saved successfully", variant: "success" });
+  // Each section persists only its own keys via a partial POST /api/settings
+  // (the server guards every field with !== undefined). paperTypes are handled
+  // separately by the granular endpoints above, so no section sends them.
+  const persistSection = async (
+    section: string,
+    subset: Parameters<typeof storageService.saveSettings>[0],
+  ) => {
+    setSavingSection(section);
+    try {
+      await storageService.saveSettings(subset);
+      onSettingsUpdate({ ...currentSettings, ...subset });
+      toast({ title: isRtl ? "تم الحفظ بنجاح" : "Saved successfully", variant: "success" });
+    } catch (err: any) {
+      toast({ title: isRtl ? "فشل الحفظ" : "Save failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setSavingSection(null);
+    }
   };
+
+  const saveShopInfo = () =>
+    persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy });
+  const saveCloudSync = () =>
+    persistSection("cloud", { cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
+  const saveInventory = () => persistSection("inventory", { autoDeductStock });
+  const savePrinters = () => persistSection("printers", { defaultPrinterName, printerDefaults });
+
+  // Per-section dirty flags — drive each Save button's enabled state so one
+  // section's Save never silently ships another section's half-made edits.
+  const eq = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+  const shopDirty =
+    shopName !== currentSettings.shopName ||
+    currency !== (currentSettings.currency || "") ||
+    !eq(phoneNumbers, currentSettings.phoneNumbers || []) ||
+    email !== (currentSettings.email || "") ||
+    address !== (currentSettings.address || "") ||
+    workingHours !== (currentSettings.workingHours || "") ||
+    returnPolicy !== (currentSettings.returnPolicy || "");
+  const cloudDirty =
+    cloudSyncUrl !== (currentSettings.cloudSyncUrl || "") ||
+    shopApiToken !== (currentSettings.shopApiToken || "") ||
+    cloudSyncPollInterval !== (currentSettings.cloudSyncPollInterval || "30000") ||
+    autoAcceptCloudJobs !== (currentSettings.autoAcceptCloudJobs !== false);
+  const inventoryDirty = autoDeductStock !== (currentSettings.autoDeductStock === true);
+  const printersDirty =
+    defaultPrinterName !== (currentSettings.defaultPrinterName || "") ||
+    !eq(printerDefaults, currentSettings.printerDefaults || {});
+
+  const renderSaveBar = (dirty: boolean, section: string, onSave: () => void) => (
+    <div className="flex items-center justify-end gap-3 pt-3 mt-1 border-t border-gray-100 dark:border-gray-800">
+      {dirty && (
+        <span className="text-xs text-amber-600 dark:text-amber-400">
+          {isRtl ? "تغييرات غير محفوظة" : "Unsaved changes"}
+        </span>
+      )}
+      <Button onClick={onSave} disabled={!dirty || savingSection === section} size="sm" className="gap-1.5">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        </svg>
+        {savingSection === section ? (isRtl ? "جارٍ الحفظ..." : "Saving…") : (isRtl ? "حفظ" : "Save")}
+      </Button>
+    </div>
+  );
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -336,6 +440,43 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
             {/* Settings Grid — all cards sit in one grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* QR Poster Card — promoted to the top: it's the fastest way for a
+                  shop to get customers uploading, so it leads the settings page. */}
+              <Card className="lg:col-span-2 border-0 bg-indigo-50/50 dark:bg-indigo-950/20 ring-1 ring-indigo-100 dark:ring-indigo-900/40">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">{isRtl ? "ملصق QR للمتجر" : "Shop QR Poster"}</CardTitle>
+                      <CardDescription>
+                        {isRtl
+                          ? "أنشئ ملصق A4 بشعار المتجر ورمز QR جاهزًا للطباعة والعرض"
+                          : "Generate an A4 poster with your shop branding and QR, ready to print and display"}
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md">
+                      {isRtl
+                        ? "يمكنك اختيار رابط الشبكة المحلية أو رابط الموقع الإلكتروني قبل الطباعة."
+                        : "Pick the local-network link or the online website link before printing."}
+                    </p>
+                    <Button onClick={() => setQrPosterOpen(true)} className="gap-2 w-full sm:w-auto">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4h12v5M6 18h12v-6H6zM6 14H4a2 2 0 01-2-2V9a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2" />
+                      </svg>
+                      {isRtl ? "فتح ملصق QR" : "Open QR Poster"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Shop Info Card */}
               <Card className="border-0">
                 <CardHeader>
@@ -419,6 +560,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopReturnPolicy")}</label>
                     <textarea value={returnPolicy} onChange={(e) => setReturnPolicy(e.target.value)} rows={3} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y" placeholder={isRtl ? "سياسة الإرجاع" : "Return policy details..."} />
                   </div>
+
+                  {/* Currency */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{isRtl ? "العملة" : "Currency"}</label>
+                    <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder={isRtl ? "مثال: DZD" : "e.g. DZD"} />
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{isRtl ? "تظهر بجانب الأسعار في جميع أنحاء التطبيق." : "Shown next to prices across the app."}</p>
+                  </div>
+
+                  {renderSaveBar(shopDirty, "shop", saveShopInfo)}
                 </CardContent>
               </Card>
 
@@ -777,42 +927,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     className="shrink-0"
                   />
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* QR Poster Card */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "ملصق QR للمتجر" : "Shop QR Poster"}</CardTitle>
-                    <CardDescription>
-                      {isRtl
-                        ? "أنشئ ملصق A4 بشعار المتجر ورمز QR جاهزًا للطباعة والعرض"
-                        : "Generate an A4 poster with your shop branding and QR, ready to print and display"}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md">
-                    {isRtl
-                      ? "يمكنك اختيار رابط الشبكة المحلية أو رابط الموقع الإلكتروني قبل الطباعة."
-                      : "Pick the local-network link or the online website link before printing."}
-                  </p>
-                  <Button onClick={() => setQrPosterOpen(true)} className="gap-2 w-full sm:w-auto">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4h12v5M6 18h12v-6H6zM6 14H4a2 2 0 01-2-2V9a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2" />
-                    </svg>
-                    {isRtl ? "فتح ملصق QR" : "Open QR Poster"}
-                  </Button>
-                </div>
+                {renderSaveBar(cloudDirty, "cloud", saveCloudSync)}
               </CardContent>
             </Card>
 
@@ -856,6 +971,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     className="shrink-0"
                   />
                 </div>
+                {renderSaveBar(inventoryDirty, "inventory", saveInventory)}
               </CardContent>
             </Card>
 
@@ -1003,6 +1119,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     </p>
                   </div>
                 )}
+                {isElectron() && renderSaveBar(printersDirty, "printers", savePrinters)}
               </CardContent>
             </Card>
 
@@ -1098,21 +1215,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   {jobStats.customers}
                 </div>
               </div>
-            </div>
-
-            {/* Save Button */}
-            <div className="sticky bottom-0 bg-white dark:bg-gray-800 z-10 -mx-2 px-4 pb-4 pt-3 mt-6 sm:mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 rounded-2xl shadow-md dark:shadow-gray-900/30">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isRtl
-                  ? "سيتم حفظ التغييرات فورًا"
-                  : "Changes will be saved immediately"}
-              </p>
-              <Button onClick={saveSettings} className="shadow-lg">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-                {t("saveSettings")}
-              </Button>
             </div>
           </div>
       <QrPosterDialog
