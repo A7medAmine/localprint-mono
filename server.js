@@ -30,27 +30,18 @@ import supabase, {
   upsertProfile,
   getCustomerOrders,
 } from './db.js';
+import { ALLOWED_MIMES, magicBytesMatch } from './utils/fileValidation.js';
+import { countPdfPagesFromBuffer } from './utils/pdfPageCount.js';
 
-// ── Magic byte signatures for file validation ──
-const MAGIC_BYTES = {
-  "application/pdf": [[0x25, 0x50, 0x44, 0x46]],
-  "image/jpeg": [[0xFF, 0xD8, 0xFF]],
-  "image/png": [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
-  "image/tiff": [[0x49, 0x49, 0x2A, 0x00], [0x4D, 0x4D, 0x00, 0x2A]],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [[0x50, 0x4B, 0x03, 0x04]],
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [[0x50, 0x4B, 0x03, 0x04]],
-};
-
+// ── Magic byte validation ──
+// Signature table + matcher live in utils/fileValidation.js (shared, tested).
+// Here we just read the file's head off disk and delegate the comparison.
 function validateMagicBytes(filePath, mimeType) {
-  const signatures = MAGIC_BYTES[mimeType];
-  if (!signatures) return true;
   const buf = Buffer.alloc(16);
   const fd = fs.openSync(filePath, "r");
   fs.readSync(fd, buf, 0, 16, 0);
   fs.closeSync(fd);
-  return signatures.some(sig =>
-    sig.every((byte, i) => buf[i] === byte)
-  );
+  return magicBytesMatch(buf, mimeType);
 }
 
 // ── Settings exposure control ──
@@ -225,14 +216,7 @@ setInterval(() => {
 }, 300_000);
 
 // ── Allowed MIME types for upload ──
-const ALLOWED_MIMES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/tiff",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
+// Set lives in utils/fileValidation.js (shared, tested); imported above.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -286,11 +270,7 @@ if (!fs.existsSync(DIST_DIR) && !isDev) {
 const getPdfPageCount = async (filePath) => {
   try {
     const fileBuffer = fs.readFileSync(filePath);
-    const pdfDoc = await PDFDocument.load(fileBuffer, {
-      ignoreEncryption: true,
-      updateMetadata: false,
-    });
-    const pageCount = pdfDoc.getPageCount();
+    const pageCount = await countPdfPagesFromBuffer(fileBuffer);
     console.log(`📄 PDF page count for ${path.basename(filePath)}: ${pageCount}`);
     return pageCount;
   } catch (err) {

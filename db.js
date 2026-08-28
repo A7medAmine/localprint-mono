@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, errors as joseErrors } from 'jose';
 import { WebSocket } from 'ws';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import { checkEnv } from './checkEnv.js';
+import { makeTokenCache, isRejectedTokenError } from './utils/authCache.js';
 
 // db.js is the first module to require real env values. ESM evaluates imported
 // modules before the importer's body, so this is the earliest reliable point
@@ -144,29 +145,9 @@ const JWKS = createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/.well-known/jwks
 });
 
 // Short-lived memo so bursts of requests carrying the same token (page load
-// firing profile + orders together) don't re-verify repeatedly.
-const tokenCache = new Map();
-const TOKEN_CACHE_TTL_MS = 60_000;
-
-const cacheGet = (token) => {
-  const hit = tokenCache.get(token);
-  if (!hit) return undefined;
-  if (hit.expiresAt <= Date.now()) {
-    tokenCache.delete(token);
-    return undefined;
-  }
-  return hit.user;
-};
-
-const cacheSet = (token, user, claimExpSeconds) => {
-  // Never outlive the token itself.
-  const ttl = claimExpSeconds
-    ? Math.min(TOKEN_CACHE_TTL_MS, claimExpSeconds * 1000 - Date.now())
-    : TOKEN_CACHE_TTL_MS;
-  if (ttl <= 0) return;
-  if (tokenCache.size > 1000) tokenCache.clear();
-  tokenCache.set(token, { user, expiresAt: Date.now() + ttl });
-};
+// firing profile + orders together) don't re-verify repeatedly. TTL/eviction
+// math lives in utils/authCache.js (tested with an injectable clock).
+const tokenCache = makeTokenCache({ ttlMs: 60_000, maxSize: 1000 });
 
 // Remote fallback, used only when local verification can't reach a verdict
 // (e.g. a legacy HS256 project whose JWKS has no usable key).
@@ -211,7 +192,7 @@ const getUserRemote = async (token) => {
 export const getSupabaseUserFromToken = async (token) => {
   if (!token) return null;
 
-  const cached = cacheGet(token);
+  const cached = tokenCache.get(token);
   if (cached !== undefined) return cached;
 
   try {
@@ -226,25 +207,19 @@ export const getSupabaseUserFromToken = async (token) => {
       app_metadata: payload.app_metadata,
       user_metadata: payload.user_metadata,
     };
-    cacheSet(token, user, payload.exp);
+    tokenCache.set(token, user, payload.exp);
     return user;
   } catch (err) {
     // A token we successfully evaluated and rejected — expired, bad signature,
     // wrong audience. This is a real 401.
-    if (
-      err instanceof joseErrors.JWTExpired ||
-      err instanceof joseErrors.JWTClaimValidationFailed ||
-      err instanceof joseErrors.JWSSignatureVerificationFailed ||
-      err instanceof joseErrors.JWSInvalid ||
-      err instanceof joseErrors.JWTInvalid
-    ) {
+    if (isRejectedTokenError(err, joseErrors)) {
       return null;
     }
     // Couldn't fetch/parse the key set, or the token is signed with a key this
     // endpoint doesn't publish (legacy HS256 projects) — ask Supabase directly.
     console.warn('⚠️  Local JWT verification inconclusive, falling back to Supabase:', err.message);
     const user = await getUserRemote(token);
-    if (user) cacheSet(token, user);
+    if (user) tokenCache.set(token, user);
     return user;
   }
 };
