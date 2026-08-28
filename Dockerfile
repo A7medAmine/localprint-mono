@@ -16,5 +16,8 @@ COPY public ./public
 COPY utils ./utils
 RUN mkdir -p uploads && chown appuser:appgroup uploads
 USER appuser
+# .env is dockerignored, so NODE_ENV must be set here — otherwise server.js
+# falls back to "development" (wrong port, dev CORS) in the container.
+ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node", "server.js"]
