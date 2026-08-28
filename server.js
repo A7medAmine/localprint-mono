@@ -12,27 +12,18 @@ import { randomBytes, randomUUID, createHash, scryptSync, timingSafeEqual } from
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
+import { ALLOWED_MIMES, magicBytesMatch } from './utils/fileValidation.js';
+import { pruneTokenMap } from './utils/adminTokens.js';
 
-// ── Magic byte signatures for file validation ──
-const MAGIC_BYTES = {
-  "application/pdf": [[0x25, 0x50, 0x44, 0x46]],
-  "image/jpeg": [[0xFF, 0xD8, 0xFF]],
-  "image/png": [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
-  "image/tiff": [[0x49, 0x49, 0x2A, 0x00], [0x4D, 0x4D, 0x00, 0x2A]],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [[0x50, 0x4B, 0x03, 0x04]],
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [[0x50, 0x4B, 0x03, 0x04]],
-};
-
+// ── File magic-byte validation ──
+// Signatures + the pure matcher live in utils/fileValidation.js (importable +
+// tested); this wrapper does the disk read the server needs.
 function validateMagicBytes(filePath, mimeType) {
-  const signatures = MAGIC_BYTES[mimeType];
-  if (!signatures) return true; // unknown type, skip check
   const buf = Buffer.alloc(16);
   const fd = fs.openSync(filePath, "r");
   fs.readSync(fd, buf, 0, 16, 0);
   fs.closeSync(fd);
-  return signatures.some(sig =>
-    sig.every((byte, i) => buf[i] === byte)
-  );
+  return magicBytesMatch(buf, mimeType);
 }
 
 // ── Settings exposure control ──
@@ -107,14 +98,7 @@ function saveTokens(tokens) {
 const adminTokens = loadTokens();
 
 function pruneTokens() {
-  const now = Date.now();
-  let changed = false;
-  for (const [token, meta] of adminTokens) {
-    if (now - meta.lastUsedAt > TOKEN_IDLE_MS || now - meta.createdAt > TOKEN_ABSOLUTE_MS) {
-      adminTokens.delete(token);
-      changed = true;
-    }
-  }
+  const { changed } = pruneTokenMap(adminTokens, Date.now(), TOKEN_IDLE_MS, TOKEN_ABSOLUTE_MS);
   if (changed) saveTokens(adminTokens);
 }
 
@@ -238,14 +222,8 @@ setInterval(() => {
 }, 600_000);
 
 // ── Allowed MIME types for upload ──
-const ALLOWED_MIMES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/tiff",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
+// ALLOWED_MIMES is imported from utils/fileValidation.js (shared with the
+// magic-byte matcher and covered by the validation test suite).
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
