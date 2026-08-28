@@ -9,7 +9,9 @@
     "./constants": "./src/constants.ts",
     "./validation": "./src/validation.js",
     "./pdf": "./src/pdf.js",
-    "./http": "./src/http.js"
+    "./http": "./src/http.js",
+    "./pricing": "./src/pricing.js",
+    "./discountLogic": "./src/discountLogic.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",
