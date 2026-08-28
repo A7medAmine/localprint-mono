@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>LocalPrint — Platform Admin</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 900px; margin-inline: auto; }
+    h1 { font-size: 1.3rem; }
+    input, button { font: inherit; padding: .5rem .6rem; border-radius: 6px; border: 1px solid #8888; }
+    button { cursor: pointer; background: #4f46e5; color: #fff; border-color: #4f46e5; }
+    button.secondary { background: transparent; color: inherit; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #8884; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+    .token { font-family: ui-monospace, monospace; background: #8882; padding: .3rem .5rem; border-radius: 6px; word-break: break-all; }
+    .msg { margin: 1rem 0; padding: .6rem .8rem; border-radius: 6px; background: #8882; }
+    .err { background: #ef444433; }
+  </style>
+</head>
+<body>
+  <h1>LocalPrint — Platform Admin</h1>
+  <p>Paste the <code>PLATFORM_ADMIN_TOKEN</code>. It stays in this tab only.</p>
+  <div class="row">
+    <input id="token" type="password" placeholder="PLATFORM_ADMIN_TOKEN" size="40" autocomplete="off" />
+    <button onclick="loadShops()">Connect</button>
+  </div>
+
+  <div class="row">
+    <input id="newName" placeholder="New shop name" size="30" />
+    <button onclick="createShop()">Create shop</button>
+  </div>
+
+  <div id="msg"></div>
+  <table id="shops" hidden>
+    <thead><tr><th>Name</th><th>Slug</th><th>Active</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const tok = () => $('token').value.trim();
+function show(text, isErr) {
+  const el = $('msg');
+  el.className = 'msg' + (isErr ? ' err' : '');
+  el.textContent = text;
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok(), ...(opts.headers || {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+  return body;
+}
+async function loadShops() {
+  try {
+    const shops = await api('/api/admin/shops');
+    const tbody = $('shops').querySelector('tbody');
+    tbody.innerHTML = '';
+    for (const s of shops) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.name}</td><td>${s.slug}</td><td>${s.is_active ? 'yes' : 'no'}</td>`;
+      const td = document.createElement('td');
+      const rotate = document.createElement('button');
+      rotate.textContent = 'Rotate token';
+      rotate.onclick = () => rotateToken(s.id);
+      const toggle = document.createElement('button');
+      toggle.className = 'secondary';
+      toggle.textContent = s.is_active ? 'Deactivate' : 'Activate';
+      toggle.onclick = () => setActive(s.id, !s.is_active);
+      td.append(rotate, ' ', toggle);
+      tr.append(td);
+      tbody.append(tr);
+    }
+    $('shops').hidden = false;
+    show(shops.length + ' shop(s).');
+  } catch (e) { show(e.message, true); }
+}
+async function createShop() {
+  try {
+    const r = await api('/api/admin/shops', { method: 'POST', body: JSON.stringify({ name: $('newName').value.trim() }) });
+    show('Created "' + r.name + '" (slug ' + r.slug + '). Shop token (shown once): ' + r.token);
+    $('newName').value = '';
+    loadShops();
+  } catch (e) { show(e.message, true); }
+}
+async function rotateToken(id) {
+  if (!confirm('Rotate token? The old one stops working immediately.')) return;
+  try {
+    const r = await api('/api/admin/shops/' + id + '/rotate-token', { method: 'POST' });
+    show('New token for "' + r.name + '" (shown once): ' + r.token);
+  } catch (e) { show(e.message, true); }
+}
+async function setActive(id, isActive) {
+  try {
+    await api('/api/admin/shops/' + id, { method: 'PATCH', body: JSON.stringify({ isActive }) });
+    loadShops();
+  } catch (e) { show(e.message, true); }
+}
+</script>
+</body>
+</html>
