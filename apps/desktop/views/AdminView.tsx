@@ -1,0 +1,351 @@
+import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Language, PrintJob, PrintStatus, ShopSettings, DiscountRule, PaperType } from "../types";
+import { TRANSLATIONS } from "../constants";
+import { storageService } from "../services/storageService";
+import { toast } from "../components/ui/use-toast";
+import { Toaster } from "../components/ui/toaster";
+import PreviewModal from "../components/preview/PreviewModal";
+import LanguageToggle from "../components/LanguageToggle";
+import InventorySection from "../components/InventorySection";
+import { AdminProvider } from "./admin/AdminContext";
+import GmailPanel from "./admin/gmail/GmailPanel";
+import ReviewQueuePanel from "./admin/review/ReviewQueuePanel";
+import SettingsPanel from "./admin/settings/SettingsPanel";
+import JobsPanel from "./admin/jobs/JobsPanel";
+import { useAdminJobs } from "./admin/jobs/useAdminJobs";
+
+interface AdminViewProps {
+  lang: Language;
+  onLogout: () => void;
+  onSettingsUpdate: (settings: ShopSettings) => void;
+  currentSettings: ShopSettings;
+  darkMode?: boolean;
+  themeMode?: "light" | "dark" | "system";
+  onToggleDarkMode?: () => void;
+  onToggleLang?: (lang: Language) => void;
+}
+
+const AdminViewInner: React.FC<AdminViewProps> = ({
+  lang,
+  onLogout,
+  onSettingsUpdate,
+  currentSettings,
+  darkMode = false,
+  themeMode = "system",
+  onToggleDarkMode,
+  onToggleLang,
+}) => {
+  // Safe translation function
+  const t = (key: string) => {
+    if (!TRANSLATIONS[key]) {
+      console.warn(`Missing translation key: ${key}`);
+      return key;
+    }
+    return TRANSLATIONS[key][lang] || TRANSLATIONS[key]["en"] || key;
+  };
+
+  const isRtl = lang === "ar";
+  const navigate = useNavigate();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const validTabs = ["jobs", "settings", "gmail", "review", "inventory"] as const;
+  type AdminTab = (typeof validTabs)[number];
+  const urlTab = searchParams.get("tab") as AdminTab | null;
+  const activeTab: AdminTab = urlTab && validTabs.includes(urlTab) ? urlTab : "jobs";
+  const setActiveTab = (next: AdminTab) => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === "jobs") p.delete("tab");
+        else p.set("tab", next);
+        return p;
+      },
+      { replace: true },
+    );
+  };
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [discountRules, setDiscountRules] = useState<DiscountRule[]>([]);
+  const [previewJob, setPreviewJob] = useState<PrintJob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Paper types are owned by SettingsPanel's draft; the rest of the dashboard
+  // reads the *saved* value off currentSettings.
+  const paperTypes: PaperType[] =
+    currentSettings.paperTypes && currentSettings.paperTypes.length > 0
+      ? currentSettings.paperTypes
+      : [
+          { id: "normal", name: "Normal", nameAr: "عادي", colorPerPage: currentSettings.pricing?.colorPerPage || 30.0, blackWhitePerPage: currentSettings.pricing?.blackWhitePerPage || 15.0 },
+          { id: "glossy", name: "Glossy", nameAr: "لامع", colorPerPage: currentSettings.pricing?.glossyPerPage || 50.0, blackWhitePerPage: currentSettings.pricing?.glossyPerPage || 50.0 },
+          { id: "cardboard", name: "Cardboard", nameAr: "ورق مقوى", colorPerPage: currentSettings.pricing?.cardboardPerPage || 40.0, blackWhitePerPage: currentSettings.pricing?.cardboardPerPage || 40.0 },
+        ];
+
+  const loadLowStockCount = async () => {
+    try {
+      const { lowStockCount: count } = await storageService.getInventory();
+      setLowStockCount(count);
+    } catch (err) {
+      console.error("Failed to load low stock count:", err);
+    }
+  };
+
+  const loadDiscountRules = async () => {
+    try {
+      setDiscountRules(await storageService.getDiscountRules());
+    } catch (err) {
+      console.error("Failed to load discount rules:", err);
+    }
+  };
+
+  const jobs = useAdminJobs({ currentSettings, onLowStockRefresh: loadLowStockCount });
+
+  const handlePreview = async (job: PrintJob) => {
+    const url = await storageService.getFileUrl(job.id);
+    if (url) {
+      setPreviewJob(job);
+      setPreviewUrl(url);
+    }
+  };
+
+  useEffect(() => {
+    loadDiscountRules();
+    loadLowStockCount();
+    // Persistent new-email toast — fires on any tab; GmailPanel owns the list.
+    const es = new EventSource("/api/events");
+    es.addEventListener("gmail-new", (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if ((data.new || 0) > 0) {
+          toast({ title: `${data.new} ${isRtl ? "بريد جديد" : "new email(s)"} ${isRtl ? "وصل" : "received"}`, variant: "success" });
+          new Audio("/notification.mp3").play().catch(() => {});
+        }
+      } catch {}
+    });
+    es.onerror = () => {};
+    return () => es.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const navItems = [
+    { id: "dashboard", label: isRtl ? "لوحة المعلومات" : "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+    { id: "review", label: isRtl ? "مراجعة الطلبات" : "Job Review", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z", badge: jobs.reviewJobs.length },
+    { id: "inventory", label: isRtl ? "المخزون" : "Inventory", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4", badge: lowStockCount },
+    { id: "settings", label: t("settings"), icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+    { id: "gmail", label: isRtl ? "البريد الإلكتروني" : "Email", icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
+  ];
+
+  const activeNav = activeTab === "gmail" ? "gmail" : activeTab === "settings" ? "settings" : activeTab === "review" ? "review" : activeTab === "inventory" ? "inventory" : "dashboard";
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed md:static inset-y-0 left-0 z-50 w-[220px] flex-shrink-0 flex flex-col bg-gray-50 dark:bg-[#111] border-r border-gray-200 dark:border-gray-800 transition-transform duration-250 ease md:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } ${isRtl ? "font-['IBMPlexArabic']" : ""}`}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 py-5">
+          <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white overflow-hidden shadow-sm flex-shrink-0">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm-1 9H8v2h4v-2z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <span dir="auto" className="text-base font-bold tracking-tight text-gray-900 dark:text-gray-100 truncate">
+            {currentSettings.shopName || TRANSLATIONS.appTitle[lang]}
+          </span>
+        </div>
+
+        {/* Section: MAIN */}
+        <div className="px-4 pt-6 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+            {isRtl ? "رئيسي" : "MAIN"}
+          </span>
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex-1 px-3 py-2 space-y-0.5">
+          {navItems.map((item) => {
+            const isActive = activeNav === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  if (item.id !== "dashboard") setActiveTab(item.id as any);
+                  else setActiveTab("jobs");
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ease ${
+                  isActive
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
+                }`}
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d={item.icon} />
+                </svg>
+                <span className="flex-1 text-start">{item.label}</span>
+                {!!item.badge && (
+                  <span className={`text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center ${isActive ? "bg-white/20 text-white" : "bg-red-500 text-white"}`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Section: TOOLS */}
+        <div className="px-4 pt-2 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+            {isRtl ? "أدوات" : "TOOLS"}
+          </span>
+        </div>
+
+        <nav className="px-3 pb-2 space-y-0.5">
+          <button
+            onClick={() => { navigate("/admin/studio"); setSidebarOpen(false); }}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors duration-150 ease"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+            {isRtl ? "استوديو الطباعة" : "Print Studio"}
+          </button>
+        </nav>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Dark mode + Language toggles */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-800">
+          <button
+            onClick={onToggleDarkMode}
+            className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+            aria-label={
+              themeMode === "light"
+                ? lang === "ar" ? "الوضع الفاتح" : "Light mode"
+                : themeMode === "dark"
+                ? lang === "ar" ? "الوضع الليلي" : "Dark mode"
+                : lang === "ar" ? "حسب النظام" : "System theme"
+            }
+            title={
+              themeMode === "light"
+                ? lang === "ar" ? "فاتح" : "Light"
+                : themeMode === "dark"
+                ? lang === "ar" ? "داكن" : "Dark"
+                : lang === "ar" ? "حسب النظام" : "System"
+            }
+          >
+            {themeMode === "light" ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : themeMode === "dark" ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            )}
+          </button>
+          {onToggleLang && <LanguageToggle currentLang={lang} onToggle={onToggleLang} />}
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile header with hamburger */}
+        <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {currentSettings.shopName || TRANSLATIONS.appTitle[lang]}
+          </span>
+          <div className="w-5" />
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+          <div className={`p-8 ${isRtl ? "rtl text-right" : ""} text-gray-900 dark:text-gray-100`}>
+      <div className="min-h-0">
+        {activeTab === "jobs" ? (
+          <JobsPanel jobs={jobs} paperTypes={paperTypes} discountRules={discountRules} onPreview={handlePreview} />
+        ) : activeTab === "review" ? (
+          <ReviewQueuePanel reviewJobs={jobs.reviewJobs} onRefresh={jobs.loadJobs} onPreview={handlePreview} />
+        ) : activeTab === "gmail" ? (
+          <GmailPanel paperTypes={paperTypes} onJobsImported={jobs.loadJobs} />
+        ) : activeTab === "inventory" ? (
+          <InventorySection
+            lang={lang}
+            paperTypes={paperTypes}
+            onLowStockCountChange={setLowStockCount}
+          />
+        ) : (
+          <SettingsPanel
+            discountRules={discountRules}
+            onRulesChanged={loadDiscountRules}
+            onManageInventory={() => setActiveTab("inventory")}
+            jobStats={{
+              pending: jobs.groups.reduce((acc, g) => acc + g.jobs.filter((j) => j.status === PrintStatus.PENDING).length, 0),
+              ready: jobs.groups.reduce((acc, g) => acc + g.jobs.filter((j) => j.status === PrintStatus.READY).length, 0),
+              printed: jobs.groups.reduce((acc, g) => acc + g.jobs.filter((j) => j.status === PrintStatus.PRINTED).length, 0),
+              customers: jobs.groups.length,
+            }}
+          />
+        )}
+      </div>
+
+      {/* Toaster */}
+      <Toaster />
+
+
+      <PreviewModal
+        open={previewJob !== null}
+        onClose={() => { setPreviewJob(null); setPreviewUrl(null); }}
+        url={previewUrl}
+        fileName={previewJob?.fileName ?? ""}
+        fileType={previewJob?.fileType}
+        fileSize={previewJob?.fileSize}
+      />
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AdminView: React.FC<AdminViewProps> = (props) => (
+  <AdminProvider
+    lang={props.lang}
+    darkMode={props.darkMode ?? false}
+    themeMode={props.themeMode ?? "system"}
+    onToggleDarkMode={props.onToggleDarkMode}
+    onToggleLang={props.onToggleLang}
+    settings={props.currentSettings}
+    onSettingsUpdate={props.onSettingsUpdate}
+  >
+    <AdminViewInner {...props} />
+  </AdminProvider>
+);
+
+export default AdminView;
