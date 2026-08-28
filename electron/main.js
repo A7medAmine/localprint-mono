@@ -81,6 +81,11 @@ if (app.isPackaged) {
   // client. Google treats "localhost" and "127.0.0.1" as different origins,
   // and the console entry uses "localhost".
   process.env.GMAIL_REDIRECT_URI = `http://localhost:${SERVER_PORT}/api/gmail/callback`;
+} else {
+  // In dev, load .env from the repo root BEFORE checkEnv() runs — otherwise
+  // server.js's `import 'dotenv/config'` kicks in too late and the startup
+  // validation below rejects TOKEN_ENCRYPTION_KEY as "not set".
+  dotenv.config({ path: path.join(process.cwd(), '.env') });
 }
 
 // Chromium's auto-dark-mode inverts image + PDF content when the OS is in
