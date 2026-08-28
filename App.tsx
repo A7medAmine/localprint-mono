@@ -9,6 +9,7 @@ import PrintStudio from "./views/PrintStudio";
 import LanguageToggle from "./components/LanguageToggle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./components/LoginPage";
+import OnboardingWizard from "./views/onboarding/OnboardingWizard";
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -71,6 +72,17 @@ const App: React.FC = () => {
     };
     window.addEventListener("session-expired", onSessionExpired);
     return () => window.removeEventListener("session-expired", onSessionExpired);
+  }, [navigate]);
+
+  // The default admin password makes the backend 403 every admin write until
+  // it's changed; storageService dispatches "must-change-password" on that 403.
+  // Send the operator to the first-run wizard to fix it.
+  useEffect(() => {
+    const onMustChangePassword = () => {
+      navigate("/admin/setup", { replace: true });
+    };
+    window.addEventListener("must-change-password", onMustChangePassword);
+    return () => window.removeEventListener("must-change-password", onMustChangePassword);
   }, [navigate]);
 
   useEffect(() => {
@@ -301,6 +313,14 @@ const App: React.FC = () => {
                     onToggleLang={setLang}
                     currentSettings={settings}
                   />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/setup"
+              element={
+                <ProtectedRoute isAdmin={isAdmin}>
+                  <OnboardingWizard lang={lang} currentSettings={settings} onSettingsUpdate={setSettings} />
                 </ProtectedRoute>
               }
             />

@@ -22,7 +22,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
       storageService.setAuthToken(result.token);
       localStorage.setItem("ps_admin_token", result.token);
       onLoginSuccess(result.token);
-      navigate("/admin/dashboard", { replace: true });
+      // A default/temporary password sends the operator through the first-run
+      // wizard (which forces a password change) before the dashboard.
+      if (result.mustChangePassword) {
+        navigate("/admin/setup", { replace: true });
+      } else {
+        navigate("/admin/dashboard", { replace: true });
+      }
     } else {
       setLoginError(true);
     }
