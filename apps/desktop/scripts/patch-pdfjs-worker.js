@@ -19,7 +19,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+
+// Locate pdfjs-dist's build dir wherever it actually installed. Under npm
+// workspaces it hoists to the monorepo-root node_modules, not this app's — so
+// walk up from here and take the first node_modules/pdfjs-dist/build that
+// exists, matching Node's own resolution without tripping the package's
+// `exports` restrictions.
+function findPdfjsBuildDir(startDir) {
+  let dir = startDir;
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', 'pdfjs-dist', 'build');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+const BUILD_DIR = findPdfjsBuildDir(__dirname);
 
 // Bump the marker whenever the polyfill body changes so postinstall
 // re-patches files that already carry an older version of it.
@@ -55,28 +72,32 @@ const POLYFILL =
   "},writable:true,configurable:true});}\n";
 
 const TARGETS = [
-  'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
-  'node_modules/pdfjs-dist/build/pdf.worker.mjs',
+  'pdf.worker.min.mjs',
+  'pdf.worker.mjs',
 ];
 
 let patchedCount = 0;
 let skippedCount = 0;
 let missingCount = 0;
 
-for (const rel of TARGETS) {
-  const full = path.join(ROOT, rel);
-  if (!fs.existsSync(full)) {
-    missingCount++;
-    continue;
+if (!BUILD_DIR) {
+  console.warn('⚠️  pdfjs-dist not installed yet — patch will run again on next install.');
+} else {
+  for (const rel of TARGETS) {
+    const full = path.join(BUILD_DIR, rel);
+    if (!fs.existsSync(full)) {
+      missingCount++;
+      continue;
+    }
+    const src = fs.readFileSync(full, 'utf8');
+    if (src.startsWith(MARKER)) {
+      skippedCount++;
+      continue;
+    }
+    fs.writeFileSync(full, POLYFILL + src);
+    patchedCount++;
+    console.log(`  patched ${rel}`);
   }
-  const src = fs.readFileSync(full, 'utf8');
-  if (src.startsWith(MARKER)) {
-    skippedCount++;
-    continue;
-  }
-  fs.writeFileSync(full, POLYFILL + src);
-  patchedCount++;
-  console.log(`  patched ${rel}`);
 }
 
 if (patchedCount === 0 && skippedCount > 0) {
@@ -84,6 +105,6 @@ if (patchedCount === 0 && skippedCount > 0) {
 } else if (patchedCount > 0) {
   console.log(`pdfjs worker: patched ${patchedCount}, already patched ${skippedCount}.`);
 }
-if (missingCount === TARGETS.length) {
-  console.warn('⚠️  pdfjs-dist not installed yet — patch will run again on next install.');
+if (BUILD_DIR && missingCount === TARGETS.length) {
+  console.warn('⚠️  pdfjs-dist present but worker files not found — pdf.js layout may have changed.');
 }

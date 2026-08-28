@@ -1,5 +1,5 @@
 {
-  "name": "printshop-hub",
+  "name": "@localprint/desktop",
   "private": true,
   "version": "0.1.0",
   "description": "PrintShop Hub — desktop print-shop management app (jobs, native printing, QR uploads).",
