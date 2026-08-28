@@ -1,0 +1,25 @@
+# Dependencies (hoisted to root by npm workspaces)
+node_modules
+
+# Build output
+dist
+dist-ssr
+release
+build
+
+# Runtime data
+uploads
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+db.json
+
+# Secrets — never commit
+.env
+env
+*.local
+
+# Local tooling
+.codegraph/
+.DS_Store
+*.log
