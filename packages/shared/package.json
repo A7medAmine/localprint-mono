@@ -8,7 +8,8 @@
     "./types": "./src/types.ts",
     "./constants": "./src/constants.ts",
     "./validation": "./src/validation.js",
-    "./pdf": "./src/pdf.js"
+    "./pdf": "./src/pdf.js",
+    "./http": "./src/http.js"
   },
   "dependencies": {
     "clsx": "^2.1.1",

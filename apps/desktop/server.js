@@ -13,6 +13,7 @@ const hashDeleteToken = (token) => createHash("sha256").update(String(token)).di
 
 import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
+import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
 import { pruneTokenMap } from './utils/adminTokens.js';
 
 // ── File magic-byte validation ──
@@ -154,27 +155,7 @@ function requireAdmin(req, res, next) {
 }
 
 // ── Generic sliding-window limiter factory (per-IP) ──
-function makeRateLimiter({ windowMs, max, message }) {
-  const hits = new Map();
-  setInterval(() => {
-    const now = Date.now();
-    for (const [ip, ts] of hits) {
-      const fresh = ts.filter(t => now - t < windowMs);
-      if (fresh.length === 0) hits.delete(ip); else hits.set(ip, fresh);
-    }
-  }, Math.max(windowMs, 60_000));
-  return (req, res, next) => {
-    const ip = req.ip || req.socket?.remoteAddress || "unknown";
-    const now = Date.now();
-    const ts = (hits.get(ip) || []).filter(t => now - t < windowMs);
-    if (ts.length >= max) {
-      return res.status(429).json({ error: message || "Too many requests. Try again later." });
-    }
-    ts.push(now);
-    hits.set(ip, ts);
-    next();
-  };
-}
+// Imported from @localprint/shared/http (shared with the online app).
 
 // Public upload: 30 files / 5 min / IP is generous for a walk-in customer but
 // caps disk-fill / job-spam from the LAN.
@@ -266,23 +247,9 @@ if (isDev) {
   });
 }
 
-// Security headers middleware
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  // X-XSS-Protection is deprecated and can introduce vulnerabilities — omitted
-  // deliberately; the CSP below is the real defence.
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // pdf.js needs: 'wasm-unsafe-eval' (openjpeg/qcms WASM) in script-src,
-  // blob: in worker-src (it spins module workers from Blob URLs) and img-src
-  // (rendered page images) and connect-src (fetches its own worker chunks as
-  // blob URLs on some paths). Without these, the preview + Studio thumbnails
-  // load metadata but silently fail at page.render() inside Electron, where
-  // this CSP is enforced (Vite dev bypasses it, which is why the browser
-  // dev flow looked fine).
-  res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' blob:; frame-src 'self';");
-  next();
-});
+// Security headers middleware — static headers + the pdf.js-compatible CSP.
+// Shared with the online app; see @localprint/shared/http for the CSP rationale.
+app.use(securityHeaders());
 
 // Ensure directories exist
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });

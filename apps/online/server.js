@@ -31,6 +31,7 @@ import supabase, {
   getCustomerOrders,
 } from './db.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
+import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
 import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
 
 // ── Magic byte validation ──
@@ -186,34 +187,10 @@ async function requireCustomerAuth(req, res, next) {
   }
 }
 
-// ── Rate limiter (in-memory, per-IP) ──
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW = 60_000;
-const RATE_LIMIT_MAX = 5;
-
-function rateLimit(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || "unknown";
-  const now = Date.now();
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, []);
-  }
-  const timestamps = rateLimitMap.get(ip).filter(t => now - t < RATE_LIMIT_WINDOW);
-  if (timestamps.length >= RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: "Too many requests. Try again later." });
-  }
-  timestamps.push(now);
-  rateLimitMap.set(ip, timestamps);
-  next();
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, timestamps] of rateLimitMap) {
-    const fresh = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
-    if (fresh.length === 0) rateLimitMap.delete(ip);
-    else rateLimitMap.set(ip, fresh);
-  }
-}, 300_000);
+// ── Rate limiter (in-memory, per-IP): 5 requests / minute ──
+// Factory shared with the desktop app (@localprint/shared/http). Keeps its own
+// hit map + GC interval internally.
+const rateLimit = makeRateLimiter({ windowMs: 60_000, max: 5 });
 
 // ── Allowed MIME types for upload ──
 // Set lives in @localprint/shared/validation (shared, tested); imported above.
@@ -249,15 +226,10 @@ if (isDev) {
   });
 }
 
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  // X-XSS-Protection is deprecated / harmful — omitted deliberately.
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' blob: https://*.supabase.co; frame-src 'self';");
-  next();
-});
+// Static security headers + the pdf.js-compatible CSP. connect-src also allows
+// Supabase (customer auth + storage). Shared with the desktop app; see
+// @localprint/shared/http for the CSP rationale.
+app.use(securityHeaders({ connectSrc: ["'self'", "blob:", "https://*.supabase.co"] }));
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(DIST_DIR) && !isDev) {
