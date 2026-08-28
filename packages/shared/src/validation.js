@@ -1,8 +1,9 @@
 /**
  * Pure file-validation primitives: magic-byte signatures and the MIME
- * allowlist. Extracted from server.js so they are importable/testable without
- * booting the Express server. Phase 4.2 moves this module into
- * packages/shared/src/validation.ts; keep it dependency-free (no fs, no db).
+ * allowlist. Dependency-free (no fs, no db) so both apps' upload paths and
+ * their unit tests can import it directly. Server-side code loads this via the
+ * "@localprint/shared/validation" subpath, which resolves to this real .js
+ * file — plain Node can't import the package's TypeScript index entry.
  */
 
 // ── Magic byte signatures, keyed by claimed MIME type ──

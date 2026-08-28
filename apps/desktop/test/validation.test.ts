@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { magicBytesMatch, isAllowedMime, ALLOWED_MIMES } from "../utils/fileValidation.js";
+import { magicBytesMatch, isAllowedMime, ALLOWED_MIMES } from "@localprint/shared/validation";
 
 // Contract for Phase 4.2's packages/shared/src/validation.ts: the magic-byte
 // matcher + MIME allowlist must keep exactly these accept/reject decisions.

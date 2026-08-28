@@ -30,11 +30,11 @@ import supabase, {
   upsertProfile,
   getCustomerOrders,
 } from './db.js';
-import { ALLOWED_MIMES, magicBytesMatch } from './utils/fileValidation.js';
+import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { countPdfPagesFromBuffer } from './utils/pdfPageCount.js';
 
 // ── Magic byte validation ──
-// Signature table + matcher live in utils/fileValidation.js (shared, tested).
+// Signature table + matcher live in @localprint/shared/validation (shared, tested).
 // Here we just read the file's head off disk and delegate the comparison.
 function validateMagicBytes(filePath, mimeType) {
   const buf = Buffer.alloc(16);
@@ -216,7 +216,7 @@ setInterval(() => {
 }, 300_000);
 
 // ── Allowed MIME types for upload ──
-// Set lives in utils/fileValidation.js (shared, tested); imported above.
+// Set lives in @localprint/shared/validation (shared, tested); imported above.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

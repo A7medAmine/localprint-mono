@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "@localprint/shared": ["../../packages/shared/src"]
+      "@localprint/shared": ["../../packages/shared/src"],
+      "@localprint/shared/*": ["../../packages/shared/src/*"]
     }
   }
 }

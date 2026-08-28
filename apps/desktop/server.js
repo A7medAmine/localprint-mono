@@ -12,12 +12,12 @@ import { randomBytes, randomUUID, createHash, scryptSync, timingSafeEqual } from
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
-import { ALLOWED_MIMES, magicBytesMatch } from './utils/fileValidation.js';
+import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { pruneTokenMap } from './utils/adminTokens.js';
 
 // ── File magic-byte validation ──
-// Signatures + the pure matcher live in utils/fileValidation.js (importable +
-// tested); this wrapper does the disk read the server needs.
+// Signatures + the pure matcher live in @localprint/shared/validation
+// (importable + tested); this wrapper does the disk read the server needs.
 function validateMagicBytes(filePath, mimeType) {
   const buf = Buffer.alloc(16);
   const fd = fs.openSync(filePath, "r");
@@ -222,7 +222,7 @@ setInterval(() => {
 }, 600_000);
 
 // ── Allowed MIME types for upload ──
-// ALLOWED_MIMES is imported from utils/fileValidation.js (shared with the
+// ALLOWED_MIMES is imported from @localprint/shared/validation (shared with the
 // magic-byte matcher and covered by the validation test suite).
 
 const __filename = fileURLToPath(import.meta.url);
