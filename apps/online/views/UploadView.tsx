@@ -122,7 +122,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
           propSettings ? Promise.resolve(propSettings) : storageService.getSettings(shopSlug),
           storageService.getActiveDiscountRules(shopSlug),
         ]);
-        setRecentJobs(jobs);
+        setRecentJobs(jobs as PrintJob[]);
         if (!propSettings) setShopSettings(settings);
         setDiscountRules(rules);
       } catch (err) {
@@ -512,7 +512,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
         </h1>
         <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">{t("uploadSub")}</p>
         <div className="mt-4 flex justify-center gap-3">
-          {shopSettings && (shopSettings.phoneNumbers?.length > 0 || shopSettings.email || shopSettings.address) && (
+          {shopSettings && ((shopSettings.phoneNumbers?.length ?? 0) > 0 || shopSettings.email || shopSettings.address) && (
             <Button
               variant="link"
               onClick={() => setStoreInfoOpen(true)}

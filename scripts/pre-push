@@ -1,0 +1,16 @@
+#!/bin/sh
+# Pre-push gate (wired via `git config core.hooksPath scripts`).
+# Runs the fast correctness gates so a broken change never leaves the machine.
+# Lint is CI-only by design — keep this quick.
+#
+# Enable once with:  git config core.hooksPath scripts
+
+set -e
+
+echo "→ typecheck"
+npm run typecheck
+
+echo "→ test"
+npm run test
+
+echo "✔ pre-push checks passed"

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts skips the desktop postinstall (electron-rebuild of
+      # better-sqlite3) and the pdfjs worker patch — neither is needed for the
+      # correctness gates below and both require native/Electron toolchains.
+      # The Electron installer build is intentionally NOT run in CI (heavy).
+      - run: npm ci --ignore-scripts
+
+      - name: Typecheck (all workspaces)
+        run: npm run typecheck
+
+      - name: Lint (all workspaces)
+        run: npm run lint
+
+      - name: Test (all workspaces)
+        run: npm run test

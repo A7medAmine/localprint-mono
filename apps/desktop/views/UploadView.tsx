@@ -118,7 +118,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
           propSettings ? Promise.resolve(propSettings) : storageService.getSettings(),
           storageService.getActiveDiscountRules(),
         ]);
-        setRecentJobs(jobs);
+        setRecentJobs(jobs as PrintJob[]);
         if (!propSettings) setShopSettings(settings);
         setDiscountRules(rules);
       } catch (err) {
@@ -464,7 +464,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
             </svg>
             {isRtl ? "إنشاء رمز QR" : "Generate QR Code"}
           </Button>
-          {shopSettings && (shopSettings.phoneNumbers?.length > 0 || shopSettings.email || shopSettings.address) && (
+          {shopSettings && ((shopSettings.phoneNumbers?.length ?? 0) > 0 || shopSettings.email || shopSettings.address) && (
             <Button
               variant="link"
               onClick={() => setStoreInfoOpen(true)}

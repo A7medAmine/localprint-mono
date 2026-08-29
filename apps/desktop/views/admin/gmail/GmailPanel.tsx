@@ -302,11 +302,10 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     await loadGmailPending();
     toast({
       title: `${ids.length} email(s) discarded`,
-      action: React.createElement(
-        ToastAction,
-        {
-          altText: "Undo discard",
-          onClick: async () => {
+      action: (
+        <ToastAction
+          altText="Undo discard"
+          onClick={async () => {
             for (const id of ids) {
               try {
                 await storageService.restoreGmailEmail(id);
@@ -315,16 +314,17 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
               }
             }
             await loadGmailPending();
-          },
-        },
-        "Undo",
+          }}
+        >
+          Undo
+        </ToastAction>
       ),
       duration: 5000,
     });
   };
 
   const insertInto = (
-    ref: React.RefObject<HTMLTextAreaElement>,
+    ref: React.RefObject<HTMLTextAreaElement | null>,
     value: string,
     setValue: (v: string) => void,
     placeholder: string,

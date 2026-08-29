@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { PDFDocument, PageSizes, degrees } from "pdf-lib";
+import { PDFDocument, PDFEmbeddedPage, PageSizes, degrees } from "pdf-lib";
 import { getPdfjs } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
 import { useLanguage } from "../lib/useLanguage";
@@ -345,7 +345,7 @@ const PDFJobManager: React.FC = () => {
           const scale = Math.min(pw / copiedPage.getWidth(), ph / copiedPage.getHeight());
           const sw = copiedPage.getWidth() * scale;
           const sh = copiedPage.getHeight() * scale;
-          page.drawPage(copiedPage, {
+          page.drawPage(copiedPage as unknown as PDFEmbeddedPage, {
             x: (pw - sw) / 2,
             y: (ph - sh) / 2,
             width: sw,
