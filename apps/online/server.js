@@ -30,6 +30,7 @@ import supabase, {
   upsertProfile,
   getCustomerOrders,
 } from './db.js';
+import { toApiOrder, fromApiOrder } from './utils/orderMapping.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
 import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
@@ -513,52 +514,38 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
     const deleteToken = randomBytes(16).toString("hex");
 
     const newOrder = {
-      id: orderId,
+      ...fromApiOrder({
+        id: orderId,
+        customerName: metadata.customerName || profile?.name || '',
+        phoneNumber: metadata.phoneNumber || profile?.phone || '',
+        notes: metadata.notes || '',
+        fileName: metadata.fileName || req.file.originalname,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        uploadDate: new Date().toISOString(),
+        status: 'PENDING',
+        serverFileName: req.file.filename,
+        pageCount,
+        colorMode: metadata.printPreferences?.colorMode || 'color',
+        copies: metadata.printPreferences?.copies || 1,
+        paperType: metadata.printPreferences?.paperType || 'normal',
+        totalPrice: serverPrice,
+        source: 'upload',
+        shopSyncStatus: 'pending',
+      }),
+      // Server-internal columns — never part of the canonical order shape, so
+      // they are set here rather than routed through the mapper.
       shop_id: req.shop.id,
       user_id: req.userId || null,
       delete_token_hash: hashDeleteToken(deleteToken),
       auth_deferred: !!req.authDeferred,
-      customername: metadata.customerName || profile?.name || '',
-      phonenumber: metadata.phoneNumber || profile?.phone || '',
-      notes: metadata.notes || '',
-      filename: metadata.fileName || req.file.originalname,
-      filetype: req.file.mimetype,
-      filesize: req.file.size,
-      uploaddate: new Date().toISOString(),
-      status: 'PENDING',
-      serverfilename: req.file.filename,
-      pagecount: pageCount,
-      colormode: metadata.printPreferences?.colorMode || 'color',
-      copies: metadata.printPreferences?.copies || 1,
-      papertype: metadata.printPreferences?.paperType || 'normal',
-      total_price: serverPrice,
-      source: 'upload',
-      shopsyncstatus: 'pending',
     };
 
     const { error } = await supabase.from('orders').insert(newOrder);
     if (error) throw error;
 
-    // Return camelCase to the client
-    const responseOrder = {
-      id: orderId,
-      customerName: newOrder.customername,
-      phoneNumber: newOrder.phonenumber,
-      notes: newOrder.notes,
-      fileName: newOrder.filename,
-      fileType: newOrder.filetype,
-      fileSize: newOrder.filesize,
-      uploadDate: newOrder.uploaddate,
-      status: newOrder.status,
-      serverFileName: newOrder.serverfilename,
-      pageCount: newOrder.pagecount,
-      colorMode: newOrder.colormode,
-      copies: newOrder.copies,
-      paperType: newOrder.papertype,
-      totalPrice: newOrder.total_price,
-      source: newOrder.source,
-      shopSyncStatus: newOrder.shopsyncstatus,
-    };
+    // Return camelCase to the client via the same mapper.
+    const responseOrder = toApiOrder(newOrder);
     res.status(200).json({ success: true, job: responseOrder, deleteToken });
   } catch (err) {
     console.error("❌ Upload Error:", err);
@@ -580,26 +567,30 @@ app.post("/api/s/:shopSlug/orders/query", resolveShopBySlug, async (req, res) =>
     .order('uploaddate', { ascending: false });
   if (error) throw error;
 
-  const sanitized = (orders || []).map(order => ({
-    id: order.id,
-    fileName: order.filename,
-    fileType: order.filetype,
-    fileSize: order.filesize,
-    uploadDate: order.uploaddate,
-    status: order.status,
-    pageCount: order.pagecount,
-    paperType: order.papertype || 'normal',
-    colorMode: order.colormode,
-    copies: order.copies,
-    source: order.source,
-    totalPrice: order.total_price,
-    printPreferences: {
-      colorMode: order.colormode,
-      copies: order.copies,
-      paperType: order.papertype || 'normal'
-    },
-    ...(order.status === 'rejected' ? { rejectionReason: order.rejection_reason } : {}),
-  }));
+  const sanitized = (orders || []).map(order => {
+    const api = toApiOrder(order);
+    // Public projection: no customerName / phoneNumber / notes / serverFileName.
+    return {
+      id: api.id,
+      fileName: api.fileName,
+      fileType: api.fileType,
+      fileSize: api.fileSize,
+      uploadDate: api.uploadDate,
+      status: api.status,
+      pageCount: api.pageCount,
+      paperType: api.paperType || 'normal',
+      colorMode: api.colorMode,
+      copies: api.copies,
+      source: api.source,
+      totalPrice: api.totalPrice,
+      printPreferences: {
+        colorMode: api.colorMode,
+        copies: api.copies,
+        paperType: api.paperType || 'normal'
+      },
+      ...(order.status === 'rejected' ? { rejectionReason: order.rejection_reason } : {}),
+    };
+  });
   res.status(200).json(sanitized);
 });
 
@@ -775,23 +766,11 @@ app.get("/api/shop/pending", requireShopToken, async (req, res) => {
     .order('uploaddate', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
 
-  const camelOrders = (orders || []).map(order => ({
-    id: order.id,
-    customerName: order.customername,
-    phoneNumber: order.phonenumber,
-    notes: order.notes,
-    fileName: order.filename,
-    fileType: order.filetype,
-    fileSize: order.filesize,
-    uploadDate: order.uploaddate,
-    status: order.status,
-    serverFileName: order.serverfilename,
-    pageCount: order.pagecount,
-    colorMode: order.colormode,
-    copies: order.copies,
-    paperType: order.papertype,
-    source: order.source,
-  }));
+  const camelOrders = (orders || []).map(order => {
+    // Shop sync shape = the full order minus price/sync/rejection bookkeeping.
+    const { totalPrice, shopSyncStatus, rejectionReason, ...pending } = toApiOrder(order);
+    return pending;
+  });
   res.status(200).json(camelOrders);
 });
 
@@ -918,35 +897,13 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
     }
 
     if (Array.isArray(discountRules)) {
-      // supabase-js has no client-side transaction, so do this defensively:
-      // snapshot the current rules, replace them, and restore the snapshot if
-      // the insert fails — otherwise a bad insert leaves the shop with zero
-      // discount rules.
-      const rows = discountRules.map(r => ({
-        ...r,
-        shop_id: shopId,
-        is_active: r.is_active ? 1 : 0,
-        created_at: r.created_at || new Date().toISOString(),
-      }));
-
-      const { data: prevRules, error: readErr } = await supabase
-        .from('discount_rules').select('*').eq('shop_id', shopId);
-      if (readErr) throw readErr;
-
-      const { error: delErr } = await supabase.from('discount_rules').delete().eq('shop_id', shopId);
-      if (delErr && delErr.code !== 'PGRST116') throw delErr;
-
-      if (rows.length > 0) {
-        const { error: insErr } = await supabase.from('discount_rules').insert(rows);
-        if (insErr) {
-          // Roll back to the snapshot before surfacing the error.
-          if (prevRules && prevRules.length > 0) {
-            await supabase.from('discount_rules').delete().eq('shop_id', shopId);
-            await supabase.from('discount_rules').insert(prevRules);
-          }
-          throw insErr;
-        }
-      }
+      // Atomic replace via a single Postgres transaction (007_atomic_discount_sync).
+      // A mid-sync failure can no longer leave the shop with half its rules.
+      const { error: rpcErr } = await supabase.rpc('replace_shop_discount_rules', {
+        p_shop_id: shopId,
+        p_rules: discountRules,
+      });
+      if (rpcErr) throw rpcErr;
     }
 
     res.status(200).json({ success: true });

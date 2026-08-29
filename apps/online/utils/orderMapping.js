@@ -1,50 +1,16 @@
-// Canonical camelCase order fields <-> the online Postgres column names
-// (lowercase, with a few snake_case exceptions). Extracted verbatim from the
-// server.js order handlers so the correspondence lives in one tested place.
-// Phase 4.3 makes server.js consume these mappers instead of hand-building the
-// objects inline; for now this is the characterized source of truth.
-export const ORDER_FIELD_MAP = {
-  id: "id",
-  customerName: "customername",
-  phoneNumber: "phonenumber",
-  notes: "notes",
-  fileName: "filename",
-  fileType: "filetype",
-  fileSize: "filesize",
-  uploadDate: "uploaddate",
-  status: "status",
-  serverFileName: "serverfilename",
-  pageCount: "pagecount",
-  colorMode: "colormode",
-  copies: "copies",
-  paperType: "papertype",
-  totalPrice: "total_price",
-  source: "source",
-  shopSyncStatus: "shopsyncstatus",
-  rejectionReason: "rejection_reason",
-};
+// Online order mappers. The canonical order shape and the rename logic now live
+// in @localprint/shared/orderShape; this thin wrapper binds them to the online
+// Postgres column map and preserves the names server.js / db.js already import.
+//
+// Deliberately kept pure (no ./db.js import, which would drag in supabase +
+// checkEnv) so the round-trip test can load it without real env.
+import { ONLINE_ORDER_COLUMNS, makeOrderMappers } from '@localprint/shared/orderShape';
 
-const DB_TO_API = Object.fromEntries(
-  Object.entries(ORDER_FIELD_MAP).map(([api, db]) => [db, api]),
-);
+export const ORDER_FIELD_MAP = ONLINE_ORDER_COLUMNS;
 
-// db row (lowercase columns) -> API object (camelCase). Only known columns are
-// mapped; server-internal columns (shop_id, user_id, delete_token_hash, ...)
-// and any other unknown keys are dropped, matching the hand-built serializers.
-export function toApiOrder(row) {
-  const out = {};
-  for (const [db, api] of Object.entries(DB_TO_API)) {
-    if (row[db] !== undefined) out[api] = row[db];
-  }
-  return out;
-}
+const { toApi, fromApi } = makeOrderMappers(ONLINE_ORDER_COLUMNS);
 
-// API object (camelCase) -> db row (lowercase columns). Inverse of toApiOrder;
-// unknown keys are dropped the same way.
-export function fromApiOrder(obj) {
-  const out = {};
-  for (const [api, db] of Object.entries(ORDER_FIELD_MAP)) {
-    if (obj[api] !== undefined) out[db] = obj[api];
-  }
-  return out;
-}
+// db row (lowercase columns) -> API object (camelCase).
+export const toApiOrder = toApi;
+// API object (camelCase) -> db row (lowercase columns).
+export const fromApiOrder = fromApi;

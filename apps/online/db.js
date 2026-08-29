@@ -4,6 +4,7 @@ import { WebSocket } from 'ws';
 import { randomBytes, randomUUID, createHash } from 'crypto';
 import { checkEnv } from './checkEnv.js';
 import { makeTokenCache, isRejectedTokenError } from './utils/authCache.js';
+import { toApiOrder } from './utils/orderMapping.js';
 
 // db.js is the first module to require real env values. ESM evaluates imported
 // modules before the importer's body, so this is the earliest reliable point
@@ -274,21 +275,27 @@ export const getCustomerOrders = async (userId) => {
   if (shopsErr) throw shopsErr;
   const shopById = Object.fromEntries((shops || []).map(s => [s.id, s]));
 
-  return orders.map(order => ({
-    id: order.id,
-    fileName: order.filename,
-    fileType: order.filetype,
-    fileSize: order.filesize,
-    uploadDate: order.uploaddate,
-    status: order.status,
-    pageCount: order.pagecount,
-    colorMode: order.colormode,
-    copies: order.copies,
-    paperType: order.papertype,
-    totalPrice: order.total_price,
-    shopName: shopById[order.shop_id]?.name || null,
-    shopSlug: shopById[order.shop_id]?.slug || null,
-  }));
+  return orders.map(order => {
+    const shop = shopById[order.shop_id];
+    const api = toApiOrder(order);
+    // Customer-facing projection: their own order fields + the shop it went to.
+    // Deliberately omits customerName/phoneNumber/notes/serverFileName/source.
+    return {
+      id: api.id,
+      fileName: api.fileName,
+      fileType: api.fileType,
+      fileSize: api.fileSize,
+      uploadDate: api.uploadDate,
+      status: api.status,
+      pageCount: api.pageCount,
+      colorMode: api.colorMode,
+      copies: api.copies,
+      paperType: api.paperType,
+      totalPrice: api.totalPrice,
+      shopName: shop?.name || null,
+      shopSlug: shop?.slug || null,
+    };
+  });
 };
 
 /**

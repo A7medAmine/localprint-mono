@@ -61,7 +61,7 @@ describe("order field mapping", () => {
   it("covers every mapped field in both directions", () => {
     for (const [api, db] of Object.entries(ORDER_FIELD_MAP)) {
       expect(fromApiOrder({ [api]: "v" })[db]).toBe("v");
-      expect(toApiOrder({ [db]: "v" })[api]).toBe("v");
+      expect((toApiOrder({ [db]: "v" }) as Record<string, unknown>)[api]).toBe("v");
     }
   });
 });
