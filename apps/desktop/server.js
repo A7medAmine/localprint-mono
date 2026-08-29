@@ -11,7 +11,7 @@ import { randomBytes, randomUUID, createHash, scryptSync, timingSafeEqual } from
 
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
-import db, { getSettings, updateSetting, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
+import db, { getSettings, updateSetting, getInternalState, setInternalState, getPaperTypes, replaceAllPaperTypes, createPaperType, updatePaperType, deletePaperType, getDiscountRules, getActiveDiscountRules, createDiscountRule, updateDiscountRule, deleteDiscountRule, reopenDb, checkpointAndClose, INVENTORY_CATEGORIES, getInventoryItems, getInventoryItem, createInventoryItem, updateInventoryItem, deleteInventoryItem, adjustInventoryStock, getInventoryAdjustments, getInventoryItemsByPaperType, getLowStockCount, hasAutoDeductForJob } from './db.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
 import { pruneTokenMap } from './utils/adminTokens.js';
@@ -39,7 +39,7 @@ const PUBLIC_SETTINGS_KEYS = new Set([
 
 // Keys that must NEVER be serialized into any HTTP response, even for admins.
 const SECRET_SETTINGS_KEYS = new Set([
-  "_admin_tokens", "adminPassword", "gmailTokens", "gmailToken",
+  "gmailTokens", "gmailToken",
 ]);
 
 function pickPublicSettings(settings) {
@@ -68,9 +68,8 @@ const TOKEN_ABSOLUTE_MS = Number(process.env.ADMIN_TOKEN_MAX_DAYS || 30) * 86_40
 
 function loadTokens() {
   try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = '_admin_tokens'").get();
-    if (!row) return new Map();
-    const parsed = JSON.parse(row.value);
+    const parsed = getInternalState('_admin_tokens');
+    if (!parsed) return new Map();
     const map = new Map();
     if (Array.isArray(parsed)) {
       const now = Date.now();
@@ -92,8 +91,7 @@ function loadTokens() {
 }
 
 function saveTokens(tokens) {
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('_admin_tokens', ?)")
-    .run(JSON.stringify([...tokens.values()]));
+  setInternalState('_admin_tokens', [...tokens.values()]);
 }
 
 const adminTokens = loadTokens();
@@ -971,8 +969,7 @@ app.get(/^\/api\/files\/(.+)/, requireAdmin, (req, res) => {
 
 // Public logo access (no auth — shown on public upload page)
 app.get("/api/logo", (req, res) => {
-  const settings = getSettings();
-  const filename = settings._logo_filename;
+  const filename = getInternalState('_logo_filename');
   if (!filename) return res.status(404).json({ error: "No logo" });
   const filePath = path.resolve(path.join(UPLOADS_DIR, filename));
   if (!filePath.startsWith(path.resolve(UPLOADS_DIR)) || !fs.existsSync(filePath)) {
@@ -1124,8 +1121,7 @@ app.post("/api/settings/logo", requireAdmin, upload.single("logo"), (req, res) =
     }
 
     const settings = getSettings();
-    // Delete old logo file
-    const oldFilename = settings._logo_filename;
+    const oldFilename = getInternalState('_logo_filename');
     if (oldFilename) {
       const oldPath = path.join(UPLOADS_DIR, oldFilename);
       if (fs.existsSync(oldPath)) {
@@ -1133,7 +1129,7 @@ app.post("/api/settings/logo", requireAdmin, upload.single("logo"), (req, res) =
       }
     }
 
-    updateSetting('_logo_filename', req.file.filename);
+    setInternalState('_logo_filename', req.file.filename);
     const logoUrl = `/api/logo`;
     updateSetting('logoUrl', logoUrl);
     res.status(200).json({ success: true, logoUrl });
@@ -1177,7 +1173,7 @@ function passwordPolicyError(pw) {
 // Does `password` match the stored credential? Handles the legacy plaintext
 // default and upgrades it to a hash on first successful login.
 function checkAdminPassword(password) {
-  const stored = getSettings().adminPassword;
+  const stored = getInternalState('adminPassword');
   if (!stored) {
     // Fresh install — the implicit credential is the default password.
     return password === DEFAULT_PASSWORD;
@@ -1190,7 +1186,7 @@ function checkAdminPassword(password) {
 
 // Is the current credential still the factory default?
 function isDefaultPassword() {
-  const stored = getSettings().adminPassword;
+  const stored = getInternalState('adminPassword');
   if (!stored) return true;
   if (!stored.includes(":")) return stored === DEFAULT_PASSWORD;
   return verifyHash(DEFAULT_PASSWORD, stored);
@@ -1248,7 +1244,7 @@ app.post("/api/settings/password", requireAdmin, (req, res) => {
     if (policyError) {
       return res.status(400).json({ success: false, error: policyError });
     }
-    updateSetting("adminPassword", hashPassword(newPassword));
+    setInternalState("adminPassword", hashPassword(newPassword));
     mustChangePassword = false;
 
     // Invalidate every other session — a password change should log out
