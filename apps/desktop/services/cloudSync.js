@@ -302,6 +302,9 @@ async function pollPending() {
 
 export async function updateCloudStatus(orderId, status) {
   if (!isEnabled()) return false;
+  // Operator-made jobs (source: "admin") are local-only and never cloud-synced.
+  const job = db.prepare('SELECT source FROM jobs WHERE cloudOrderId = ?').get(orderId);
+  if (job && job.source === 'admin') return false;
   const cfg = getConfig();
 
   const res = await fetchWithRetry(`${cfg.url}/api/shop/status`, {

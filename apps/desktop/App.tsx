@@ -151,6 +151,12 @@ const App: React.FC = () => {
           navigate("/admin/studio");
         }
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+        e.preventDefault();
+        if (isAdmin && location.pathname === "/admin/dashboard") {
+          window.dispatchEvent(new CustomEvent("ps:new-job"));
+        }
+      }
       if (e.key === "Escape") {
         if (location.pathname.startsWith("/admin")) {
           navigate("/upload");

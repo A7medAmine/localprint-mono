@@ -39,6 +39,7 @@ import {
 import { useAdmin } from "../AdminContext";
 import { isOfficeFile, AdminJobsApi } from "./useAdminJobs";
 import PrintOptionsDialog from "./PrintOptionsDialog";
+import NewJobDialog from "../../../components/NewJobDialog";
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return "0 B";
@@ -62,12 +63,22 @@ interface JobsPanelProps {
 
 type StatusFilter = "all" | "pending" | "ready" | "printed";
 type PaymentFilter = "all" | "paid" | "partial" | "unpaid";
-type SourceFilter = "all" | "upload" | "gmail" | "cloud";
+type SourceFilter = "all" | "upload" | "gmail" | "cloud" | "admin";
 
 const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, onPreview }) => {
   const { t, isRtl, lang, settings } = useAdmin();
   const currentSettings = settings;
   const navigate = useNavigate();
+
+  const [newJobOpen, setNewJobOpen] = React.useState(false);
+
+  // Ctrl+N opens the manual job-entry dialog (App.tsx dispatches this event on
+  // the dashboard route).
+  React.useEffect(() => {
+    const onNewJob = () => setNewJobOpen(true);
+    window.addEventListener("ps:new-job", onNewJob);
+    return () => window.removeEventListener("ps:new-job", onNewJob);
+  }, []);
 
   // Density is a per-device preference, so it lives in localStorage (unlike the
   // shareable, URL-persisted filters).
@@ -138,6 +149,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
       if (sourceFilter === "upload" && src !== "upload" && src !== "web") return false;
       if (sourceFilter === "gmail" && src !== "gmail") return false;
       if (sourceFilter === "cloud" && src !== "cloud" && src !== "online") return false;
+      if (sourceFilter === "admin" && src !== "admin") return false;
     }
     return true;
   };
@@ -205,6 +217,24 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
 
+  const renderSourceBadge = (job: PrintJob) => {
+    if (job.source === "gmail") {
+      return (
+        <span className="text-[10px] font-semibold text-green-700 dark:text-green-100 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
+          Gmail
+        </span>
+      );
+    }
+    if (job.source === "admin") {
+      return (
+        <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-100 bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
+          {t("adminBadge")}
+        </span>
+      );
+    }
+    return null;
+  };
+
   // --- Per-job cell renderers -------------------------------------------------
   // Shared by the compact table (wrapped in <td>) and the cards grid (wrapped in
   // <div>) so both layouts stay in sync from a single source of truth.
@@ -235,11 +265,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               >
                 {job.fileName}
               </span>
-              {job.source === "gmail" && (
-                <span className="text-[10px] font-semibold text-green-700 dark:text-green-100 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
-                  Gmail
-                </span>
-              )}
+              {renderSourceBadge(job)}
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500">
               {formatSize(job.fileSize)}
@@ -574,6 +600,20 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
   return (
     <>
+            {/* Manual job entry */}
+            <div className="flex items-center justify-between mb-3">
+              <Button onClick={() => setNewJobOpen(true)} size="sm" className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white">
+                <svg className="w-3.5 h-3.5 mr-1.5 rtl:ml-1.5 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                </svg>
+                {t("newJob")}
+              </Button>
+              {!loading && groups.length > 0 && (
+                <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {isRtl ? "اضغط Ctrl+N لطلب جديد" : "Ctrl+N for a new job"}
+                </span>
+              )}
+            </div>
             {editingJob && editingBlob && (
               <ImageEditor
                 imageBlob={editingBlob}
@@ -775,6 +815,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   <option value="upload">{isRtl ? "رفع" : "Upload"}</option>
                   <option value="gmail">Gmail</option>
                   <option value="cloud">{isRtl ? "سحابة" : "Cloud"}</option>
+                  <option value="admin">{t("adminSource")}</option>
                 </select>
                 {filtersActive && (
                   <button
@@ -1144,11 +1185,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                             >
                                               {job.fileName}
                                             </span>
-                                            {job.source === "gmail" && (
-                                              <span className="text-[10px] font-semibold text-green-700 dark:text-green-100 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
-                                                Gmail
-                                              </span>
-                                            )}
+                                            {renderSourceBadge(job)}
                                           </span>
                                           <span className="text-xs text-gray-400 dark:text-gray-500">
                                             {formatSize(job.fileSize)}
@@ -1546,6 +1583,8 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
         onClose={() => jobs.setPrintOptionsJob(null)}
         onPrint={jobs.printJobWithOptions}
       />
+
+      <NewJobDialog open={newJobOpen} onOpenChange={setNewJobOpen} paperTypes={paperTypes} onCreated={() => jobs.loadJobs()} />
     </>
   );
 };

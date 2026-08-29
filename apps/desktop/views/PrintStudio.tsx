@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import CardIDTool from "./CardIDTool";
+import PhotoBatchTool from "./PhotoBatchTool";
 import PDFJobManager from "./PDFJobManager";
 import { useLanguage } from "../lib/useLanguage";
 import { Toaster } from "../components/ui/toaster";
@@ -8,7 +9,7 @@ import LanguageToggle from "../components/LanguageToggle";
 import type { Language, ShopSettings } from "../types";
 import { TRANSLATIONS } from "../constants";
 
-type StudioTab = "cards" | "pdf";
+type StudioTab = "cards" | "pdf" | "photos";
 
 const studioNavItems: { id: StudioTab; icon: string; labelKey: string }[] = [
   {
@@ -20,6 +21,11 @@ const studioNavItems: { id: StudioTab; icon: string; labelKey: string }[] = [
     id: "pdf",
     icon: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z",
     labelKey: "pdfTab",
+  },
+  {
+    id: "photos",
+    icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z",
+    labelKey: "photosTab",
   },
 ];
 
@@ -45,7 +51,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
   const isRtl = lang === "ar";
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab") as StudioTab | null;
-  const tab: StudioTab = urlTab === "pdf" || urlTab === "cards" ? urlTab : "cards";
+  const tab: StudioTab = urlTab === "pdf" || urlTab === "cards" || urlTab === "photos" ? urlTab : "cards";
   const setTab = (next: StudioTab) => {
     setSearchParams(
       (prev) => {
@@ -316,7 +322,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             </svg>
           </button>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-            {t(tab === "cards" ? "cardsTab" : "pdfTab")}
+            {t(tab === "cards" ? "cardsTab" : tab === "photos" ? "photosTab" : "pdfTab")}
           </span>
           <div className="w-9" />
         </header>
@@ -324,7 +330,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
           <div className={`p-3 sm:p-4 lg:p-6 ${isRtl ? "text-right" : ""}`} dir={isRtl ? "rtl" : "ltr"}>
-            {tab === "cards" ? <CardIDTool /> : <PDFJobManager />}
+            {tab === "cards" ? <CardIDTool /> : tab === "photos" ? <PhotoBatchTool /> : <PDFJobManager />}
           </div>
         </main>
       </div>

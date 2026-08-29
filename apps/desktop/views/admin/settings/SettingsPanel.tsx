@@ -306,7 +306,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const handleAddPaperType = async () => {
     if (!newPaperTypeForm.name.trim()) return;
     const newPt: PaperType = {
-      id: `pt_${Date.now()}`,
+      id: `pt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: newPaperTypeForm.name.trim(),
       nameAr: newPaperTypeForm.nameAr.trim() || newPaperTypeForm.name.trim(),
       colorPerPage: newPaperTypeForm.colorPerPage,

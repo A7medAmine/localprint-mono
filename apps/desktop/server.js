@@ -507,6 +507,86 @@ app.post("/api/upload", uploadLimit, upload.single("file"), async (req, res) => 
   }
 });
 
+// Admin job create — operator-made jobs (Photo Batch save-as-job, manual job
+// entry). Authenticated, unlike the public /api/upload. The server owns the id;
+// any client-supplied id is ignored. These jobs are local-only (source: "admin"),
+// so cloudSync never touches them.
+app.post("/api/jobs", requireAdmin, upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "No file uploaded" });
+    }
+
+    const metadata = JSON.parse(req.body.metadata || "{}");
+    const filePath = path.join(UPLOADS_DIR, req.file.filename);
+
+    // Magic bytes must match the claimed MIME type (validated against the
+    // shared allowlist — PDF, JPEG, PNG, TIFF, DOCX, XLSX).
+    if (!validateMagicBytes(filePath, req.file.mimetype)) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ success: false, error: "File content does not match its type" });
+    }
+
+    let pageCount = null;
+    if (req.file.mimetype === "application/pdf") {
+      pageCount = await getPdfPageCount(filePath);
+    }
+
+    const id = randomUUID();
+    const deleteToken = randomBytes(16).toString("hex");
+    const prefs = metadata.printPreferences || {};
+
+    const colorMode = prefs.colorMode === "blackWhite" ? "blackWhite" : "color";
+    const copies = Number(prefs.copies) >= 1 ? Math.floor(Number(prefs.copies)) : 1;
+    const paperType = String(prefs.paperType || "normal");
+    const uploadDate = new Date().toISOString();
+
+    const newJob = {
+      id,
+      customerName: String(metadata.customerName || metadata.customer || "").trim(),
+      phoneNumber: String(metadata.phoneNumber || metadata.phone || "").trim(),
+      notes: String(metadata.notes || "").trim(),
+      fileName: String(metadata.fileName || req.file.originalname || "upload").trim(),
+      fileType: req.file.mimetype,
+      fileSize: req.file.size,
+      uploadDate,
+      status: "PENDING",
+      serverFileName: req.file.filename,
+      pageCount,
+      colorMode,
+      copies,
+      paperType,
+      source: "admin",
+    };
+
+    const insertStmt = db.prepare(`
+      INSERT INTO jobs (
+        id, customerName, phoneNumber, notes, fileName, fileType,
+        fileSize, uploadDate, status, serverFileName, pageCount,
+        colorMode, copies, paperType, source, deleteTokenHash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    insertStmt.run(
+      newJob.id, newJob.customerName, newJob.phoneNumber, newJob.notes,
+      newJob.fileName, newJob.fileType, newJob.fileSize, newJob.uploadDate,
+      newJob.status, newJob.serverFileName, newJob.pageCount,
+      newJob.colorMode, newJob.copies, newJob.paperType, newJob.source,
+      hashDeleteToken(deleteToken)
+    );
+
+    broadcastEvent("new-job", { id: newJob.id });
+    res.status(200).json({
+      success: true,
+      job: { ...newJob, printPreferences: { colorMode: newJob.colorMode, copies: newJob.copies, paperType: newJob.paperType } },
+      deleteToken,
+    });
+  } catch (err) {
+    console.error("❌ Admin job create error:", err);
+    res.status(400).json({ success: false, error: "Invalid job metadata" });
+  }
+});
+
 // Update job file
 app.post("/api/jobs/:id/file", requireAdmin, upload.single("file"), async (req, res) => {
   try {
