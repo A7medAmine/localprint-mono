@@ -1,0 +1,14 @@
+# Build context is the monorepo root (see apps/online/Dockerfile).
+node_modules
+**/node_modules
+**/dist
+**/release
+**/build
+**/uploads
+**/.env
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+.git
+**/.codegraph
+*.log
