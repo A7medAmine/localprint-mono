@@ -4,11 +4,8 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { checkEnv } from './checkEnv.js';
+import { runMigrations } from './migrate.js';
 
-// db.js is the first module to touch process.env in anger (TOKEN_ENCRYPTION_KEY
-// below throws on a bad value). ESM evaluates imported modules before the
-// importer's body, so this is the earliest reliable point to fail loudly with
-// an actionable message instead of a raw throw / Electron white screen.
 checkEnv();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,7 +102,9 @@ if (!gmailRow) {
   db.prepare('INSERT INTO gmail_account (id) VALUES (1)').run();
 }
 
-// Migrations for columns added after initial schema
+// Migrations for columns added after initial schema — handled by numbered
+// migration runner for new installs, but kept for existing databases that
+// haven't run migrate.js yet (idempotent ADD COLUMN).
 try { db.exec(`ALTER TABLE jobs ADD COLUMN customerEmail TEXT DEFAULT ''`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'upload'`); } catch (e) {}
 try { db.exec(`ALTER TABLE gmail_pending ADD COLUMN discarded_at TEXT`); } catch (e) {}
@@ -115,8 +114,9 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentDate TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch (e) {}
-// Per-upload delete secret: sha256 of the token handed to the uploader once.
 try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch (e) {}
+
+runMigrations(db);
 
 // Clean up ghost rows from the old client-supplied-id bug (see Phase 2.1):
 // a row with a NULL id is unreachable from the admin UI. Remove their files too.
@@ -209,12 +209,23 @@ export const getSettings = () => {
 };
 
 export const updateSetting = (key, value) => {
-  // better-sqlite3 only binds numbers/strings/bigints/buffers/null — booleans
-  // (and objects) must be serialized first.
   const serializedValue = (typeof value === 'object' || typeof value === 'boolean')
     ? JSON.stringify(value)
     : value;
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, serializedValue);
+};
+
+export const getInternalState = (key) => {
+  const row = db.prepare('SELECT value FROM internal_state WHERE key = ?').get(key);
+  if (!row) return undefined;
+  try { return JSON.parse(row.value); } catch { return row.value; }
+};
+
+export const setInternalState = (key, value) => {
+  const serializedValue = (typeof value === 'object' || typeof value === 'boolean')
+    ? JSON.stringify(value)
+    : value;
+  db.prepare('INSERT OR REPLACE INTO internal_state (key, value) VALUES (?, ?)').run(key, serializedValue);
 };
 
 /**
