@@ -214,3 +214,52 @@ Either bare-VPS (sections 1–7, the recommended $6–10/mo path) or Docker
 - `supabase db push` applies cleanly on a scratch project.
 - A test upload survives a server restart (files on the volume/disk).
 - Backup cron ran once and the R2/B2 bucket holds a restorable `uploads/` tarball.
+
+---
+
+## 9. Vercel (trial only — not the production path)
+
+Config lives at the repo root (`vercel.json`):
+
+- `rootDirectory: "apps/online"`, `buildCommand: "npm run build"`,
+  `outputDirectory: "dist"` — Vercel serves the built SPA statically.
+- `installCommand: "npm ci --workspace @localprint/online --workspace
+  @localprint/shared"` — deliberately skips the desktop workspace so its
+  Electron `postinstall` never runs on Vercel.
+- `apps/online/api/index.js` exports the Express app; `server.js` skips
+  `app.listen()` when `process.env.VERCEL === "1"` and points `UPLOADS_DIR` at
+  `os.tmpdir()` (the serverless filesystem is read-only otherwise).
+- `rewrites` send every non-`/api/` path to `/index.html` (SPA routing).
+
+To deploy:
+
+```bash
+npm i -g vercel
+vercel            # link the repo, import the Vercel env vars below
+vercel env add SUPABASE_URL
+vercel env add SUPABASE_SERVICE_KEY
+vercel env add SUPABASE_JWT_SECRET
+vercel env add PLATFORM_ADMIN_TOKEN
+vercel --prod
+```
+
+Then run migrations against the same Supabase project
+(`supabase link && supabase db push`) and provision shops with
+`node apps/online/scripts/create-shop.js`.
+
+**Hard limits — why this is trial-only:**
+
+- **Uploads are ephemeral.** `os.tmpdir()` is throwaway: uploaded customer
+  files vanish when the lambda instance is recycled, so upload→sync-to-desktop
+  is not reliable. Real deployments use the VPS path (sections 1–7) or move
+  uploads to Vercel Blob / S3.
+- **Request body cap.** Vercel's serverless body limit (~4.5 MB on Hobby)
+  rejects the large PDFs the app is designed to accept.
+- **SSE/`ws` + timers don't survive.** In-memory `statusSubscribers`, the
+  rate limiter, and `cleanupOldOrders` are per-instance and frozen between
+  requests, so live status push and daily cleanup won't work as designed.
+- **Single-instance assumptions** (see "Single-instance constraints" above)
+  do not hold on a serverless platform that may spin up many instances.
+
+Use Vercel to preview the frontend and smoke-test API routes. For a live shop,
+use the VPS setup.

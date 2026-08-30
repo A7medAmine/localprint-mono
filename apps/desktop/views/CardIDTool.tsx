@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, degrees } from "pdf-lib";
 import { renderPdfFirstPageToDataUrl } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
+import ImageEditor from "../components/ImageEditor";
 import { useLanguage } from "../lib/useLanguage";
 import { cn } from "@localprint/shared";
 import { Button } from "../components/ui/button";
@@ -145,6 +146,10 @@ const CardIDTool: React.FC = () => {
   const [backFile, setBackFile] = useState<File | null>(null);
   const [frontDataUrl, setFrontDataUrl] = useState<string | null>(null);
   const [backDataUrl, setBackDataUrl] = useState<string | null>(null);
+  const [frontRot, setFrontRot] = useState(0);
+  const [backRot, setBackRot] = useState(0);
+  const [editingTarget, setEditingTarget] = useState<"front" | "back" | null>(null);
+  const [editingBlob, setEditingBlob] = useState<Blob | null>(null);
   const [showJobLoader, setShowJobLoader] = useState(false);
   const [loadTarget, setLoadTarget] = useState<"front" | "back">("front");
   const [exportError, setExportError] = useState("");
@@ -203,7 +208,48 @@ const CardIDTool: React.FC = () => {
     }
   }, []);
 
-  const drawPreview = (canvas: HTMLCanvasElement | null, dataUrl: string | null, isFront: boolean) => {
+  const dataUrlToBlob = (dataUrl: string): Blob => {
+    const bytes = dataUrlToBytes(dataUrl);
+    const type = dataUrl.match(/^data:([^;]+);/)?.[1] || "image/png";
+    return new Blob([bytes], { type });
+  };
+
+  const openEditor = (target: "front" | "back") => {
+    const dataUrl = target === "front" ? frontDataUrl : backDataUrl;
+    if (!dataUrl?.startsWith("data:image")) return;
+    setEditingTarget(target);
+    setEditingBlob(dataUrlToBlob(dataUrl));
+  };
+
+  // Save the edited image straight back into the card face it came from and
+  // re-render the preview — no re-upload needed.
+  const handleEditedImageSave = useCallback(async (newBlob: Blob) => {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to read edited image"));
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.readAsDataURL(newBlob);
+      });
+      const name = (editingTarget === "front" ? frontFile?.name : backFile?.name) || "edited-image.png";
+      const file = new File([newBlob], name, { type: newBlob.type || "image/png" });
+      if (editingTarget === "front") {
+        setFrontFile(file);
+        setFrontDataUrl(dataUrl);
+      } else if (editingTarget === "back") {
+        setBackFile(file);
+        setBackDataUrl(dataUrl);
+      }
+      toast({ title: isRtl ? "تم تحديث الصورة" : "Image updated", variant: "success" });
+    } catch (e: any) {
+      setExportError("Edit: " + (e.message || "failed to apply"));
+    } finally {
+      setEditingTarget(null);
+      setEditingBlob(null);
+    }
+  }, [editingTarget, frontFile, backFile, isRtl]);
+
+  const drawPreview = (canvas: HTMLCanvasElement | null, dataUrl: string | null, isFront: boolean, rot: number) => {
     if (!canvas || !dataUrl) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -236,24 +282,25 @@ const CardIDTool: React.FC = () => {
         ctx.strokeStyle = "#9ca3af";
         ctx.lineWidth = 0.5;
         ctx.strokeRect(cx, cy, cw, ch);
+        const rotated = rot % 180 !== 0;
         const iw = img.naturalWidth || cw;
         const ih = img.naturalHeight || ch;
-        const fitted = containFit(iw, ih, cw, ch);
-        const ix = cx + (cw - fitted.w) / 2;
-        const iy = cy + (ch - fitted.h) / 2;
+        const fitted = containFit(rotated ? ih : iw, rotated ? iw : ih, cw, ch);
         ctx.save();
         ctx.beginPath();
         ctx.rect(cx, cy, cw, ch);
         ctx.clip();
-        ctx.drawImage(img, ix, iy, fitted.w, fitted.h);
+        ctx.translate(cx + cw / 2, cy + ch / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.drawImage(img, -fitted.w / 2, -fitted.h / 2, fitted.w, fitted.h);
         ctx.restore();
       }
     };
     img.src = dataUrl;
   };
 
-  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx]);
-  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx]);
+  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true, frontRot); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx, frontRot]);
+  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false, backRot); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx, backRot]);
 
   // Auto-load front/back images from bulk "Print as Card" action
   useEffect(() => {
@@ -301,23 +348,25 @@ const CardIDTool: React.FC = () => {
             h: cardH,
           }];
 
-      const addPage = async (dataUrl: string, isFront: boolean) => {
+      const addPage = async (dataUrl: string, isFront: boolean, rot: number) => {
         const page = pdfDoc.addPage([PP_W, PP_H]);
         const img = await embedImageInPdf(pdfDoc, dataUrl);
         for (const slot of slots) {
           const sx = isFront ? slot.x : PP_W - slot.x - slot.w;
-          const fitted = containFit(img.width, img.height, slot.w, slot.h);
+          const rotated = rot % 180 !== 0;
+          const fitted = containFit(rotated ? img.height : img.width, rotated ? img.width : img.height, slot.w, slot.h);
           page.drawImage(img, {
             x: sx + (slot.w - fitted.w) / 2,
             y: slot.y + (slot.h - fitted.h) / 2,
             width: fitted.w,
             height: fitted.h,
+            rotate: degrees(rot),
           });
         }
       };
 
-      if (frontDataUrl) await addPage(frontDataUrl, true);
-      if (backDataUrl) await addPage(backDataUrl, false);
+      if (frontDataUrl) await addPage(frontDataUrl, true, frontRot);
+      if (backDataUrl) await addPage(backDataUrl, false, backRot);
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -477,7 +526,13 @@ const CardIDTool: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2">
                 <div className="flex-1 truncate text-sm">{frontFile.name}</div>
-                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setFrontFile(null); setFrontDataUrl(null); }}>
+                <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تحرير الصورة" : "Edit image"} disabled={!frontDataUrl?.startsWith("data:image")} onClick={() => openEditor("front")}>
+                  {isRtl ? "تحرير" : "Edit"}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تدوير 90 درجة" : "Rotate 90°"} onClick={() => setFrontRot((r) => (r + 90) % 360)}>
+                  ⟳ {frontRot ? `${frontRot}°` : ""}
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setFrontFile(null); setFrontDataUrl(null); setFrontRot(0); }}>
                   {t("remove")}
                 </Button>
               </div>
@@ -506,7 +561,13 @@ const CardIDTool: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2">
                 <div className="flex-1 truncate text-sm">{backFile.name}</div>
-                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setBackFile(null); setBackDataUrl(null); }}>
+                <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تحرير الصورة" : "Edit image"} disabled={!backDataUrl?.startsWith("data:image")} onClick={() => openEditor("back")}>
+                  {isRtl ? "تحرير" : "Edit"}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تدوير 90 درجة" : "Rotate 90°"} onClick={() => setBackRot((r) => (r + 90) % 360)}>
+                  ⟳ {backRot ? `${backRot}°` : ""}
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setBackFile(null); setBackDataUrl(null); setBackRot(0); }}>
                   {t("remove")}
                 </Button>
               </div>
@@ -678,6 +739,15 @@ const CardIDTool: React.FC = () => {
         onSelect={jobLoaderSelect}
         filterType="image"
       />
+
+      {editingTarget && editingBlob && (
+        <ImageEditor
+          imageBlob={editingBlob}
+          lang={lang}
+          onSave={handleEditedImageSave}
+          onCancel={() => { setEditingTarget(null); setEditingBlob(null); }}
+        />
+      )}
     </div>
   );
 };

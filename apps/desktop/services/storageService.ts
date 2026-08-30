@@ -119,14 +119,15 @@ class StorageService {
   }
 
   // New method to replace a file for an existing job
-  async updateJobFile(jobId: string, file: File): Promise<void> {
+  async updateJobFile(jobId: string, file: File): Promise<PrintJob | null> {
     const formData = new FormData();
     formData.append("file", file);
 
-    await this.safeFetch(`/api/jobs/${jobId}/file`, {
+    const res = await this.safeFetch(`/api/jobs/${jobId}/file`, {
       method: "POST",
       body: formData,
     });
+    return res?.job ?? null;
   }
 
   async getMetadata(): Promise<PrintJob[]> {

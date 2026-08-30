@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { PDFDocument } from "pdf-lib";
 import { ALLOWED_TYPES } from "../constants";
@@ -45,6 +45,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
   const [mode, setMode] = useState<Mode>(null);
   const [working, setWorking] = useState(false);
   const [progress, setProgress] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setCustomerName("");
@@ -264,6 +265,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-input rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition"
           >
             <svg className="w-6 h-6 text-muted-foreground mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,6 +273,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
             </svg>
             <span className="text-xs text-muted-foreground">{t("selectFiles")}</span>
             <input
+              ref={fileInputRef}
               type="file"
               accept={ACCEPT}
               multiple

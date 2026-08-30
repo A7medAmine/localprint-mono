@@ -85,6 +85,7 @@ const PhotoBatchTool: React.FC = () => {
   const [jobPhone, setJobPhone] = useState("");
   const [jobNotes, setJobNotes] = useState("");
   const dragIndexRef = useRef<number | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     storageService.getSettings().then((s) => {
@@ -427,6 +428,7 @@ const PhotoBatchTool: React.FC = () => {
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={onDrop}
+              onClick={() => photoInputRef.current?.click()}
               className="border-2 border-dashed border-input rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition"
             >
               <svg className="w-6 h-6 text-muted-foreground mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -434,6 +436,7 @@ const PhotoBatchTool: React.FC = () => {
               </svg>
               <span className="text-xs text-muted-foreground">{t("dropPhotosHere")}</span>
               <input
+                ref={photoInputRef}
                 type="file"
                 accept="image/*"
                 multiple

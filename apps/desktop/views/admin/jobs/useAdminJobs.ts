@@ -587,10 +587,16 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     if (editingJob) {
       try {
         const file = new File([newBlob], editingJob.fileName, { type: newBlob.type });
-        await storageService.updateJobFile(editingJob.id, file);
-        setEditingJob(null);
-        setEditingBlob(null);
-        loadJobs();
+        const updated = await storageService.updateJobFile(editingJob.id, file);
+        if (updated) {
+          setGroups((prev) =>
+            prev.map((g) => ({
+              ...g,
+              jobs: g.jobs.map((j) => (j.id === updated.id ? updated : j)),
+            })),
+          );
+          setReviewJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+        }
         toast({ title: rtl ? "تم تحديث الملف بنجاح" : "File updated successfully", variant: "success" });
       } catch (err) {
         console.error("Failed to update job file:", err);

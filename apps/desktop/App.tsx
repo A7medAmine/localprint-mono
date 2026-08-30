@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-
 import { Language, ShopSettings } from "./types";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
+import { isNativePrintActive } from "./lib/electronPrint";
 import UploadView from "./views/UploadView";
 import AdminView from "./views/AdminView";
 import PrintStudio from "./views/PrintStudio";
@@ -51,7 +52,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!window.matchMedia) return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    const onChange = (e: MediaQueryListEvent) => {
+      // The hidden print window pins nativeTheme to light while it renders —
+      // that fires a transient prefers-color-scheme change here. Ignore it so
+      // printing doesn't flash/toggle the app theme (or make the UI look like
+      // the cards vanished). The OS theme is still picked up after.
+      if (isNativePrintActive()) return;
+      setSystemPrefersDark(e.matches);
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);

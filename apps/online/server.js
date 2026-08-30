@@ -3,6 +3,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { fileURLToPath } from "url";
 import { PDFDocument } from "pdf-lib";
 import { randomBytes, randomUUID, createHash } from "crypto";
@@ -203,9 +204,15 @@ const __dirname = path.dirname(__filename);
 const NODE_ENV = process.env.NODE_ENV || "development";
 const isDev = NODE_ENV === "development";
 const PORT = process.env.PORT || (isDev ? 5001 : 3000);
+// Vercel runs this as a serverless function, not a long-lived listener.
+const isVercel = process.env.VERCEL === "1";
 
 const DIST_DIR = path.join(__dirname, "dist");
-const UPLOADS_DIR = path.join(__dirname, "uploads");
+// Vercel's serverless filesystem is read-only except /tmp — route uploads to a
+// throwaway dir there. Ephemeral: files vanish after the instance is recycled,
+// so this is for previews/trials only; the VPS path (DEPLOYMENT.md) is the
+// durable one.
+const UPLOADS_DIR = isVercel ? path.join(os.tmpdir(), "localprint-uploads") : path.join(__dirname, "uploads");
 
 const app = express();
 
@@ -976,13 +983,20 @@ if (!isDev) {
  */
 const HOST = process.env.HOST || "127.0.0.1";
 
-app.listen(PORT, HOST, () => {
-  console.log("\n🚀 LocalPrint Cloud started!");
-  console.log(`📦 Environment: ${NODE_ENV}`);
-  console.log(`🌐 Server URL: http://${HOST}:${PORT}`);
-  if (isDev) {
-    console.log(`🔧 Dev mode - CORS enabled for http://localhost:5000`);
-  }
-  console.log(`📂 Uploads directory: ${UPLOADS_DIR.replace(__dirname, '.')}`);
-  console.log(`🗄️  Database: Supabase\n`);
-});
+// Under Vercel the app is imported by api/index.js and handled per-request —
+// never call listen(). Exported at the bottom for that entry point.
+if (!isVercel) {
+  app.listen(PORT, HOST, () => {
+    console.log("\n🚀 LocalPrint Cloud started!");
+    console.log(`📦 Environment: ${NODE_ENV}`);
+    console.log(`🌐 Server URL: http://${HOST}:${PORT}`);
+    if (isDev) {
+      console.log(`🔧 Dev mode - CORS enabled for http://localhost:5000`);
+    }
+    console.log(`📂 Uploads directory: ${UPLOADS_DIR.replace(__dirname, '.')}`);
+    console.log(`🗄️  Database: Supabase\n`);
+  });
+}
+
+export { app };
+export default app;

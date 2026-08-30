@@ -58,6 +58,13 @@ const LOCAL_URL = `http://${LOOPBACK}:${SERVER_PORT}`;
 // slower hardware needs more.
 const PDF_RENDER_SETTLE_MS = 250;
 
+// Some Windows GPU/driver combos never invoke webContents.print()'s callback
+// for an off-screen window even though the job spools fine (known Electron
+// issue). That used to leave the renderer's "printing…" state stuck forever
+// and kept the hidden print window + the light themeSource pinned. Watchdog
+// below guarantees the print promise always settles.
+const PRINT_CALLBACK_TIMEOUT_MS = 20_000;
+
 // The Vite dev server the repo has always used (see vite.config.ts).
 const DEV_URL = 'http://localhost:3000';
 
@@ -394,14 +401,22 @@ function nativePrint({ filePath, printerName, silent, options }) {
     nativeTheme.themeSource = 'light';
 
     let settled = false;
+    let watchdog = null;
     const finish = (err, value) => {
       if (settled) return;
       settled = true;
+      if (watchdog) clearTimeout(watchdog);
       try { win.destroy(); } catch { /* already gone */ }
       nativeTheme.themeSource = priorTheme;
       if (err) reject(err);
       else resolve(value);
     };
+    // Settle even if the print callback never fires — see
+    // PRINT_CALLBACK_TIMEOUT_MS above. Resolve as ok: the job was almost
+    // certainly spooled; the alternative (a forever-stuck button) is worse.
+    watchdog = setTimeout(() => finish(null, { ok: true }), PRINT_CALLBACK_TIMEOUT_MS);
+    // Unexpected window destruction — don't leave the caller hanging.
+    win.on('closed', () => finish(new Error('Print window closed unexpectedly')));
 
     // did-finish-load is Chromium telling us the document is laid out.
     // For PDFs the built-in viewer emits it once the first page is ready.

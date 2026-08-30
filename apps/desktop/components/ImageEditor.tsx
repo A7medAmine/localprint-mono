@@ -218,12 +218,15 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   const [mode, setMode] = useState<"edit" | "crop" | "perspective">("edit");
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [filters, setFilters] = useState<FilterValues>({ ...DEFAULT_FILTERS });
   const [presets, setPresets] = useState<FilterPreset[]>(loadPresets);
   const [presetNameInput, setPresetNameInput] = useState("");
+  const [currentBlob, setCurrentBlob] = useState<Blob>(imageBlob);
+  const [undoStack, setUndoStack] = useState<Blob[]>([]);
+  const [redoStack, setRedoStack] = useState<Blob[]>([]);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const urlRef = useRef<string | null>(null);
 
   const [baseSize, setBaseSize] = useState({ width: 0, height: 0 });
 
@@ -245,11 +248,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [globalMousePos, setGlobalMousePos] = useState<Point>({ x: 0, y: 0 });
 
-  useEffect(() => {
+  const loadBlob = useCallback((blob: Blob, resetFilters = true) => {
     const img = new Image();
-    const url = URL.createObjectURL(imageBlob);
+    const url = URL.createObjectURL(blob);
     img.src = url;
     img.onload = () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = url;
+      setCurrentBlob(blob);
       setImage(img);
       const maxWidth = window.innerWidth * 0.65;
       const maxHeight = window.innerHeight * 0.75;
@@ -274,9 +280,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
         { x: w * 0.1, y: h * 0.9 },
       ]);
       setCropRect({ x: w * 0.2, y: h * 0.2, w: w * 0.6, h: h * 0.6 });
+      setMode("edit");
+      if (resetFilters) setFilters({ ...DEFAULT_FILTERS });
     };
-    return () => URL.revokeObjectURL(url);
-  }, [imageBlob]);
+  }, []);
+
+  useEffect(() => {
+    loadBlob(imageBlob, true);
+  }, [imageBlob, loadBlob]);
 
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
@@ -556,143 +567,218 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     srcCtx.putImageData(imgData, 0, 0);
   }
 
-  const handleApply = async () => {
+  const canvasToBlob = (canvas: HTMLCanvasElement) =>
+    new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, imageBlob.type));
+
+  const bakeTransform = (
+    deg: number,
+    flipX: boolean,
+    flipY: boolean,
+  ): HTMLCanvasElement | null => {
+    if (!image) return null;
+    const rot = ((deg % 360) + 360) % 360;
+    const swapped = rot === 90 || rot === 270;
+    const w = swapped ? image.height : image.width;
+    const h = swapped ? image.width : image.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((rot * Math.PI) / 180);
+    ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    ctx.drawImage(image, -image.width / 2, -image.height / 2, image.width, image.height);
+    return canvas;
+  };
+
+  const applyTransform = async (deg: number, flipX: boolean, flipY: boolean) => {
+    if (!image) return;
+    setIsProcessing(true);
+    try {
+      const canvas = bakeTransform(deg, flipX, flipY);
+      if (!canvas) return;
+      const blob = await canvasToBlob(canvas);
+      if (!blob) return;
+      setUndoStack((s) => [...s, currentBlob]);
+      setRedoStack([]);
+      loadBlob(blob, false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const undo = useCallback(() => {
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack(undoStack.slice(0, -1));
+    setRedoStack([...redoStack, currentBlob]);
+    loadBlob(prev, true);
+  }, [undoStack, redoStack, currentBlob, loadBlob]);
+
+  const redo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack(redoStack.slice(0, -1));
+    setUndoStack([...undoStack, currentBlob]);
+    loadBlob(next, true);
+  }, [redoStack, undoStack, currentBlob, loadBlob]);
+
+  const saveChanges = useCallback(async (closeAfterSave = false) => {
     if (!image || !canvasRef.current) return;
     setIsProcessing(true);
+    setSaveMsg(null);
+    try {
+      const scale = image.width / baseSize.width;
+      const filterStr = filterValuesToCss(filters);
+      const upscaleFactor = filters.upscale;
+      let resultCanvas: HTMLCanvasElement | null = null;
 
-    const scale = image.width / baseSize.width;
-    const filterStr = filterValuesToCss(filters);
-    const upscaleFactor = filters.upscale;
-
-    if (mode === "edit") {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.filter = filterStr;
-      ctx.drawImage(image, 0, 0);
-      const imgData = ctx.getImageData(0, 0, image.width, image.height);
-      if (filters.sharpness > 0) {
-        const s = filters.sharpness / 100;
-        applyConv3x3(imgData, image.width, image.height, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
-      }
-      if (filters.clarity > 0) {
-        applyClarity(imgData, image.width, image.height, filters.clarity / 100);
-      }
-      ctx.putImageData(imgData, 0, 0);
-      canvas.toBlob((blob) => {
-        setIsProcessing(false);
-        if (blob) { setPendingBlob(blob); setShowConfirm(true); }
-      }, imageBlob.type);
-    } else if (mode === "crop") {
-      const outW = Math.round(cropRect.w * scale * upscaleFactor);
-      const outH = Math.round(cropRect.h * scale * upscaleFactor);
-      const canvas = document.createElement("canvas");
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const srcCanvas = document.createElement("canvas");
-      srcCanvas.width = outW;
-      srcCanvas.height = outH;
-      const srcCtx = srcCanvas.getContext("2d")!;
-      srcCtx.filter = filterStr;
-      srcCtx.drawImage(
-        image,
-        cropRect.x * scale, cropRect.y * scale,
-        cropRect.w * scale, cropRect.h * scale,
-        0, 0, outW, outH,
-      );
-      const imgData = srcCtx.getImageData(0, 0, outW, outH);
-      if (filters.sharpness > 0) {
-        const s = filters.sharpness / 100;
-        applyConv3x3(imgData, outW, outH, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
-      }
-      if (filters.clarity > 0) {
-        applyClarity(imgData, outW, outH, filters.clarity / 100);
-      }
-      ctx.putImageData(imgData, 0, 0);
-      canvas.toBlob((blob) => {
-        setIsProcessing(false);
-        if (blob) { setPendingBlob(blob); setShowConfirm(true); }
-      }, imageBlob.type);
-
-    } else {
-      const src = points.map((p) => ({ x: p.x * scale, y: p.y * scale }));
-
-      let outW = Math.round(Math.max(
-        Math.hypot(src[1].x - src[0].x, src[1].y - src[0].y),
-        Math.hypot(src[2].x - src[3].x, src[2].y - src[3].y),
-      ));
-      let outH = Math.round(Math.max(
-        Math.hypot(src[3].x - src[0].x, src[3].y - src[0].y),
-        Math.hypot(src[2].x - src[1].x, src[2].y - src[1].y),
-      ));
-      outW = Math.round(outW * upscaleFactor);
-      outH = Math.round(outH * upscaleFactor);
-
-      const dst = [
-        { x: 0,    y: 0    },
-        { x: outW, y: 0    },
-        { x: outW, y: outH },
-        { x: 0,    y: outH },
-      ];
-
-      const H = computeHomography(src, dst);
-      const H_inv = invertMatrix3x3(H);
-      if (!H_inv) { setIsProcessing(false); return; }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const srcCanvas = document.createElement("canvas");
-      srcCanvas.width = image.width;
-      srcCanvas.height = image.height;
-      const srcCtx = srcCanvas.getContext("2d")!;
-      srcCtx.filter = filterStr;
-      srcCtx.drawImage(image, 0, 0);
-      const srcData = srcCtx.getImageData(0, 0, image.width, image.height);
-      const outData = ctx.createImageData(outW, outH);
-
-      for (let dy = 0; dy < outH; dy++) {
-        for (let dx = 0; dx < outW; dx++) {
-          const [sx, sy] = applyHomography(H_inv, dx + 0.5, dy + 0.5);
-          const color = bilinearSample(srcData, image.width, image.height, sx, sy);
-          const i = (dy * outW + dx) * 4;
-          outData.data[i]     = color[0];
-          outData.data[i + 1] = color[1];
-          outData.data[i + 2] = color[2];
-          outData.data[i + 3] = color[3];
+      if (mode === "edit") {
+        resultCanvas = document.createElement("canvas");
+        resultCanvas.width = image.width;
+        resultCanvas.height = image.height;
+        const ctx = resultCanvas.getContext("2d");
+        if (!ctx) return;
+        ctx.filter = filterStr;
+        ctx.drawImage(image, 0, 0);
+        const imgData = ctx.getImageData(0, 0, image.width, image.height);
+        if (filters.sharpness > 0) {
+          const s = filters.sharpness / 100;
+          applyConv3x3(imgData, image.width, image.height, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
         }
-      }
-      ctx.putImageData(outData, 0, 0);
+        if (filters.clarity > 0) {
+          applyClarity(imgData, image.width, image.height, filters.clarity / 100);
+        }
+        ctx.putImageData(imgData, 0, 0);
+      } else if (mode === "crop") {
+        const outW = Math.round(cropRect.w * scale * upscaleFactor);
+        const outH = Math.round(cropRect.h * scale * upscaleFactor);
+        resultCanvas = document.createElement("canvas");
+        resultCanvas.width = outW;
+        resultCanvas.height = outH;
+        const ctx = resultCanvas.getContext("2d");
+        if (!ctx) return;
+        const srcCanvas = document.createElement("canvas");
+        srcCanvas.width = outW;
+        srcCanvas.height = outH;
+        const srcCtx = srcCanvas.getContext("2d")!;
+        srcCtx.filter = filterStr;
+        srcCtx.drawImage(
+          image,
+          cropRect.x * scale, cropRect.y * scale,
+          cropRect.w * scale, cropRect.h * scale,
+          0, 0, outW, outH,
+        );
+        const imgData = srcCtx.getImageData(0, 0, outW, outH);
+        if (filters.sharpness > 0) {
+          const s = filters.sharpness / 100;
+          applyConv3x3(imgData, outW, outH, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
+        }
+        if (filters.clarity > 0) {
+          applyClarity(imgData, outW, outH, filters.clarity / 100);
+        }
+        ctx.putImageData(imgData, 0, 0);
+      } else {
+        const src = points.map((p) => ({ x: p.x * scale, y: p.y * scale }));
 
-      const finalData = ctx.getImageData(0, 0, outW, outH);
-      if (filters.sharpness > 0) {
-        const s = filters.sharpness / 100;
-        applyConv3x3(finalData, outW, outH, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
-      }
-      if (filters.clarity > 0) {
-        applyClarity(finalData, outW, outH, filters.clarity / 100);
-      }
-      ctx.putImageData(finalData, 0, 0);
+        let outW = Math.round(Math.max(
+          Math.hypot(src[1].x - src[0].x, src[1].y - src[0].y),
+          Math.hypot(src[2].x - src[3].x, src[2].y - src[3].y),
+        ));
+        let outH = Math.round(Math.max(
+          Math.hypot(src[3].x - src[0].x, src[3].y - src[0].y),
+          Math.hypot(src[2].x - src[1].x, src[2].y - src[1].y),
+        ));
+        outW = Math.round(outW * upscaleFactor);
+        outH = Math.round(outH * upscaleFactor);
 
-      canvas.toBlob((blob) => {
-        setIsProcessing(false);
-        if (blob) { setPendingBlob(blob); setShowConfirm(true); }
-      }, imageBlob.type);
+        const dst = [
+          { x: 0,    y: 0    },
+          { x: outW, y: 0    },
+          { x: outW, y: outH },
+          { x: 0,    y: outH },
+        ];
+
+        const H = computeHomography(src, dst);
+        const H_inv = invertMatrix3x3(H);
+        if (!H_inv) return;
+
+        resultCanvas = document.createElement("canvas");
+        resultCanvas.width = outW;
+        resultCanvas.height = outH;
+        const ctx = resultCanvas.getContext("2d");
+        if (!ctx) return;
+
+        const srcCanvas = document.createElement("canvas");
+        srcCanvas.width = image.width;
+        srcCanvas.height = image.height;
+        const srcCtx = srcCanvas.getContext("2d")!;
+        srcCtx.filter = filterStr;
+        srcCtx.drawImage(image, 0, 0);
+        const srcData = srcCtx.getImageData(0, 0, image.width, image.height);
+        const outData = ctx.createImageData(outW, outH);
+
+        for (let dy = 0; dy < outH; dy++) {
+          for (let dx = 0; dx < outW; dx++) {
+            const [sx, sy] = applyHomography(H_inv, dx + 0.5, dy + 0.5);
+            const color = bilinearSample(srcData, image.width, image.height, sx, sy);
+            const i = (dy * outW + dx) * 4;
+            outData.data[i]     = color[0];
+            outData.data[i + 1] = color[1];
+            outData.data[i + 2] = color[2];
+            outData.data[i + 3] = color[3];
+          }
+        }
+        ctx.putImageData(outData, 0, 0);
+
+        const finalData = ctx.getImageData(0, 0, outW, outH);
+        if (filters.sharpness > 0) {
+          const s = filters.sharpness / 100;
+          applyConv3x3(finalData, outW, outH, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
+        }
+        if (filters.clarity > 0) {
+          applyClarity(finalData, outW, outH, filters.clarity / 100);
+        }
+        ctx.putImageData(finalData, 0, 0);
+      }
+
+      if (!resultCanvas) return;
+      const blob = await canvasToBlob(resultCanvas);
+      if (!blob) return;
+      onSave(blob);
+      if (closeAfterSave) {
+        onCancel();
+        return;
+      }
+      setUndoStack((s) => [...s, currentBlob]);
+      setRedoStack([]);
+      loadBlob(blob, true);
+      setSaveMsg(t("saved"));
+    } finally {
+      setIsProcessing(false);
     }
-  };
+  }, [image, imageBlob.type, mode, filters, baseSize, cropRect, points, currentBlob, onSave, onCancel, loadBlob]);
 
-  const confirmSave = () => {
-    if (pendingBlob) {
-      onSave(pendingBlob);
-    }
-  };
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
+        e.preventDefault();
+        saveChanges();
+      } else if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [saveChanges, undo, redo]);
 
   const updateFilter = (key: keyof FilterValues, value: number) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -750,28 +836,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   return (
     <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-0">
       <div className="bg-white dark:bg-gray-900 w-full h-full max-w-[98vw] max-h-[98vh] overflow-hidden flex flex-col shadow-2xl dark:shadow-gray-900/80 relative rounded-none md:rounded-2xl">
-        {showConfirm && (
-          <div className="absolute inset-0 z-[110] bg-black/50 flex items-center justify-center backdrop-blur-sm p-4 text-center">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl dark:shadow-gray-900/60 max-w-sm w-full">
-              <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-              </div>
-              <h4 className="text-xl font-bold mb-2">
-                {isRtl ? "تأكيد الحفظ؟" : "Confirm Save?"}
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">
-                {isRtl
-                  ? "سيتم استبدال الملف الأصلي بهذا التعديل بشكل دائم."
-                  : "The original file will be permanently replaced with this edit."}
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setShowConfirm(false)} className="flex-1 px-4 py-2 text-gray-600 dark:text-gray-300 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition">{t("cancel")}</button>
-                <button onClick={confirmSave} className="flex-1 px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg">{t("save")}</button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Header */}
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/80 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2">
@@ -781,9 +845,30 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
               <button onClick={() => setMode("crop")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "crop" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("normalCrop")}</button>
               <button onClick={() => setMode("perspective")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "perspective" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("perspectiveCut")}</button>
             </div>
+            <div className="flex bg-white dark:bg-gray-800 rounded-lg p-0.5 shadow-sm border border-gray-200 dark:border-gray-600">
+              <button onClick={() => applyTransform(-90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("rotateLeft")}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              </button>
+              <button onClick={() => applyTransform(90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("rotate90")}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              </button>
+              <button onClick={() => applyTransform(0, true, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("flipH")}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v18"></path><path d="M3 9a2 2 0 0 1 2-2h7v10H5a2 2 0 0 1-2-2V9z" fill="currentColor" stroke="none"></path><path d="M21 9a2 2 0 0 0-2-2h-7v10h7a2 2 0 0 0 2-2V9z"></path></svg>
+              </button>
+              <button onClick={() => applyTransform(0, false, true)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("flipV")}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12h18"></path><path d="M9 3a2 2 0 0 0-2 2v7h10V5a2 2 0 0 0-2-2H9z" fill="currentColor" stroke="none"></path><path d="M9 21a2 2 0 0 1-2-2v-7h10v7a2 2 0 0 1-2 2H9z"></path></svg>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-1.5 bg-white dark:bg-gray-800 rounded-lg p-0.5 shadow-sm border border-gray-200 dark:border-gray-600">
+            <button onClick={undo} disabled={undoStack.length === 0 || isProcessing} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={`${t("undo")} (Ctrl+Z)`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"></path></svg>
+            </button>
+            <button onClick={redo} disabled={redoStack.length === 0 || isProcessing} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={`${t("redo")} (Ctrl+Y)`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"></path></svg>
+            </button>
+            <div className="w-px h-3 bg-gray-200 dark:bg-gray-600 mx-0.5" />
             <button onClick={() => setZoom((prev) => Math.max(0.5, prev - 0.25))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400" title="Zoom Out">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4"></path></svg>
             </button>
@@ -857,9 +942,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
             </div>
 
             <div className="p-3 mt-auto flex flex-col gap-2">
-              <button onClick={handleApply} disabled={isProcessing} className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg text-sm flex items-center justify-center gap-2">
-                {isProcessing && (<svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>)}
-                {isRtl ? "حفظ التغييرات" : "Save Changes"}
+              <button onClick={() => saveChanges()} disabled={isProcessing} className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg text-sm flex items-center justify-center gap-2">
+                {isProcessing ? (
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                )}
+                {saveMsg || (isRtl ? "حفظ التغييرات" : "Save Changes")}
+              </button>
+              <button onClick={() => saveChanges(true)} disabled={isProcessing} className="w-full py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition shadow-lg text-sm flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19h16"></path></svg>
+                {t("saveAndClose")}
               </button>
               <button onClick={onCancel} className="w-full py-2 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition text-sm">{t("cancel")}</button>
             </div>

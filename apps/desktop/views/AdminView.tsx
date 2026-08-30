@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Language, PrintJob, PrintStatus, ShopSettings, DiscountRule, PaperType } from "../types";
 import { TRANSLATIONS } from "../constants";
 import { storageService } from "../services/storageService";
@@ -14,6 +14,9 @@ import ReviewQueuePanel from "./admin/review/ReviewQueuePanel";
 import SettingsPanel from "./admin/settings/SettingsPanel";
 import JobsPanel from "./admin/jobs/JobsPanel";
 import { useAdminJobs } from "./admin/jobs/useAdminJobs";
+import CardIDTool from "./CardIDTool";
+import PDFJobManager from "./PDFJobManager";
+import PhotoBatchTool from "./PhotoBatchTool";
 
 interface AdminViewProps {
   lang: Language;
@@ -46,10 +49,9 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
   };
 
   const isRtl = lang === "ar";
-  const navigate = useNavigate();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const validTabs = ["jobs", "settings", "gmail", "review", "inventory"] as const;
+  const validTabs = ["jobs", "settings", "gmail", "review", "inventory", "studio-cards", "studio-pdf", "studio-photos"] as const;
   type AdminTab = (typeof validTabs)[number];
   const urlTab = searchParams.get("tab") as AdminTab | null;
   const activeTab: AdminTab = urlTab && validTabs.includes(urlTab) ? urlTab : "jobs";
@@ -136,7 +138,14 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
     { id: "gmail", label: isRtl ? "البريد الإلكتروني" : "Email", icon: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
   ];
 
-  const activeNav = activeTab === "gmail" ? "gmail" : activeTab === "settings" ? "settings" : activeTab === "review" ? "review" : activeTab === "inventory" ? "inventory" : "dashboard";
+  // Print Studio tools live on the dashboard now — no separate studio page.
+  const studioNavItems = [
+    { id: "studio-cards", label: t("cardsTab"), icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" },
+    { id: "studio-pdf", label: t("pdfTab"), icon: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" },
+    { id: "studio-photos", label: t("photosTab"), icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" },
+  ] as const;
+
+  const activeNav = activeTab === "gmail" ? "gmail" : activeTab === "settings" ? "settings" : activeTab === "review" ? "review" : activeTab === "inventory" ? "inventory" : activeTab.startsWith("studio-") ? activeTab : "dashboard";
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950">
@@ -205,23 +214,33 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
           })}
         </nav>
 
-        {/* Section: TOOLS */}
+        {/* Section: STUDIO */}
         <div className="px-4 pt-2 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
-            {isRtl ? "أدوات" : "TOOLS"}
+            {isRtl ? "الاستوديو" : "STUDIO"}
           </span>
         </div>
 
         <nav className="px-3 pb-2 space-y-0.5">
-          <button
-            onClick={() => { navigate("/admin/studio"); setSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors duration-150 ease"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-            </svg>
-            {isRtl ? "استوديو الطباعة" : "Print Studio"}
-          </button>
+          {studioNavItems.map((item) => {
+            const isActive = activeNav === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ease ${
+                  isActive
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
+                }`}
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d={item.icon} />
+                </svg>
+                <span className="flex-1 text-start">{item.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         {/* Spacer */}
@@ -299,6 +318,12 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
             paperTypes={paperTypes}
             onLowStockCountChange={setLowStockCount}
           />
+        ) : activeTab === "studio-cards" ? (
+          <CardIDTool />
+        ) : activeTab === "studio-pdf" ? (
+          <PDFJobManager />
+        ) : activeTab === "studio-photos" ? (
+          <PhotoBatchTool />
         ) : (
           <SettingsPanel
             discountRules={discountRules}
