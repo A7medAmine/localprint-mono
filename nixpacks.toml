@@ -1,0 +1,24 @@
+# Nixpacks build for apps/online (Dockploy). Root directory in Dockploy must
+# be the monorepo root — the online server imports @localprint/shared, which
+# only resolves as an npm workspace. Do NOT point Dockploy's root at
+# apps/online alone.
+#
+# Unlike a multi-stage Dockerfile, Nixpacks shares one env between install/
+# build/start — so VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY just go in
+# Dockploy's normal Environment tab (no separate "build args" step needed).
+# Also set HOST=0.0.0.0 there — server.js defaults to 127.0.0.1, which is
+# unreachable through Dockploy's proxy.
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = [
+  "npm ci --workspace @localprint/online --workspace @localprint/shared"
+]
+
+[phases.build]
+cmds = ["npm run build -w @localprint/online"]
+
+[start]
+cmd = "npm start -w @localprint/online"

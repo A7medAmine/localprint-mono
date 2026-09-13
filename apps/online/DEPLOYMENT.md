@@ -93,7 +93,7 @@ The frontend (built at deploy time) reads `VITE_SUPABASE_URL` /
 environment (CI or shell) before `npm run build`, not at runtime.
 
 Shop-sync auth is **per-shop**, not a global secret: each shop's token is minted
-into `shops.token_hash` by `node apps/online/scripts/create-shop.js "<Name>" --slug <slug>`.
+into `shops.token_hash` by `node apps/online/scripts/create-shop.js "<Name>" --host https://your-domain.com`.
 The desktop app stores that token in its own Cloud Sync settings. (The old
 `SHOP_API_TOKEN` env is unused/legacy.)
 
@@ -111,7 +111,7 @@ The desktop app stores that token in its own Cloud Sync settings. (The old
    On a scratch/pre-launch project `supabase db reset` replays `001…00N` cleanly.
 3. RLS is enabled on `orders` (see `002_customer_accounts.sql`); the server uses
    the service-role key, so it bypasses RLS — never expose that key client-side.
-4. Provision the first shop: `node apps/online/scripts/create-shop.js "<Name>" --slug <slug>`.
+4. Provision the first shop: `node apps/online/scripts/create-shop.js "<Name>" --host https://your-domain.com`.
 
 ## 4. Caddyfile (`/etc/caddy/Caddyfile`)
 
