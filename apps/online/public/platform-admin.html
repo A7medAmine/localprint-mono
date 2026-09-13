@@ -7,8 +7,9 @@
   <title>LocalPrint — Platform Admin</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 900px; margin-inline: auto; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 1000px; margin-inline: auto; }
     h1 { font-size: 1.3rem; }
+    h2 { font-size: 1rem; margin-top: 2rem; }
     input, button { font: inherit; padding: .5rem .6rem; border-radius: 6px; border: 1px solid #8888; }
     button { cursor: pointer; background: #4f46e5; color: #fff; border-color: #4f46e5; }
     button.secondary { background: transparent; color: inherit; }
@@ -18,6 +19,10 @@
     .token { font-family: ui-monospace, monospace; background: #8882; padding: .3rem .5rem; border-radius: 6px; word-break: break-all; }
     .msg { margin: 1rem 0; padding: .6rem .8rem; border-radius: 6px; background: #8882; }
     .err { background: #ef444433; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; margin-top: 1rem; }
+    .stat { background: #8882; border: 1px solid #8884; border-radius: 8px; padding: .75rem .9rem; }
+    .stat .n { font-size: 1.4rem; font-weight: 700; display: block; }
+    .stat .l { font-size: .78rem; opacity: .7; }
   </style>
 </head>
 <body>
@@ -25,17 +30,20 @@
   <p>Paste the <code>PLATFORM_ADMIN_TOKEN</code>. It stays in this tab only.</p>
   <div class="row">
     <input id="token" type="password" placeholder="PLATFORM_ADMIN_TOKEN" size="40" autocomplete="off" />
-    <button onclick="loadShops()">Connect</button>
+    <button onclick="loadAll()">Connect</button>
   </div>
 
+  <div id="msg"></div>
+
+  <div id="stats" class="stats" hidden></div>
+
+  <h2>Shops</h2>
   <div class="row">
     <input id="newName" placeholder="New shop name" size="30" />
     <button onclick="createShop()">Create shop</button>
   </div>
-
-  <div id="msg"></div>
   <table id="shops" hidden>
-    <thead><tr><th>Name</th><th>Slug</th><th>Active</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Slug</th><th>Active</th><th>Orders</th><th>Pages</th><th>Revenue</th><th>Actions</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -56,28 +64,43 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
   return body;
 }
-async function loadShops() {
+function statCard(n, l) {
+  return `<div class="stat"><span class="n">${n}</span><span class="l">${l}</span></div>`;
+}
+async function loadAll() {
   try {
-    const shops = await api('/api/admin/shops');
+    const stats = await api('/api/admin/stats');
+    const s = $('stats');
+    s.innerHTML = [
+      statCard(stats.totalShops, 'shops'),
+      statCard(stats.activeShops, 'active shops'),
+      statCard(stats.totalOrders, 'total orders'),
+      statCard(stats.ordersLast30d, 'orders (30d)'),
+      statCard(stats.totalPages, 'pages printed'),
+      statCard(stats.totalRevenue.toFixed(2), 'total revenue'),
+    ].join('');
+    s.hidden = false;
+
     const tbody = $('shops').querySelector('tbody');
     tbody.innerHTML = '';
-    for (const s of shops) {
+    for (const sh of stats.shops) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${s.name}</td><td>${s.slug}</td><td>${s.is_active ? 'yes' : 'no'}</td>`;
+      tr.innerHTML = `<td>${sh.name}</td><td>${sh.slug}</td><td>${sh.isActive ? 'yes' : 'no'}</td>` +
+        `<td>${sh.orderCount}</td><td>${sh.totalPages}</td><td>${sh.totalRevenue.toFixed(2)}</td>`;
       const td = document.createElement('td');
       const rotate = document.createElement('button');
       rotate.textContent = 'Rotate token';
-      rotate.onclick = () => rotateToken(s.id);
+      rotate.onclick = () => rotateToken(sh.id);
       const toggle = document.createElement('button');
       toggle.className = 'secondary';
-      toggle.textContent = s.is_active ? 'Deactivate' : 'Activate';
-      toggle.onclick = () => setActive(s.id, !s.is_active);
+      toggle.textContent = sh.isActive ? 'Deactivate' : 'Activate';
+      toggle.onclick = () => setActive(sh.id, !sh.isActive);
       td.append(rotate, ' ', toggle);
       tr.append(td);
       tbody.append(tr);
     }
     $('shops').hidden = false;
-    show(shops.length + ' shop(s).');
+    show(stats.shops.length + ' shop(s).');
   } catch (e) { show(e.message, true); }
 }
 async function createShop() {
@@ -85,7 +108,7 @@ async function createShop() {
     const r = await api('/api/admin/shops', { method: 'POST', body: JSON.stringify({ name: $('newName').value.trim() }) });
     show('Created "' + r.name + '" (slug ' + r.slug + '). Shop token (shown once): ' + r.token);
     $('newName').value = '';
-    loadShops();
+    loadAll();
   } catch (e) { show(e.message, true); }
 }
 async function rotateToken(id) {
@@ -98,7 +121,7 @@ async function rotateToken(id) {
 async function setActive(id, isActive) {
   try {
     await api('/api/admin/shops/' + id, { method: 'PATCH', body: JSON.stringify({ isActive }) });
-    loadShops();
+    loadAll();
   } catch (e) { show(e.message, true); }
 }
 </script>

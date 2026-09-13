@@ -22,6 +22,7 @@ import supabase, {
   getShopByTokenHash,
   createShop,
   listShops,
+  getPlatformStats,
   rotateShopToken,
   updateShop,
   getSupabaseUserFromToken,
@@ -425,6 +426,15 @@ app.get("/api/admin/shops", requirePlatformAdmin, async (req, res) => {
   } catch (err) {
     console.error("❌ listShops:", err);
     res.status(500).json({ error: "Failed to list shops" });
+  }
+});
+
+app.get("/api/admin/stats", requirePlatformAdmin, async (req, res) => {
+  try {
+    res.json(await getPlatformStats());
+  } catch (err) {
+    console.error("❌ getPlatformStats:", err);
+    res.status(500).json({ error: "Failed to load stats" });
   }
 });
 

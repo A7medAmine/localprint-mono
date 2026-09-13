@@ -91,6 +91,50 @@ export const listShops = async () => {
   return data || [];
 };
 
+// Platform-wide + per-shop stats for the admin dashboard. Orders are fetched
+// in full and aggregated in JS — Supabase's JS client has no cross-row SUM,
+// and order volume here is small enough that this stays cheap.
+export const getPlatformStats = async () => {
+  const [{ data: shops, error: shopsErr }, { data: orders, error: ordersErr }] = await Promise.all([
+    supabase.from('shops').select('id, slug, name, is_active'),
+    supabase.from('orders').select('shop_id, pagecount, totalprice, copies, uploaddate'),
+  ]);
+  if (shopsErr) throw shopsErr;
+  if (ordersErr) throw ordersErr;
+
+  const byShop = new Map((shops || []).map((s) => [s.id, {
+    id: s.id, slug: s.slug, name: s.name, isActive: s.is_active !== false,
+    orderCount: 0, totalPages: 0, totalRevenue: 0,
+  }]));
+
+  let totalOrders = 0, totalPages = 0, totalRevenue = 0, ordersLast30d = 0;
+  const since30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const o of orders || []) {
+    const pages = (Number(o.pagecount) || 0) * (Number(o.copies) || 1);
+    const revenue = Number(o.totalprice) || 0;
+    totalOrders += 1;
+    totalPages += pages;
+    totalRevenue += revenue;
+    if (o.uploaddate && new Date(o.uploaddate).getTime() >= since30) ordersLast30d += 1;
+    const s = byShop.get(o.shop_id);
+    if (s) {
+      s.orderCount += 1;
+      s.totalPages += pages;
+      s.totalRevenue += revenue;
+    }
+  }
+
+  return {
+    totalShops: (shops || []).length,
+    activeShops: (shops || []).filter((s) => s.is_active !== false).length,
+    totalOrders,
+    totalPages,
+    totalRevenue,
+    ordersLast30d,
+    shops: [...byShop.values()].sort((a, b) => b.totalRevenue - a.totalRevenue),
+  };
+};
+
 export const rotateShopToken = async (id) => {
   const token = randomBytes(32).toString('hex');
   const { data, error } = await supabase
