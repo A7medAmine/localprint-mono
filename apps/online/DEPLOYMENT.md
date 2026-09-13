@@ -208,6 +208,24 @@ docker run -d --name localprint-online -p 3000:3000 \
 Either bare-VPS (sections 1–7, the recommended $6–10/mo path) or Docker
 (section 8) — not both. The old `nixpacks.toml` (Railway) was removed.
 
+### Dockploy
+
+- Build context must be the **repo root**, Dockerfile path
+  `apps/online/Dockerfile` (Dockploy's "Build Path"/"Docker File" settings) —
+  same requirement as the raw `docker build -f` command above.
+- Runtime env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+  `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_TOKEN`) go in Dockploy's **Environment**
+  tab.
+- If customer accounts are enabled, `VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_ANON_KEY` must ALSO be set as Dockploy **Build Args** (Vite
+  inlines them at `vite build` time, not at container start) — setting them as
+  runtime env only has no effect on the built frontend.
+- Mount a volume at `/app/apps/online/uploads` (Dockploy "Volumes") — otherwise
+  uploaded files are lost on every redeploy.
+- Map the container's port **3000** to your domain; `HOST` is already forced
+  to `0.0.0.0` in the image for this (see Dockerfile comment) — don't override
+  it back to `127.0.0.1` in Dockploy's env, it'll break routing.
+
 ## Verify before go-live
 
 - `apps/online/checkEnv.js` list matches the env table above.

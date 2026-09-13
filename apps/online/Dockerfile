@@ -13,6 +13,13 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+# Vite inlines these at build time — pass as --build-arg (Dockploy: Build Args).
+# Leave unset to ship the frontend with customer accounts disabled.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 COPY package.json package-lock.json ./
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/online/package.json ./apps/online/package.json
@@ -26,6 +33,11 @@ RUN npm run build -w @localprint/online
 # ---- runtime stage: slim, non-root, uploads as a volume ---------------------
 FROM node:22-alpine
 ENV NODE_ENV=production
+# server.js defaults HOST to 127.0.0.1 (correct for the bare-VPS + host-Caddy
+# path in DEPLOYMENT.md). Inside a container, 127.0.0.1 is unreachable through
+# the published port — Dockploy's proxy hits the container's network
+# interface, not its loopback. Override to 0.0.0.0 for the Docker path.
+ENV HOST=0.0.0.0
 WORKDIR /app
 
 COPY package.json package-lock.json ./
