@@ -47,8 +47,8 @@ export function buildContentSecurityPolicy({ connectSrc = ["'self'", "blob:"] } 
       "script-src 'self' 'wasm-unsafe-eval' blob:",
       "worker-src 'self' blob:",
       "img-src 'self' data: blob:",
-      "style-src 'self' 'unsafe-inline'",
-      "font-src 'self' data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
       `connect-src ${connectSrc.join(" ")}`,
       "frame-src 'self'",
     ].join("; ") + ";"
@@ -57,13 +57,16 @@ export function buildContentSecurityPolicy({ connectSrc = ["'self'", "blob:"] } 
 
 // Express middleware setting the app-wide security headers. X-XSS-Protection is
 // deprecated / harmful and omitted deliberately; the CSP is the real defence.
-export function securityHeaders({ connectSrc } = {}) {
+export function securityHeaders({ connectSrc, hsts = false } = {}) {
   const csp = buildContentSecurityPolicy(connectSrc ? { connectSrc } : {});
   return (req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("Content-Security-Policy", csp);
+    // Only meaningful (and only safe to promise) behind HTTPS — the online
+    // app runs there in prod; the desktop app's local server does not opt in.
+    if (hsts) res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
     next();
   };
 }

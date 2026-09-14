@@ -35,6 +35,21 @@ import supabase, {
 import { toApiOrder, fromApiOrder } from './utils/orderMapping.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
 import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
+import {
+  SESSION_COOKIE,
+  readAdminCredentials,
+  checkCredentials,
+  createSession,
+  getSession,
+  destroySession,
+  isLockedOut,
+  recordFailure,
+  clearFailures,
+  parseCookies,
+  sessionCookie,
+  clearedSessionCookie,
+  safeEqual,
+} from './auth/adminAuth.js';
 import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
 import { calculatePrintPrice, calculateJobDiscount } from '@localprint/shared/pricing';
 
@@ -89,17 +104,51 @@ async function requireShopToken(req, res, next) {
   }
 }
 
-// ── Platform-admin auth — a single shared bearer for the handful of shops. ──
+// ── Platform super-admin auth ──
+// Browser console → username/password login backed by an httpOnly session
+// cookie (see auth/adminAuth.js). Scripts/curl → the long-lived
+// PLATFORM_ADMIN_TOKEN bearer, kept for the provisioning tooling.
 const PLATFORM_ADMIN_TOKEN = process.env.PLATFORM_ADMIN_TOKEN || "";
-function requirePlatformAdmin(req, res, next) {
+const ADMIN_CREDS = readAdminCredentials();
+
+function bearerIsPlatformToken(req) {
   const auth = req.headers.authorization || "";
-  if (!PLATFORM_ADMIN_TOKEN) {
-    return res.status(503).json({ error: "PLATFORM_ADMIN_TOKEN not configured" });
+  if (!PLATFORM_ADMIN_TOKEN || !auth.startsWith("Bearer ")) return false;
+  return safeEqual(auth.slice(7), PLATFORM_ADMIN_TOKEN);
+}
+
+function sessionFromRequest(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  return getSession(cookies[SESSION_COOKIE]);
+}
+
+function requirePlatformAdmin(req, res, next) {
+  if (bearerIsPlatformToken(req)) {
+    req.adminAuth = { via: "token", username: "token" };
+    return next();
   }
-  if (!auth.startsWith("Bearer ") || auth.slice(7) !== PLATFORM_ADMIN_TOKEN) {
-    return res.status(401).json({ error: "Unauthorized" });
+
+  const session = sessionFromRequest(req);
+  if (session) {
+    // Double-submit CSRF: the cookie alone must not be enough to mutate state.
+    // SameSite=Strict already blocks cross-site form posts; this covers the
+    // rest (same-site subdomain takeover, a stray <img> GET is read-only).
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      const supplied = req.headers["x-csrf-token"] || "";
+      if (!supplied || !safeEqual(supplied, session.csrf)) {
+        return res.status(403).json({ error: "Invalid CSRF token" });
+      }
+    }
+    req.adminAuth = { via: "session", username: session.username };
+    return next();
   }
-  next();
+
+  if (!ADMIN_CREDS.configured && !PLATFORM_ADMIN_TOKEN) {
+    return res.status(503).json({
+      error: "Super-admin login is not configured. Set PLATFORM_ADMIN_USERNAME and PLATFORM_ADMIN_PASSWORD_HASH (node scripts/admin-password.js).",
+    });
+  }
+  return res.status(401).json({ error: "Unauthorized" });
 }
 
 // ── Shop slug middleware — resolves the shop for public customer-facing routes ──
@@ -191,10 +240,22 @@ async function requireCustomerAuth(req, res, next) {
   }
 }
 
-// ── Rate limiter (in-memory, per-IP): 5 requests / minute ──
-// Factory shared with the desktop app (@localprint/shared/http). Keeps its own
-// hit map + GC interval internally.
+// ── Rate limiters (in-memory, per-IP) ──
+// Factory shared with the desktop app (@localprint/shared/http). Each keeps
+// its own hit map + GC interval internally.
 const rateLimit = makeRateLimiter({ windowMs: 60_000, max: 5 });
+// PLATFORM_ADMIN_TOKEN is a single long-lived bearer with no lockout of its
+// own — throttle guesses against it.
+const adminRateLimit = makeRateLimiter({ windowMs: 60_000, max: 60 });
+// Password login gets a much tighter per-IP budget on top of the per-account
+// lockout in auth/adminAuth.js.
+const adminLoginRateLimit = makeRateLimiter({
+  windowMs: 15 * 60_000,
+  max: 10,
+  message: "Too many login attempts. Try again in a few minutes.",
+});
+// deleteToken / order-id guessing protection on the customer-facing delete route.
+const deleteRateLimit = makeRateLimiter({ windowMs: 60_000, max: 20 });
 
 // ── Allowed MIME types for upload ──
 // Set lives in @localprint/shared/validation (shared, tested); imported above.
@@ -239,7 +300,7 @@ if (isDev) {
 // Static security headers + the pdf.js-compatible CSP. connect-src also allows
 // Supabase (customer auth + storage). Shared with the desktop app; see
 // @localprint/shared/http for the CSP rationale.
-app.use(securityHeaders({ connectSrc: ["'self'", "blob:", "https://*.supabase.co"] }));
+app.use(securityHeaders({ connectSrc: ["'self'", "blob:", "https://*.supabase.co"], hsts: !isDev }));
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(DIST_DIR) && !isDev) {
@@ -401,12 +462,58 @@ app.get("/api/s/:shopSlug/orders/stream", resolveShopBySlug, async (req, res) =>
   });
 });
 
-// Minimal platform-admin console (token pasted in the page, kept in-memory).
+// Platform super-admin console (login page + dashboard in one document).
 app.get("/platform-admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "platform-admin.html"));
 });
 
-// ── Platform-admin API (PLATFORM_ADMIN_TOKEN bearer) ──
+// ── Platform-admin API ──
+app.use("/api/admin", adminRateLimit);
+
+// Session login. Deliberately outside requirePlatformAdmin.
+app.post("/api/admin/login", adminLoginRateLimit, (req, res) => {
+  if (!ADMIN_CREDS.configured) {
+    return res.status(503).json({
+      error: "Super-admin login is not configured. Run: node scripts/admin-password.js \"<password>\" and set the printed variables.",
+    });
+  }
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" });
+  }
+  if (isLockedOut(username)) {
+    return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes." });
+  }
+  if (!checkCredentials(username, password, ADMIN_CREDS)) {
+    recordFailure(username);
+    return res.status(401).json({ error: "Invalid username or password" });
+  }
+  clearFailures(username);
+  const { sid, csrf, maxAgeMs } = createSession(ADMIN_CREDS.username);
+  res.setHeader("Set-Cookie", sessionCookie(sid, { secure: !isDev, maxAgeMs }));
+  res.json({ username: ADMIN_CREDS.username, csrfToken: csrf });
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  destroySession(cookies[SESSION_COOKIE]);
+  res.setHeader("Set-Cookie", clearedSessionCookie({ secure: !isDev }));
+  res.json({ ok: true });
+});
+
+// Who am I — the console calls this on load to decide login screen vs dashboard.
+app.get("/api/admin/me", (req, res) => {
+  const session = sessionFromRequest(req);
+  if (!session) {
+    return res.status(401).json({
+      error: "Unauthorized",
+      configured: ADMIN_CREDS.configured,
+    });
+  }
+  res.json({ username: session.username, csrfToken: session.csrf });
+});
+
 app.post("/api/admin/shops", requirePlatformAdmin, async (req, res) => {
   try {
     const name = String(req.body?.name || "").trim();
@@ -434,6 +541,13 @@ app.get("/api/admin/stats", requirePlatformAdmin, async (req, res) => {
     res.json(await getPlatformStats());
   } catch (err) {
     console.error("❌ getPlatformStats:", err);
+    // 42703 = undefined_column: the database is behind the code. Say which fix
+    // is needed instead of a blank "failed to load".
+    if (err?.code === "42703") {
+      return res.status(503).json({
+        error: `Database schema is out of date (${err.message}). Run the pending files in apps/online/supabase/migrations in the Supabase SQL editor.`,
+      });
+    }
     res.status(500).json({ error: "Failed to load stats" });
   }
 });
@@ -565,8 +679,20 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
     const responseOrder = toApiOrder(newOrder);
     res.status(200).json({ success: true, job: responseOrder, deleteToken });
   } catch (err) {
-    console.error("❌ Upload Error:", err);
-    res.status(400).json({ success: false, error: "Invalid upload metadata" });
+    // Clean up the orphaned temp file so a failed upload does not leak disk.
+    if (req.file) {
+      try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch {}
+    }
+    // A malformed metadata JSON is the client's fault (400); anything else
+    // (Supabase insert, pricing lookup, disk) is ours and must not masquerade
+    // as a validation error, which made these failures undebuggable.
+    const isClientError = err instanceof SyntaxError;
+    console.error(`❌ Upload Error (${isClientError ? "client" : "server"}):`, err);
+    res.status(isClientError ? 400 : 500).json({
+      success: false,
+      error: isClientError ? "Invalid upload metadata" : "Upload failed",
+      detail: NODE_ENV === "production" ? undefined : err.message,
+    });
   }
 });
 
@@ -612,7 +738,7 @@ app.post("/api/s/:shopSlug/orders/query", resolveShopBySlug, async (req, res) =>
 });
 
 // Delete order — customer proves ownership with the per-upload deleteToken.
-app.delete("/api/s/:shopSlug/orders/:id", resolveShopBySlug, async (req, res) => {
+app.delete("/api/s/:shopSlug/orders/:id", deleteRateLimit, resolveShopBySlug, async (req, res) => {
   const orderId = req.params.id;
   const { deleteToken } = req.body || {};
 

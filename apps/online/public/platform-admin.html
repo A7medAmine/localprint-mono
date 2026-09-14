@@ -5,125 +5,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
   <title>LocalPrint — Platform Admin</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 1000px; margin-inline: auto; }
-    h1 { font-size: 1.3rem; }
-    h2 { font-size: 1rem; margin-top: 2rem; }
-    input, button { font: inherit; padding: .5rem .6rem; border-radius: 6px; border: 1px solid #8888; }
-    button { cursor: pointer; background: #4f46e5; color: #fff; border-color: #4f46e5; }
-    button.secondary { background: transparent; color: inherit; }
-    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-    th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #8884; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
-    .token { font-family: ui-monospace, monospace; background: #8882; padding: .3rem .5rem; border-radius: 6px; word-break: break-all; }
-    .msg { margin: 1rem 0; padding: .6rem .8rem; border-radius: 6px; background: #8882; }
-    .err { background: #ef444433; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; margin-top: 1rem; }
-    .stat { background: #8882; border: 1px solid #8884; border-radius: 8px; padding: .75rem .9rem; }
-    .stat .n { font-size: 1.4rem; font-weight: 700; display: block; }
-    .stat .l { font-size: .78rem; opacity: .7; }
-  </style>
+  <link rel="stylesheet" href="/platform-admin.css" />
 </head>
 <body>
-  <h1>LocalPrint — Platform Admin</h1>
-  <p>Paste the <code>PLATFORM_ADMIN_TOKEN</code>. It stays in this tab only.</p>
-  <div class="row">
-    <input id="token" type="password" placeholder="PLATFORM_ADMIN_TOKEN" size="40" autocomplete="off" />
-    <button onclick="loadAll()">Connect</button>
+  <!-- Login screen -->
+  <main id="loginScreen" class="login" hidden>
+    <form id="loginForm" class="card login-card" autocomplete="on">
+      <h1>LocalPrint</h1>
+      <p class="sub">Super-admin console</p>
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit" id="loginBtn">Sign in</button>
+      <p id="loginError" class="error" hidden></p>
+    </form>
+  </main>
+
+  <!-- Dashboard -->
+  <div id="dashboard" hidden>
+    <header class="topbar">
+      <div class="brand">LocalPrint <span>Platform Admin</span></div>
+      <div class="topbar-right">
+        <span id="whoami" class="who"></span>
+        <button id="refreshBtn" class="ghost">Refresh</button>
+        <button id="logoutBtn" class="ghost">Sign out</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div id="toast" class="toast" hidden></div>
+
+      <section id="stats" class="stats"></section>
+
+      <section class="card">
+        <h2>Create a store</h2>
+        <form id="createForm" class="inline-form">
+          <input id="newName" placeholder="Store name" required />
+          <button type="submit" id="createBtn">Create store</button>
+        </form>
+        <p class="hint">A fresh API token is generated and shown once. Give it to the shop owner for the desktop app's Cloud Sync settings.</p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Stores</h2>
+          <input id="filter" class="filter" placeholder="Filter by name or slug" />
+        </div>
+        <div class="table-scroll">
+          <table id="shops">
+            <thead>
+              <tr>
+                <th>Store</th><th>Status</th><th class="num">Orders</th>
+                <th class="num">Pages</th><th class="num">Revenue</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="empty" class="hint" hidden>No stores yet. Create the first one above.</p>
+      </section>
+    </main>
   </div>
 
-  <div id="msg"></div>
-
-  <div id="stats" class="stats" hidden></div>
-
-  <h2>Shops</h2>
-  <div class="row">
-    <input id="newName" placeholder="New shop name" size="30" />
-    <button onclick="createShop()">Create shop</button>
+  <!-- Token reveal (shown once) -->
+  <div id="tokenModal" class="modal" hidden>
+    <div class="card modal-card">
+      <h2 id="tokenTitle">Store token</h2>
+      <p class="hint">Shown once. Copy it now — it cannot be retrieved later.</p>
+      <code id="tokenValue" class="token"></code>
+      <div class="modal-actions">
+        <button id="copyToken">Copy</button>
+        <button id="closeToken" class="ghost">Done</button>
+      </div>
+    </div>
   </div>
-  <table id="shops" hidden>
-    <thead><tr><th>Name</th><th>Slug</th><th>Active</th><th>Orders</th><th>Pages</th><th>Revenue</th><th>Actions</th></tr></thead>
-    <tbody></tbody>
-  </table>
 
-<script>
-const $ = (id) => document.getElementById(id);
-const tok = () => $('token').value.trim();
-function show(text, isErr) {
-  const el = $('msg');
-  el.className = 'msg' + (isErr ? ' err' : '');
-  el.textContent = text;
-}
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok(), ...(opts.headers || {}) },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
-  return body;
-}
-function statCard(n, l) {
-  return `<div class="stat"><span class="n">${n}</span><span class="l">${l}</span></div>`;
-}
-async function loadAll() {
-  try {
-    const stats = await api('/api/admin/stats');
-    const s = $('stats');
-    s.innerHTML = [
-      statCard(stats.totalShops, 'shops'),
-      statCard(stats.activeShops, 'active shops'),
-      statCard(stats.totalOrders, 'total orders'),
-      statCard(stats.ordersLast30d, 'orders (30d)'),
-      statCard(stats.totalPages, 'pages printed'),
-      statCard(stats.totalRevenue.toFixed(2), 'total revenue'),
-    ].join('');
-    s.hidden = false;
-
-    const tbody = $('shops').querySelector('tbody');
-    tbody.innerHTML = '';
-    for (const sh of stats.shops) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${sh.name}</td><td>${sh.slug}</td><td>${sh.isActive ? 'yes' : 'no'}</td>` +
-        `<td>${sh.orderCount}</td><td>${sh.totalPages}</td><td>${sh.totalRevenue.toFixed(2)}</td>`;
-      const td = document.createElement('td');
-      const rotate = document.createElement('button');
-      rotate.textContent = 'Rotate token';
-      rotate.onclick = () => rotateToken(sh.id);
-      const toggle = document.createElement('button');
-      toggle.className = 'secondary';
-      toggle.textContent = sh.isActive ? 'Deactivate' : 'Activate';
-      toggle.onclick = () => setActive(sh.id, !sh.isActive);
-      td.append(rotate, ' ', toggle);
-      tr.append(td);
-      tbody.append(tr);
-    }
-    $('shops').hidden = false;
-    show(stats.shops.length + ' shop(s).');
-  } catch (e) { show(e.message, true); }
-}
-async function createShop() {
-  try {
-    const r = await api('/api/admin/shops', { method: 'POST', body: JSON.stringify({ name: $('newName').value.trim() }) });
-    show('Created "' + r.name + '" (slug ' + r.slug + '). Shop token (shown once): ' + r.token);
-    $('newName').value = '';
-    loadAll();
-  } catch (e) { show(e.message, true); }
-}
-async function rotateToken(id) {
-  if (!confirm('Rotate token? The old one stops working immediately.')) return;
-  try {
-    const r = await api('/api/admin/shops/' + id + '/rotate-token', { method: 'POST' });
-    show('New token for "' + r.name + '" (shown once): ' + r.token);
-  } catch (e) { show(e.message, true); }
-}
-async function setActive(id, isActive) {
-  try {
-    await api('/api/admin/shops/' + id, { method: 'PATCH', body: JSON.stringify({ isActive }) });
-    loadAll();
-  } catch (e) { show(e.message, true); }
-}
-</script>
+  <script src="/platform-admin.js" type="module"></script>
 </body>
 </html>

@@ -11,7 +11,8 @@ phone; shops pull orders down to their desktop app.
 | Guest customer | None; per-upload delete token | Upload / track / delete their own order under one shop |
 | Signed-in customer | Supabase JWT (ES256, verified locally via JWKS) | Same, plus orders linked to their account |
 | Shop (desktop app) | Per-shop bearer token (`shops.token_hash`, sha256) | Pull pending orders, ack/reject, push settings — its own shop only |
-| Platform admin | `PLATFORM_ADMIN_TOKEN` bearer | Create shops, rotate shop tokens, rename/deactivate |
+| Platform super-admin (console) | Username + password → httpOnly session cookie (scrypt hash in `PLATFORM_ADMIN_PASSWORD_HASH`) | Create shops, rotate shop tokens, rename/deactivate |
+| Platform admin (scripts) | `PLATFORM_ADMIN_TOKEN` bearer | Same, for curl/CI |
 
 ## Shop provisioning
 
@@ -19,7 +20,19 @@ phone; shops pull orders down to their desktop app.
 - `POST /api/admin/shops/:id/rotate-token` → new token, old one dies immediately.
 - `GET /api/admin/shops`, `PATCH /api/admin/shops/:id` (rename / slug / isActive).
 - `shops.is_active = false` → `resolveShopBySlug` 404s and `requireShopToken`
-  403s. Console at `/platform-admin` (token pasted in, kept in the tab only).
+  403s.
+
+## Super-admin console (`/platform-admin`)
+
+- Login: `POST /api/admin/login` (username + password) sets an **httpOnly,
+  SameSite=Strict** session cookie; sessions live in memory for 8h, so a restart
+  signs the admin out. Password is stored as a scrypt hash — never plaintext.
+- Mutating calls need the per-session CSRF token (`X-CSRF-Token`) issued at
+  login, on top of SameSite. `GET` is exempt (read-only).
+- Brute force: per-IP limiter (10 logins / 15 min) **and** a per-account lockout
+  (5 failures → locked 15 min).
+- `PLATFORM_ADMIN_TOKEN` still works as a bearer for scripts; the console itself
+  no longer asks anyone to paste it into a page.
 
 ## Customer auth resilience
 

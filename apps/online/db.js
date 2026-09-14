@@ -97,7 +97,7 @@ export const listShops = async () => {
 export const getPlatformStats = async () => {
   const [{ data: shops, error: shopsErr }, { data: orders, error: ordersErr }] = await Promise.all([
     supabase.from('shops').select('id, slug, name, is_active'),
-    supabase.from('orders').select('shop_id, pagecount, totalprice, copies, uploaddate'),
+    supabase.from('orders').select('shop_id, pagecount, total_price, copies, uploaddate'),
   ]);
   if (shopsErr) throw shopsErr;
   if (ordersErr) throw ordersErr;
@@ -111,7 +111,7 @@ export const getPlatformStats = async () => {
   const since30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
   for (const o of orders || []) {
     const pages = (Number(o.pagecount) || 0) * (Number(o.copies) || 1);
-    const revenue = Number(o.totalprice) || 0;
+    const revenue = Number(o.total_price) || 0;
     totalOrders += 1;
     totalPages += pages;
     totalRevenue += revenue;

@@ -1,0 +1,122 @@
+/* Platform super-admin console. Loaded as a file, not a <style> block, to stay
+   inside the app-wide CSP (script-src 'self'; no inline handlers anywhere). */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #14161c;
+  --muted: #656b7a;
+  --line: #e3e6ef;
+  --accent: #4f46e5;
+  --accent-text: #ffffff;
+  --danger: #dc2626;
+  --ok: #16a34a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1117;
+    --card: #171a22;
+    --text: #e8eaf0;
+    --muted: #9aa1b1;
+    --line: #262b37;
+    --accent: #6366f1;
+    --danger: #f87171;
+    --ok: #4ade80;
+  }
+}
+
+* { box-sizing: border-box; }
+/* Elements below set display:grid/flex, which would otherwise beat the UA
+   stylesheet's [hidden] { display: none } and leak the modal onto the page. */
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+h1, h2 { margin: 0; font-weight: 650; }
+h1 { font-size: 1.35rem; }
+h2 { font-size: 1rem; }
+
+input, button {
+  font: inherit;
+  padding: .55rem .7rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+}
+input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+  font-weight: 550;
+}
+button:disabled { opacity: .55; cursor: default; }
+button.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+button.small { padding: .35rem .55rem; font-size: .82rem; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1.1rem;
+}
+.hint { color: var(--muted); font-size: .85rem; margin: .6rem 0 0; }
+.error { color: var(--danger); font-size: .88rem; margin: .7rem 0 0; }
+
+/* Login */
+.login { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; }
+.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: .35rem; margin: 0; }
+.login-card .sub { color: var(--muted); margin: 0 0 1rem; font-size: .9rem; }
+.login-card label { font-size: .82rem; color: var(--muted); margin-top: .5rem; }
+.login-card button[type="submit"] { margin-top: 1.1rem; }
+
+/* Dashboard shell */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .85rem 1.2rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand { font-weight: 650; }
+.brand span { color: var(--muted); font-weight: 400; }
+.topbar-right { display: flex; align-items: center; gap: .5rem; }
+.who { color: var(--muted); font-size: .85rem; }
+.wrap { max-width: 1080px; margin-inline: auto; padding: 1.4rem 1.2rem 3rem; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1.1rem; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: .85rem 1rem; }
+.stat .n { font-size: 1.5rem; font-weight: 700; display: block; letter-spacing: -.02em; }
+.stat .l { font-size: .78rem; color: var(--muted); }
+
+/* Forms + table */
+.inline-form { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .8rem; }
+.inline-form input { flex: 1 1 220px; }
+.card-head { display: flex; gap: .75rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.filter { min-width: 220px; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin-top: .9rem; }
+th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; }
+.name { font-weight: 550; }
+.slug { display: block; color: var(--muted); font-size: .8rem; }
+.badge { font-size: .75rem; padding: .15rem .5rem; border-radius: 999px; border: 1px solid var(--line); }
+.badge.on { color: var(--ok); border-color: currentColor; }
+.badge.off { color: var(--muted); }
+.actions { display: flex; gap: .35rem; flex-wrap: wrap; }
+
+/* Toast + modal */
+.toast { padding: .7rem .9rem; border-radius: 10px; border: 1px solid var(--line); background: var(--card); margin-bottom: 1rem; }
+.toast.err { border-color: var(--danger); color: var(--danger); }
+.modal { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; padding: 1.2rem; }
+.modal-card { width: min(560px, 100%); margin: 0; }
+.token { display: block; font-family: ui-monospace, SFMono-Regular, monospace; font-size: .85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .7rem; margin-top: .8rem; word-break: break-all; }
+.modal-actions { display: flex; gap: .5rem; margin-top: 1rem; }

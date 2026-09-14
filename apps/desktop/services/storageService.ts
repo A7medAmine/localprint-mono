@@ -109,7 +109,16 @@ class StorageService {
             reject(new Error("Malformed response from server"));
           }
         } else {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
+          // Surface the server's own reason instead of a bare status code —
+          // the body carries { error, detail } for exactly this.
+          let reason = "";
+          try {
+            const body = JSON.parse(xhr.responseText);
+            reason = [body.error, body.detail].filter(Boolean).join(" — ");
+          } catch {
+            /* non-JSON body: fall back to the status code alone */
+          }
+          reject(new Error(reason || `Upload failed with status ${xhr.status}`));
         }
       };
 

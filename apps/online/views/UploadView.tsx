@@ -281,14 +281,6 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
     const totalPages = estimatedPages * printPreferences.copies;
     const originalPrice = pricePerPage * totalPages;
 
-    // Debug logging
-    console.log("Calculating discount for file:", file.name, {
-      totalPages,
-      originalPrice,
-      discountRulesCount: discountRules?.length || 0,
-      discountRules: discountRules,
-    });
-
     // Calculate discount
     const discountResult = calculateJobDiscount(
       {} as PrintJob,
@@ -296,8 +288,6 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
       totalPages,
       discountRules
     );
-
-    console.log("Discount result:", discountResult);
 
     return {
       original: originalPrice,
