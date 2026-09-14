@@ -119,4 +119,6 @@ td.num, th.num { text-align: right; }
 .modal { position: fixed; inset: 0; background: #0008; display: grid; place-items: center; padding: 1.2rem; }
 .modal-card { width: min(560px, 100%); margin: 0; }
 .token { display: block; font-family: ui-monospace, SFMono-Regular, monospace; font-size: .85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: .7rem; margin-top: .8rem; word-break: break-all; }
-.modal-actions { display: flex; gap: .5rem; margin-top: 1rem; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.field-label { margin: .9rem 0 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.field-label + .token { margin-top: .3rem; }

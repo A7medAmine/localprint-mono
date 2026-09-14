@@ -202,26 +202,44 @@ async function setActive(shop, isActive) {
 }
 
 // ── Token reveal (shown once, never stored) ──
+// The cloud URL is this console's own origin — the same value the desktop
+// app's Cloud Sync URL setting expects, so the pair can be copied as-is.
 function revealToken(title, token) {
   $("tokenTitle").textContent = title;
   $("tokenValue").textContent = token;
+  $("cloudUrlValue").textContent = window.location.origin;
   $("tokenModal").hidden = false;
 }
 
-$("copyToken").addEventListener("click", async () => {
+// Clipboard can be blocked (insecure origin / permissions) — fall back to
+// selecting the node so the value can still be copied by hand.
+async function copyText(text, btnId, label, selectEl) {
+  const btn = $(btnId);
   try {
-    await navigator.clipboard.writeText($("tokenValue").textContent);
-    $("copyToken").textContent = "Copied";
-    setTimeout(() => { $("copyToken").textContent = "Copy"; }, 1500);
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = label; }, 1500);
   } catch {
-    // Clipboard can be blocked (insecure origin / permissions) — select instead.
     const range = document.createRange();
-    range.selectNodeContents($("tokenValue"));
+    range.selectNodeContents(selectEl);
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
   }
-});
+}
+
+$("copyToken").addEventListener("click", () =>
+  copyText($("tokenValue").textContent, "copyToken", "Copy token", $("tokenValue")));
+$("copyCloudUrl").addEventListener("click", () =>
+  copyText($("cloudUrlValue").textContent, "copyCloudUrl", "Copy URL", $("cloudUrlValue")));
+$("copyBoth").addEventListener("click", () =>
+  copyText(
+    `Cloud URL: ${$("cloudUrlValue").textContent}
+API token: ${$("tokenValue").textContent}`,
+    "copyBoth",
+    "Copy URL + token",
+    $("tokenModal").querySelector(".modal-card"),
+  ));
 $("closeToken").addEventListener("click", () => { $("tokenModal").hidden = true; });
 
 // ── Data ──

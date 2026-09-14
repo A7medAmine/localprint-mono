@@ -19,6 +19,12 @@ interface QrPosterDialogProps {
   shopSettings: ShopSettings | null;
   /** Admin-only: enables the "Print A4 Poster" action. Defaults to false. */
   allowPrint?: boolean;
+  /**
+   * Customer-facing: hides every admin affordance (destination switch, cloud
+   * sync hints, poster printing) and just shares the shop's website link.
+   * Falls back to the local network URL when no cloud URL is configured.
+   */
+  shareOnly?: boolean;
 }
 
 const getLocalIP = async (): Promise<string> => {
@@ -52,11 +58,13 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
   lang,
   shopSettings,
   allowPrint = false,
+  shareOnly = false,
 }) => {
   const isRtl = lang === "ar";
   const onlineUrl = useMemo(() => buildOnlineUrl(shopSettings, lang), [shopSettings, lang]);
 
   const [mode, setMode] = useState<Mode>("local");
+  const [copied, setCopied] = useState(false);
   const [targetUrl, setTargetUrl] = useState<string>("");
   const [qrPng, setQrPng] = useState<string>("");
   const [qrSvg, setQrSvg] = useState<string>("");
@@ -101,9 +109,31 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
     };
   }, [open, mode, lang, onlineUrl, isRtl]);
 
+  // Share mode always targets the website when one is configured; otherwise it
+  // silently falls back to the local URL rather than surfacing a settings hint.
   useEffect(() => {
     if (open) setMode(onlineUrl ? "online" : "local");
   }, [open, onlineUrl]);
+
+  const shareLink = async () => {
+    if (!targetUrl) return;
+    const shopName = shopSettings?.shopName || "";
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shopName || document.title, url: targetUrl });
+        return;
+      } catch {
+        // User dismissed the sheet, or sharing is unavailable — fall through.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(targetUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError(isRtl ? "تعذّر نسخ الرابط" : "Could not copy the link");
+    }
+  };
 
   const downloadPng = () => {
     if (!qrPng) return;
@@ -136,7 +166,11 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {allowPrint
+            {shareOnly
+              ? isRtl
+                ? "شارك موقع المتجر"
+                : "Share our website"
+              : allowPrint
               ? isRtl
                 ? "ملصق QR للطباعة"
                 : "Printable QR Poster"
@@ -145,7 +179,11 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
                 : "Share QR Code"}
           </DialogTitle>
           <DialogDescription>
-            {allowPrint
+            {shareOnly
+              ? isRtl
+                ? "امسح الرمز بكاميرا هاتفك أو انسخ الرابط لمشاركته مع أصدقائك"
+                : "Scan with your phone camera, or copy the link to share it"
+              : allowPrint
               ? isRtl
                 ? "اختر الوجهة، ثم اطبع ملصق A4 جاهزًا للعرض في المتجر"
                 : "Pick a destination, then print a ready-to-display A4 poster"
@@ -155,7 +193,8 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Mode selector */}
+        {/* Mode selector — admin only; customers never pick a destination */}
+        {!shareOnly && (
         <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-1">
           <button
             type="button"
@@ -182,8 +221,9 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
             {isRtl ? "الموقع الإلكتروني" : "Online Website"}
           </button>
         </div>
+        )}
 
-        {mode === "online" && !onlineUrl && (
+        {!shareOnly && mode === "online" && !onlineUrl && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
             {isRtl
               ? "أضف رابط المزامنة السحابية من الإعدادات لتفعيل هذا الخيار."
@@ -216,6 +256,17 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex flex-col sm:flex-row gap-2">
+          {shareOnly && (
+            <Button onClick={shareLink} disabled={loading || !targetUrl} className="flex-1">
+              {copied
+                ? isRtl
+                  ? "تم نسخ الرابط"
+                  : "Link copied"
+                : isRtl
+                  ? "نسخ / مشاركة الرابط"
+                  : "Copy / share link"}
+            </Button>
+          )}
           {allowPrint && (
             <Button onClick={printPoster} disabled={loading || !qrSvg} className="flex-1">
               {isRtl ? "طباعة الملصق A4" : "Print A4 Poster"}
@@ -223,7 +274,7 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
           )}
           <Button
             onClick={downloadPng}
-            variant={allowPrint ? "outline" : "default"}
+            variant={allowPrint || shareOnly ? "outline" : "default"}
             disabled={loading || !qrPng}
             className="flex-1"
           >
