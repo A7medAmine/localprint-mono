@@ -3,8 +3,12 @@
 ## Goal
 Add a `cloudSync.js` module (or similar) to the desktop LocalPrint app that periodically syncs with the cloud app's shop-sync API. This is the only new feature — do not change any existing UI or admin logic.
 
-## Shared secret
-Both apps share a `SHOP_API_TOKEN` (64-char hex). The desktop app should read it from its own `.env` or config file. All shop-sync requests include `Authorization: Bearer <SHOP_API_TOKEN>`.
+## Shop token
+Each shop has its own 64-char hex token, minted on the cloud side by
+`node scripts/create-shop.js "<Shop Name>"` and shown exactly once (only its
+sha256 is stored, in `shops.token_hash`). The desktop app stores that token in
+its Cloud Sync settings. All shop-sync requests include
+`Authorization: Bearer <shop token>`.
 
 ## Cloud API contract (shop-sync endpoints)
 
@@ -84,7 +88,7 @@ The upload endpoint is rate-limited (5/min per IP), but shop-sync endpoints are 
 The cloud app auto-deletes claimed orders + their files after 7 days. No need to clean up on the desktop side.
 
 ## Implementation notes
-- Store the cloud URL + SHOP_API_TOKEN in a config file or `.env`.
+- Store the cloud URL + shop token in the app's Cloud Sync settings.
 - Handle network failures gracefully (retry with exponential backoff).
 - Log sync activity for debugging.
 - Do NOT modify any existing desktop app UI or admin functionality — this is purely a background sync service.
@@ -92,5 +96,5 @@ The cloud app auto-deletes claimed orders + their files after 7 days. No need to
 ## Config expectations
 ```
 CLOUD_SYNC_URL=https://your-cloud-app.com
-SHOP_API_TOKEN=<same 64-char hex as cloud app>
+SHOP_TOKEN=<the 64-char hex printed by create-shop.js for this shop>
 ```

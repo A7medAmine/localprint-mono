@@ -19,16 +19,28 @@ const RULES = [
     hint: 'the service_role key from Supabase → Project Settings → API. Keep it server-side only.',
   },
   {
-    name: 'SUPABASE_JWT_SECRET',
-    required: false,
-    validate: (v) => v.length > 10,
-    hint: 'Supabase → Project Settings → API → JWT Settings. Needed to verify customer sessions.',
-  },
-  {
     name: 'PLATFORM_ADMIN_TOKEN',
     required: false,
     validate: (v) => v.length >= 16,
-    hint: 'a long random string; guards the shop-provisioning endpoints.',
+    hint: 'a long random string; machine bearer for the shop-provisioning endpoints (scripts/curl).',
+  },
+  {
+    name: 'PLATFORM_ADMIN_USERNAME',
+    required: false,
+    validate: (v) => v.length >= 3,
+    hint: 'the super-admin login name for /platform-admin (defaults to "admin").',
+  },
+  {
+    name: 'PLATFORM_ADMIN_PASSWORD_HASH',
+    required: false,
+    validate: (v) => v.startsWith('scrypt:'),
+    hint: 'generate with: node scripts/admin-password.js "<password>" — never store the plaintext.',
+  },
+  {
+    name: 'PLATFORM_ADMIN_PASSWORD',
+    required: false,
+    validate: (v) => v.length >= 10,
+    hint: 'plaintext dev-only fallback; prefer PLATFORM_ADMIN_PASSWORD_HASH in production.',
   },
   {
     name: 'NODE_ENV',

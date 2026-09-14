@@ -10,7 +10,7 @@ by customers on the shop LAN (for the QR-code upload page).
 |---|---|---|
 | Shop operator (admin) | Password → bearer token | Everything: jobs, settings, printing, backup |
 | Walk-in customer (LAN) | None; per-upload delete token | Upload a file, check/track/delete **their own** upload |
-| Cloud sync | `SHOP_API_TOKEN` / shop token, outbound only | Pull orders from the online service |
+| Cloud sync | Per-shop token, outbound only | Pull orders from the online service |
 
 There are no roles and no second operator account — a single hardened login.
 

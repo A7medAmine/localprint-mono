@@ -81,10 +81,12 @@ NODE_ENV=production
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_KEY=<service_role key — server-side only>
 
-# Verify customer sessions (Project Settings → API → JWT Settings)
-SUPABASE_JWT_SECRET=<jwt secret>
+# Super-admin login for the /platform-admin console (create/manage stores).
+# Generate the hash: node scripts/admin-password.js "<password>" --username admin
+PLATFORM_ADMIN_USERNAME=admin
+PLATFORM_ADMIN_PASSWORD_HASH=scrypt:16384:8:1:<salt>:<hash>
 
-# Guards /api/admin/shops* + the platform-admin console (provisioning, token rotation)
+# Optional machine bearer for the same /api/admin/* endpoints (scripts, curl, CI)
 PLATFORM_ADMIN_TOKEN=<long random string>
 ```
 
@@ -94,12 +96,12 @@ environment (CI or shell) before `npm run build`, not at runtime.
 
 Shop-sync auth is **per-shop**, not a global secret: each shop's token is minted
 into `shops.token_hash` by `node apps/online/scripts/create-shop.js "<Name>" --host https://your-domain.com`.
-The desktop app stores that token in its own Cloud Sync settings. (The old
-`SHOP_API_TOKEN` env is unused/legacy.)
+The desktop app stores that token in its own Cloud Sync settings.
 
 ## 3. Supabase project + migrations
 
-1. Create a Supabase project; copy URL / service key / JWT secret into `.env`.
+1. Create a Supabase project; copy the URL / service_role key into `.env`
+   (`node scripts/setup-env.js` prompts for both).
 2. Apply the schema — `apps/online/supabase/migrations/` is the source of truth
    (see its README):
 
@@ -109,7 +111,7 @@ The desktop app stores that token in its own Cloud Sync settings. (The old
    ```
 
    On a scratch/pre-launch project `supabase db reset` replays `001…00N` cleanly.
-3. RLS is enabled on `orders` (see `002_customer_accounts.sql`); the server uses
+3. RLS is enabled on every table (see `001_initial_schema.sql`); the server uses
    the service-role key, so it bypasses RLS — never expose that key client-side.
 4. Provision the first shop: `node apps/online/scripts/create-shop.js "<Name>" --host https://your-domain.com`.
 
@@ -214,8 +216,7 @@ Either bare-VPS (sections 1–7, the recommended $6–10/mo path) or Docker
   `apps/online/Dockerfile` (Dockploy's "Build Path"/"Docker File" settings) —
   same requirement as the raw `docker build -f` command above.
 - Runtime env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
-  `SUPABASE_JWT_SECRET`, `PLATFORM_ADMIN_TOKEN`) go in Dockploy's **Environment**
-  tab.
+  `PLATFORM_ADMIN_PASSWORD_HASH`) go in Dockploy's **Environment** tab.
 - If customer accounts are enabled, `VITE_SUPABASE_URL` /
   `VITE_SUPABASE_ANON_KEY` must ALSO be set as Dockploy **Build Args** (Vite
   inlines them at `vite build` time, not at container start) — setting them as
@@ -256,7 +257,6 @@ npm i -g vercel
 vercel            # link the repo, import the Vercel env vars below
 vercel env add SUPABASE_URL
 vercel env add SUPABASE_SERVICE_KEY
-vercel env add SUPABASE_JWT_SECRET
 vercel env add PLATFORM_ADMIN_TOKEN
 vercel --prod
 ```

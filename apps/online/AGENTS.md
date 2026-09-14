@@ -26,8 +26,8 @@ npm run test      -w @localprint/online   # vitest
   `shop_id` (resolved from the `shopSlug` in the URL). Never run a shop-scoped
   query without the `shop_id` filter.
 - **Auth**: Supabase JWTs verified with `jose`. `db.js` holds a short-TTL token
-  cache (see `utils/authCache.js`). Desktop→cloud sync authenticates with
-  `SHOP_API_TOKEN`.
+  cache (see `utils/authCache.js`). Desktop→cloud sync authenticates with a
+  per-shop token (`shops.token_hash`), minted by `scripts/create-shop.js`.
 
 ## Column naming
 Postgres columns are **lowercase** (e.g. `customername`, `pagecount`,
@@ -37,8 +37,9 @@ camelCase API shape (`toApiOrder` / `fromApiOrder`) — use it rather than
 hand-writing column names. Phase 4.3 makes this the canonical shared shape.
 
 ## Secrets & settings
-- `.env` holds `SUPABASE_SERVICE_KEY`, `SHOP_API_TOKEN`, `VITE_SUPABASE_ANON_KEY`,
-  and a Postgres connection string. Gitignored/dockerignored — never commit it.
+- `.env` holds `SUPABASE_SERVICE_KEY`, `VITE_SUPABASE_ANON_KEY`, and the
+  platform-admin credentials. Generate it with `node scripts/setup-env.js`.
+  Gitignored/dockerignored — never commit it.
 - Only keys in the `PUBLIC_SETTINGS_KEYS` allowlist are returned from public
   settings endpoints. Keep everything else server-side.
 

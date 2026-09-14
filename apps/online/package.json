@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "setup": "node scripts/setup-env.js",
     "start": "cross-env NODE_ENV=production node server.js",
     "dev": "cross-env NODE_ENV=development concurrently \"vite\" \"node server.js\"",
     "build": "vite build",

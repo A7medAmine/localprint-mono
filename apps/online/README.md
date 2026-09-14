@@ -6,7 +6,7 @@ A small public-facing service for customer upload intake + order status lookup. 
 
 ```bash
 npm install
-cp .env.example .env   # then fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, SHOP_API_TOKEN
+node scripts/setup-env.js  # interactive — writes .env (or: cp .env.example .env)
 npm run dev            # Vite (port 5000) + Express (port 3001)
 npm run build          # Vite build to dist/
 npm start              # Production: serves dist/ + API on port 3000
@@ -17,7 +17,7 @@ npm start              # Production: serves dist/ + API on port 3000
 - **Frontend**: React 19 + TypeScript + Vite, port 5000, Tailwind via local `tailwind.min.js`
 - **Backend**: Express 5 ESM with Supabase (Postgres) instead of SQLite
 - **Database**: Supabase (Postgres). Tables: `orders`, `settings`, `paper_types`, `discount_rules`
-- **No auth**: Customer upload is fully public (guest). Only the shop-sync API requires a token.
+- **No auth**: Customer upload is fully public (guest). Only the shop-sync API requires a token — a per-shop token minted by `scripts/create-shop.js`, not a global secret.
 
 ## Environment variables
 
@@ -25,10 +25,13 @@ npm start              # Production: serves dist/ + API on port 3000
 |---|---|
 | `SUPABASE_URL` | Supabase project URL (Settings → API) |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role key (NOT the anon/public key) |
-| `SHOP_API_TOKEN` | Shared secret with the desktop LocalPrint app. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `PLATFORM_ADMIN_USERNAME` | Super-admin login name for `/platform-admin` (default `admin`) |
+| `PLATFORM_ADMIN_PASSWORD_HASH` | scrypt hash of the super-admin password (`node scripts/admin-password.js`) |
+| `PLATFORM_ADMIN_TOKEN` | Optional machine bearer for `/api/admin/*` (scripts, curl, CI) |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Optional — enables customer accounts. Build-time, anon key only |
 | `PORT` | Server port (default 3001 dev / 3000 prod) |
 
-## Shop-sync API (authenticated with SHOP_API_TOKEN)
+## Shop-sync API (authenticated with the per-shop token)
 
 | Method | Endpoint | Description |
 |---|---|---|
