@@ -5,6 +5,7 @@ import { storageService } from "../../../services/storageService";
 import { isElectron, printFile, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
 import { getActualPageCount } from "../../../utils/pricingUtils";
 import { toast } from "../../../components/ui/use-toast";
+import { openAdminEventSource } from "../../../utils/adminEvents";
 
 export interface CustomerGroup {
   key: string;
@@ -220,7 +221,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   useEffect(() => {
     loadJobsRef.current();
     loadPrinters();
-    const es = new EventSource("/api/events");
+    const es = openAdminEventSource();
     es.addEventListener("new-job", () => loadJobsRef.current({ soft: true }));
     es.addEventListener("cloud-job-imported", (e) => {
       try {
@@ -238,6 +239,17 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
       } catch {}
       if (id) removeJobById(id);
       else loadJobsRef.current({ soft: true });
+    });
+    // The server pushes this when a status update to the cloud is rejected —
+    // otherwise a shop with an expired token silently shows customers stale
+    // statuses. Throttled server-side to one event per minute.
+    es.addEventListener("cloud-sync-error", () => {
+      toast({
+        title: rtl
+          ? "فشلت مزامنة الحالة مع السحابة — تحقق من رمز المتجر في الإعدادات"
+          : "Cloud status sync failed — check the shop token in Settings",
+        variant: "destructive",
+      });
     });
     es.onerror = () => {};
     return () => {

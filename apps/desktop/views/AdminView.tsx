@@ -17,6 +17,7 @@ import { useAdminJobs } from "./admin/jobs/useAdminJobs";
 import CardIDTool from "./CardIDTool";
 import PDFJobManager from "./PDFJobManager";
 import PhotoBatchTool from "./PhotoBatchTool";
+import { openAdminEventSource } from "../utils/adminEvents";
 
 interface AdminViewProps {
   lang: Language;
@@ -115,7 +116,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
     loadDiscountRules();
     loadLowStockCount();
     // Persistent new-email toast — fires on any tab; GmailPanel owns the list.
-    const es = new EventSource("/api/events");
+    const es = openAdminEventSource();
     es.addEventListener("gmail-new", (e) => {
       try {
         const data = JSON.parse(e.data);

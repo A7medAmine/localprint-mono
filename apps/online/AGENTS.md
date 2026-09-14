@@ -34,7 +34,8 @@ Postgres columns are **lowercase** (e.g. `customername`, `pagecount`,
 `colormode`), with two snake_case exceptions: `total_price` and
 `rejection_reason`. `utils/orderMapping.js` maps between the DB shape and the
 camelCase API shape (`toApiOrder` / `fromApiOrder`) — use it rather than
-hand-writing column names. Phase 4.3 makes this the canonical shared shape.
+hand-writing column names. Promoting this mapper into `packages/shared` so the
+desktop app uses the same one is still open.
 
 ## Secrets & settings
 - `.env` holds `SUPABASE_SERVICE_KEY`, `VITE_SUPABASE_ANON_KEY`, and the
@@ -44,12 +45,14 @@ hand-writing column names. Phase 4.3 makes this the canonical shared shape.
   settings endpoints. Keep everything else server-side.
 
 ## Migrations
-Numbered SQL under `supabase/migrations/` (`001…005.sql`). Phase 4.4 formalizes
-the runner shared with the desktop app.
+Numbered SQL under `supabase/migrations/`. `001_initial_schema.sql` is a
+collapsed baseline of everything up to the platform-admin console; add new
+changes as `002_…` onward.
 
 ## Key conventions
 - **ESM only** (`"type": "module"`).
 - **File uploads**: Multer; magic-byte validation via `utils/fileValidation.js`;
   server-side PDF page counting via `utils/pdfPageCount.js` (pdf-lib).
-- **Deploy**: Dockerfile sets `NODE_ENV=production`. Phase 4.7 rewrites it
-  multi-stage/non-root with an uploads volume; see `DEPLOYMENT.md` (added in 4.7).
+- **Deploy**: multi-stage Dockerfile built from the repo ROOT (the server
+  imports `@localprint/shared`, which only resolves as a workspace). See
+  `DEPLOYMENT.md`.

@@ -1,7 +1,6 @@
 // Super-admin auth unit tests. Pure module (no env, no Supabase) so it loads
 // without the server's startup checks.
 import { describe, it, expect, beforeEach } from 'vitest';
-// @ts-expect-error — plain .js module with no type declarations.
 import * as auth from '../auth/adminAuth.js';
 
 const {

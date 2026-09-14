@@ -662,8 +662,10 @@ app.put("/api/jobs/:id/status", requireAdmin, (req, res) => {
     const cloudOrderId = updatedJob?.cloudOrderId;
     if (cloudOrderId) {
       import('./services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
-        if (isEnabled()) updateCloudStatus(cloudOrderId, status).catch(() => {});
-      }).catch(() => {});
+        if (isEnabled()) {
+          updateCloudStatus(cloudOrderId, status).catch(err => warnCloudSyncFailed(1, err));
+        }
+      }).catch(err => warnCloudSyncFailed(1, err));
     }
 
     // Auto-notify the customer when a gmail-sourced job becomes READY.
@@ -892,8 +894,10 @@ app.post("/api/jobs/bulk/status", requireAdmin, (req, res) => {
   if (cloudIds.length > 0) {
     import('./services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
       if (!isEnabled()) return;
-      for (const cid of cloudIds) updateCloudStatus(cid, status).catch(() => {});
-    }).catch(() => {});
+      for (const cid of cloudIds) {
+        updateCloudStatus(cid, status).catch(err => warnCloudSyncFailed(cloudIds.length, err));
+      }
+    }).catch(err => warnCloudSyncFailed(cloudIds.length, err));
   }
 });
 
@@ -1867,9 +1871,32 @@ app.post('/api/gmail/poll', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Cloud-sync failure signal ──
+// Status pushes to the cloud are fire-and-forget, but silently swallowing the
+// rejection meant a shop with an expired token had no way to know its customers
+// were seeing stale statuses. Warn once per minute (not per job) so a bulk
+// update of 200 rows does not flood the log.
+let lastCloudSyncWarnAt = 0;
+function warnCloudSyncFailed(count, err) {
+  const now = Date.now();
+  if (now - lastCloudSyncWarnAt < 60_000) return;
+  lastCloudSyncWarnAt = now;
+  console.warn(
+    `⚠️  Cloud status sync failed for ${count} job(s): ${err?.message || err}. ` +
+    `Check the shop token in Settings → Cloud.`
+  );
+  broadcastEvent('cloud-sync-error', { message: err?.message || String(err) });
+}
+
 // ── General SSE event bus ──
+// Admin-only. EventSource cannot set an Authorization header, so this one
+// endpoint also accepts the admin token as a `?token=` query parameter; every
+// other endpoint stays header-only.
 const SSE_MAX_CLIENTS = 50;
+const SSE_MAX_PER_IP = 5;
+const SSE_KEEPALIVE_MS = 25_000;
 const sseClients = new Set();
+const sseIpCounts = new Map(); // ip -> open connection count
 
 function broadcastEvent(event, data) {
   for (const client of sseClients) {
@@ -1882,9 +1909,29 @@ function broadcastEvent(event, data) {
 }
 
 app.get('/api/events', (req, res) => {
+  // Header first (normal fetch clients), then the query fallback EventSource
+  // needs. Both go through the same token map + prune.
+  let token = validAdminToken(req);
+  if (!token && typeof req.query.token === 'string') {
+    pruneTokens();
+    const meta = adminTokens.get(req.query.token);
+    if (meta) {
+      meta.lastUsedAt = Date.now();
+      token = req.query.token;
+    }
+  }
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   if (sseClients.size >= SSE_MAX_CLIENTS) {
     return res.status(503).end();
   }
+  const ip = clientIp(req);
+  if ((sseIpCounts.get(ip) || 0) >= SSE_MAX_PER_IP) {
+    return res.status(503).end();
+  }
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -1893,9 +1940,31 @@ app.get('/api/events', (req, res) => {
   res.write('data: {}\n\n');
 
   sseClients.add(res);
-  req.on('close', () => {
+  sseIpCounts.set(ip, (sseIpCounts.get(ip) || 0) + 1);
+
+  let closed = false;
+  function cleanup() {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepalive);
     sseClients.delete(res);
-  });
+    const left = (sseIpCounts.get(ip) || 1) - 1;
+    if (left > 0) sseIpCounts.set(ip, left);
+    else sseIpCounts.delete(ip);
+  }
+
+  // Comment-only keepalive: stops proxies and idle-socket timeouts from
+  // silently dropping a stream that has had no events for minutes.
+  const keepalive = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      cleanup();
+    }
+  }, SSE_KEEPALIVE_MS);
+
+  req.on('close', cleanup);
+  res.on('close', cleanup);
 });
 
 // Poll health status

@@ -40,7 +40,8 @@ npm run test      -w @localprint/desktop      # vitest
 
 ## Column naming
 DB columns are **camelCase** (e.g. `customerName`, `paperType`, `paymentStatus`).
-Phase 4.3 introduces a canonical shape + mappers shared with the online app.
+The online app's Postgres columns are lowercase; `apps/online/utils/orderMapping.js`
+owns the translation. A single shared mapper for both apps is still open.
 
 ## Key conventions
 - **ESM only** (`"type": "module"`).
@@ -74,6 +75,8 @@ Phase 4.3 introduces a canonical shape + mappers shared with the online app.
 | `/gmail/*` | — | OAuth connect/callback + intake queue |
 
 ## Migrations
-Currently inline in `db.js` (idempotent `CREATE TABLE IF NOT EXISTS` +
-`try { ALTER TABLE ... } catch {}`). Phase 4.4 replaces this with a numbered
-migration runner.
+Numbered SQL under `migrations/` (`001_…`, `002_…`), applied by `runMigrations`
+in `migrate.js` against a `schema_version` table. `db.js` still runs a block of
+idempotent `try { ALTER TABLE ... } catch {}` statements *before* the runner —
+that is a one-way bridge for databases created before the runner existed. New
+schema changes go in a numbered migration file, never in that block.

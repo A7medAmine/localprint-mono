@@ -32,8 +32,8 @@ Items marked **[fixed]** were addressed in the Phase 2 commits. Items marked
 | **critical** | `/api/backup/restore` | Wrote `req.file.buffer` straight over the live DB with zero validation — a truncated upload or wrong file bricked the install. | **[fixed]** now: write to `*.incoming`, open read-only, `PRAGMA integrity_check` + assert a `jobs` table, only then checkpoint/close/swap/reopen; snapshot to `*.before_restore` and roll back on any error; drop stale `-wal`/`-shm` (they belong to the replaced file). |
 | **high** | `applyAutoDeductForJob` | Not idempotent: `PRINTED → PENDING → PRINTED` deducts inventory twice (guard only checks `previousStatus === 'PRINTED'`). | **[fixed]** new `hasAutoDeductForJob(jobId, itemId)` — skips any job/item that already has an `auto_deduct` adjustment row. Note: does **not** re-credit stock when a job leaves PRINTED (deferred — needs a product decision). |
 | **medium** | `/api/jobs/bulk` (delete) | `fs.unlinkSync` ran inside the `db.transaction` — FS ops aren't transactional, so a throw mid-loop left files deleted for rows that rolled back. | **[fixed]** file names collected in the txn, unlinked after commit. |
-| **low** | `/api/events` (SSE) | No auth on the event bus — any LAN client can subscribe and watch job ids / gmail counts flow by. No server-side heartbeat (dead NAT'd connections linger until TCP timeout; capped at 50). | **[deferred]** add `requireAdmin` + a `: ping` every ~25s. Low because payloads are ids only. |
-| **low** | bulk status → cloud sync | `import('./services/cloudSync.js')` per bulk call; fine, but errors are swallowed silently (`.catch(() => {})`) — a shop with a broken cloud token gets no signal. | **[deferred]** surface a one-time toast/log. |
+| **low** | `/api/events` (SSE) | No auth on the event bus — any LAN client can subscribe and watch job ids / gmail counts flow by. No server-side heartbeat (dead NAT'd connections linger until TCP timeout; capped at 50). | **[fixed]** the endpoint now requires a valid admin token (header, or `?token=` since EventSource cannot set headers — `utils/adminEvents.ts` builds the URL), sends a `: ping` every 25s, and caps connections at 5 per IP on top of the global 50. |
+| **low** | bulk status → cloud sync | `import('./services/cloudSync.js')` per bulk call; fine, but errors are swallowed silently (`.catch(() => {})`) — a shop with a broken cloud token gets no signal. | **[fixed]** `warnCloudSyncFailed()` logs once per minute (not per job) and broadcasts a `cloud-sync-error` SSE event; `useAdminJobs` raises a destructive toast. |
 
 ### Online `server.js`
 
@@ -42,7 +42,7 @@ Items marked **[fixed]** were addressed in the Phase 2 commits. Items marked
 | **high** | `/api/shop/settings-sync` | `discount_rules` were `delete().eq(shop_id)` then `insert(...)` with no atomicity — a failed insert left the shop with **zero** discount rules. | **[fixed]** snapshot existing rules first; on insert failure, restore the snapshot before throwing. (True atomicity needs a Postgres RPC — deferred to Phase 4.) |
 | **medium** | `backfillPageCounts`, `cleanupOldOrders` | Run on a bare `setInterval`/`setTimeout` with no lock — two instances (or a restart mid-run) double-process. | **[deferred]** fine for a single instance; documented. Needs an advisory lock if the host ever scales past 1. |
 | **medium** | `optionalCustomerAuth` 503 path | Covered by `Phase 1.5`; re-confirmed the lenient variant degrades to guest instead of hard-failing uploads. | ok |
-| **low** | `statusSubscribers` map | Per-order SSE `res` set; a client that never closes leaks the `res`. No max-age, no per-IP cap. | **[deferred]** add an idle timeout + per-IP connection cap. |
+| **low** | `statusSubscribers` map | Per-order SSE `res` set; a client that never closes leaks the `res`. No max-age, no per-IP cap. | **[fixed]** 5 concurrent streams per IP (checked before the Supabase round-trip) and a 30-minute hard close; cleanup is idempotent and runs on both `req`/`res` close. |
 
 ### Sync layer (`services/cloudSync.js`)
 
@@ -65,7 +65,7 @@ Items marked **[fixed]** were addressed in the Phase 2 commits. Items marked
 
 | Sev | Location | Finding | State |
 |-----|----------|---------|-------|
-| **medium** | attachment ingest | `attResponse.data.data` (base64) is loaded fully into memory with **no size cap**, and `att.mimeType` is **not** checked against the upload allowlist or magic bytes — the `/api/upload` protections are bypassed for email-sourced jobs. | **[deferred → Phase 3]** reuse `ALLOWED_MIMES` + `validateMagicBytes` + a byte cap (Gmail API caps attachments at 25 MB, but a 25 MB base64 blob in memory per attachment per poll still adds up). |
+| **medium** | attachment ingest | `attResponse.data.data` (base64) is loaded fully into memory with **no size cap**, and `att.mimeType` is **not** checked against the upload allowlist or magic bytes — the `/api/upload` protections are bypassed for email-sourced jobs. | **[fixed]** `attachmentService.js` now imports the shared `ALLOWED_MIMES` (it had its own drifting copy) and runs `magicBytesMatch` on the decoded header; `attachmentRejectReason()` rejects on MIME + the 25 MB cap from the message metadata, so `gmailPolling` skips the part **before** downloading its base64 body. Covered by `test/validation.test.ts`. |
 | **low** | dedupe | `processed_emails` (UNIQUE `gmail_message_id`) + `gmail_pending` UNIQUE — double-insert is `INSERT OR IGNORE`. Solid. | ok |
 | **low** | token refresh | Handled in `gmailService.getGmailClient()`; encrypted at rest via `db.js` `encryptToken`. | ok |
 
@@ -74,8 +74,8 @@ Items marked **[fixed]** were addressed in the Phase 2 commits. Items marked
 | Sev | Location | Finding | State |
 |-----|----------|---------|-------|
 | **low** | `CardIDTool` colorMode | Tool state was `"bw"`; server/pricing expect `"blackWhite"`. Card jobs were priced as colour. | **[fixed]** mapped in `submitJob`. |
-| **medium** | `UploadView` vs server pricing | Client `utils/pricingUtils.ts` heuristics (docx page estimate) vs server `pdf-lib` count can drift; customer sees one price, shop another. | **[deferred → Phase 3]** treat server price as authoritative, show client price as "estimate". |
-| **low** | pre-existing `tsc` errors | 3 unrelated type errors exist on `main` (`AdminView.tsx:483`, `PDFJobManager.tsx:348`, `UploadView.tsx:121`). Not introduced by Phase 2; flagged for Phase 4 typecheck gate. | **[deferred]** |
+| **medium** | `UploadView` vs server pricing | Client `utils/pricingUtils.ts` heuristics (docx page estimate) vs server `pdf-lib` count can drift; customer sees one price, shop another. | **[fixed]** the online `/upload` handler recomputes the price with the shared calculator against the shop's real settings and persists **that**; `metadata.quotedPrice` is advisory and a mismatch is logged. The client already labels its number an estimate and shows none for Office files. |
+| **low** | pre-existing `tsc` errors | 3 unrelated type errors exist on `main` (`AdminView.tsx:483`, `PDFJobManager.tsx:348`, `UploadView.tsx:121`). Not introduced by Phase 2; flagged for Phase 4 typecheck gate. | **[fixed]** both apps' tsconfigs now carry an `exclude` list (stale `dist`/`release` bundles were what `tsc` choked on) and a dead `@ts-expect-error` was removed. `npm run typecheck` is clean in both workspaces, so the CI gate passes. |
 
 ---
 

@@ -6,7 +6,8 @@ npm-workspaces monorepo holding both LocalPrint apps plus their shared code.
 ```
 apps/desktop        Electron print-shop app (better-sqlite3, native printing, Gmail intake)
 apps/online         Cloud upload portal (Express + Supabase, multi-tenant by shop)
-packages/shared     Code shared by both apps (empty until Phase 4.2)
+packages/shared     Code shared by both apps (UI components, pricing,
+                    validation, HTTP middleware, order mapping)
 ```
 Each app has its own `AGENTS.md` with app-specific details — read that one when
 working inside an app.
@@ -33,7 +34,9 @@ Run an app's script alone with `npm run <script> -w @localprint/desktop`
 
 ## Shared config
 - `tsconfig.base.json` — common compiler options; each app's tsconfig extends it.
-  `strict` is currently **off** (Phase 4.6 turns it on).
+  `strict` is **on**. Each app's tsconfig also sets an `exclude` list; keep
+  build output (`dist`, `release`) out of it or `tsc --noEmit` picks up stale
+  bundles and fails.
 - Root `eslint.config.js` lints only root-level files; each app owns its own flat
   ESLint config.
 

@@ -26,6 +26,7 @@ import {
 } from "../../../components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { useAdmin } from "../AdminContext";
+import { openAdminEventSource } from "../../../utils/adminEvents";
 
 const getFileTypeIcon = (mimeType: string) => {
   if (mimeType.includes("pdf")) return "📄";
@@ -109,7 +110,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     loadGmailPending();
     // The persistent notification toast lives in AdminView's EventSource; this
     // one just keeps the pending list fresh while the tab is open.
-    const es = new EventSource("/api/events");
+    const es = openAdminEventSource();
     es.addEventListener("gmail-new", () => { loadGmailPending(); });
     es.onerror = () => {};
     return () => { es.close(); };

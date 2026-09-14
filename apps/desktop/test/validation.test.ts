@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { magicBytesMatch, isAllowedMime, ALLOWED_MIMES } from "@localprint/shared/validation";
+import { attachmentRejectReason, MAX_ATTACHMENT_SIZE } from "../services/attachmentService.js";
 
 // Contract for Phase 4.2's packages/shared/src/validation.ts: the magic-byte
 // matcher + MIME allowlist must keep exactly these accept/reject decisions.
@@ -52,5 +53,28 @@ describe("isAllowedMime", () => {
     expect(isAllowedMime("application/x-msdownload")).toBe(false);
     expect(isAllowedMime("image/gif")).toBe(false);
     expect(isAllowedMime("application/zip")).toBe(false);
+  });
+});
+
+// ── Gmail attachment gate ───────────────────────────────────────────────────
+// The email intake path must apply the same MIME allowlist and size cap as the
+// HTTP upload endpoints, before any base64 body is downloaded.
+describe('attachmentRejectReason', () => {
+  it('accepts an allowed type under the size cap', () => {
+    expect(attachmentRejectReason('application/pdf', 1024)).toBeNull();
+  });
+
+  it('rejects a type outside the shared allowlist', () => {
+    expect(attachmentRejectReason('application/x-msdownload', 1024))
+      .toMatch(/unsupported MIME type/);
+  });
+
+  it('rejects an allowed type over the size cap', () => {
+    expect(attachmentRejectReason('application/pdf', MAX_ATTACHMENT_SIZE + 1))
+      .toMatch(/too large/);
+  });
+
+  it('accepts an allowed type exactly at the cap', () => {
+    expect(attachmentRejectReason('application/pdf', MAX_ATTACHMENT_SIZE)).toBeNull();
   });
 });

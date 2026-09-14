@@ -27,8 +27,14 @@ export function useAuth() {
   const signUp = (email: string, password: string) =>
     supabase.auth.signUp({ email, password });
 
-  const signInWithGoogle = () =>
-    supabase.auth.signInWithOAuth({ provider: "google" });
+  const signInWithGoogle = () => {
+    // Come back to the exact page the customer started from (e.g. /s/<shop>/upload)
+    const returnTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+    return supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: returnTo },
+    });
+  };
 
   const signOut = () => supabase.auth.signOut();
 

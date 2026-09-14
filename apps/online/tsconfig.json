@@ -5,5 +5,11 @@
       "@localprint/shared": ["../../packages/shared/src"],
       "@localprint/shared/*": ["../../packages/shared/src/*"]
     }
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "uploads",
+    "tailwind.min.js"
+  ]
 }

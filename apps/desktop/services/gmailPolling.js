@@ -1,5 +1,5 @@
 import { fetchUnreadEmails } from "./gmailService.js";
-import { saveAttachment, getAttachmentFullPath } from "./attachmentService.js";
+import { saveAttachment, getAttachmentFullPath, attachmentRejectReason } from "./attachmentService.js";
 import { countPagesForFile } from "./pageCountService.js";
 import { calculateJobDiscount } from "../utils/discountLogic.js";
 import db, {
@@ -239,6 +239,16 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
       ) {
         const att = pending.attachment_meta[attIdx];
         try {
+          // Gate on the message metadata first: an unsupported or oversized
+          // part is skipped before its base64 body is downloaded into memory.
+          const rejectReason = attachmentRejectReason(att.mimeType, att.size);
+          if (rejectReason) {
+            console.warn(
+              `  ⚠️  Skipped attachment ${att.filename}: ${rejectReason}`
+            );
+            continue;
+          }
+
           const gmail = await (
             await import("./gmailService.js")
           ).getGmailClient();

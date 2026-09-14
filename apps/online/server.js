@@ -400,6 +400,14 @@ app.get("/api/health", (req, res) => {
 // customer streams watching that orderId — no polling.
 const statusSubscribers = new Map(); // orderId -> Set<res>
 
+// This endpoint is public (no auth — the order ids are the capability), so it
+// needs its own connection budget: an open stream costs a socket plus a
+// keepalive timer, and nothing else caps how many a single client may hold.
+const STREAM_MAX_PER_IP = 5;
+const STREAM_MAX_AGE_MS = 30 * 60_000; // hard close after 30 min; client reconnects
+const streamIpCounts = new Map(); // ip -> open stream count
+const streamClientIp = (req) => req.ip || req.socket?.remoteAddress || "unknown";
+
 function subscribeToOrder(orderId, res) {
   if (!statusSubscribers.has(orderId)) statusSubscribers.set(orderId, new Set());
   statusSubscribers.get(orderId).add(res);
@@ -430,6 +438,12 @@ app.get("/api/s/:shopSlug/orders/stream", resolveShopBySlug, async (req, res) =>
     return res.status(400).json({ error: "ids query parameter is required" });
   }
 
+  // Cap concurrent streams per client before spending a Supabase round-trip.
+  const ip = streamClientIp(req);
+  if ((streamIpCounts.get(ip) || 0) >= STREAM_MAX_PER_IP) {
+    return res.status(503).json({ error: "Too many open status streams" });
+  }
+
   // Only subscribe to ids that actually belong to this shop.
   const { data: rows, error } = await supabase
     .from('orders')
@@ -451,15 +465,34 @@ app.get("/api/s/:shopSlug/orders/stream", resolveShopBySlug, async (req, res) =>
   res.write(`: connected ${validIds.length}\n\n`);
 
   for (const id of validIds) subscribeToOrder(id, res);
+  streamIpCounts.set(ip, (streamIpCounts.get(ip) || 0) + 1);
+
+  let closed = false;
+  function cleanup() {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepalive);
+    clearTimeout(maxAge);
+    for (const id of validIds) unsubscribeFromOrder(id, res);
+    const left = (streamIpCounts.get(ip) || 1) - 1;
+    if (left > 0) streamIpCounts.set(ip, left);
+    else streamIpCounts.delete(ip);
+  }
 
   const keepalive = setInterval(() => {
-    try { res.write(": keepalive\n\n"); } catch {}
+    try { res.write(": keepalive\n\n"); } catch { cleanup(); }
   }, 25_000);
 
-  req.on("close", () => {
-    clearInterval(keepalive);
-    for (const id of validIds) unsubscribeFromOrder(id, res);
-  });
+  // A NAT'd or half-dead client can hold a stream open long after the browser
+  // is gone; the keepalive write alone does not always surface that. Close on
+  // a hard ceiling and let EventSource reconnect if the page is still there.
+  const maxAge = setTimeout(() => {
+    cleanup();
+    try { res.end(); } catch { /* already gone */ }
+  }, STREAM_MAX_AGE_MS);
+
+  req.on("close", cleanup);
+  res.on("close", cleanup);
 });
 
 // Platform super-admin console (login page + dashboard in one document).

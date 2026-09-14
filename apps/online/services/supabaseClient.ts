@@ -11,6 +11,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Falls back to a client pointed at nothing rather than throwing, so guest
 // upload keeps working even if account auth was never configured on this deployment.
-export const supabase = createClient(supabaseUrl || "https://placeholder.supabase.co", supabaseAnonKey || "placeholder");
+export const supabase = createClient(
+  supabaseUrl || "https://placeholder.supabase.co",
+  supabaseAnonKey || "placeholder",
+  {
+    auth: {
+      // PKCE returns ?code=... instead of putting the access token in the URL hash.
+      flowType: "pkce",
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  },
+);
 
 export const isCustomerAuthConfigured = Boolean(supabaseUrl && supabaseAnonKey);
