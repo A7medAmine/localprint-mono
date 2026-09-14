@@ -20,6 +20,7 @@
     "electron": "cross-env NODE_ENV=production electron .",
     "electron:dev": "cross-env NODE_ENV=development VITE_API_TARGET=http://localhost:47821 concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron .\"",
     "electron:build": "npm run build && electron-builder --win nsis",
+    "electron:release": "npm run build && electron-builder --win nsis --publish always",
     "rebuild:node": "npm rebuild better-sqlite3 --build-from-source",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
     "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/patch-pdfjs-worker.js"
@@ -39,6 +40,7 @@
     "clsx": "^2.1.1",
     "compression": "^1.8.2",
     "dotenv": "^17.4.2",
+    "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "googleapis": "^171.4.0",
     "lucide-react": "^1.16.0",
@@ -101,6 +103,11 @@
     ],
     "extraMetadata": {
       "main": "electron/main.js"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "A7medAmine",
+      "repo": "localprint-mono"
     },
     "nodeGypRebuild": false,
     "buildDependenciesFromSource": false,

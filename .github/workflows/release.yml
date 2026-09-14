@@ -1,0 +1,33 @@
+name: Release desktop app
+
+# Push a tag like `v1.2.0` to build the Windows installer and publish it (plus
+# latest.yml, which electron-updater reads) to a GitHub Release. The app's
+# built-in auto-updater (apps/desktop/electron/updater.js) polls this repo's
+# Releases feed — see build.publish in apps/desktop/package.json.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Scripts ARE needed here (electron-rebuild of better-sqlite3 against
+      # Electron's Node ABI) — unlike CI's --ignore-scripts fast path.
+      - run: npm ci
+
+      - name: Build + publish installer
+        working-directory: apps/desktop
+        run: npm run electron:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

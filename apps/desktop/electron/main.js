@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import dotenv from 'dotenv';
 import { checkEnv } from '../checkEnv.js';
+import { initAutoUpdater, checkForUpdatesManually } from './updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -231,6 +232,12 @@ function buildMenu() {
     {
       label: 'Window',
       submenu: [{ role: 'minimize' }, { role: 'close' }],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Check for Updates…', click: () => checkForUpdatesManually() },
+      ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -598,6 +605,7 @@ app.whenReady().then(async () => {
     return;
   }
   createWindow();
+  initAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
