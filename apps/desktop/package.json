@@ -1,7 +1,7 @@
 {
   "name": "@localprint/desktop",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "PrintShop Hub — desktop print-shop management app (jobs, native printing, QR uploads).",
   "author": "PrintShop Hub",
   "type": "module",

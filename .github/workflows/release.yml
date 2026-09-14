@@ -22,6 +22,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      # node-gyp's own VS detection (find-visualstudio.js) misses the
+      # runner's preinstalled VS2022 Build Tools despite them being present —
+      # this puts cl.exe/INCLUDE/LIB on PATH directly so the better-sqlite3
+      # native rebuild below can compile.
+      - uses: ilammy/msvc-dev-cmd@v1
+
       # Scripts ARE needed here (electron-rebuild of better-sqlite3 against
       # Electron's Node ABI) — unlike CI's --ignore-scripts fast path.
       - run: npm ci
