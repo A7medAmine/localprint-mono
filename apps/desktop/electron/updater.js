@@ -9,7 +9,9 @@
 // dev build (no app-update.yml), so this is a no-op under `electron:dev`.
 
 import { app, dialog, BrowserWindow } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';
+
+const { autoUpdater } = electronUpdater;
 
 let started = false;
 // Set for the duration of a manually-triggered check so the result
