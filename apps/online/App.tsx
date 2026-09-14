@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Routes, Route, useParams, Link, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
-import UploadView from "./views/UploadView";
-import AccountView from "./views/AccountView";
+// The upload flow pulls in pdf.js and xlsx for previews; the account page is a
+// separate concern entirely. Neither belongs in the first paint of the other.
+const UploadView = lazy(() => import("./views/UploadView"));
+const AccountView = lazy(() => import("./views/AccountView"));
+
+const RouteFallback: React.FC = () => (
+  <div className="flex-1 flex items-center justify-center py-20" role="status" aria-live="polite">
+    <div className="w-8 h-8 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+  </div>
+);
 import LanguageToggle from "./components/LanguageToggle";
 import { useAuth } from "./hooks/useAuth";
 import { isCustomerAuthConfigured } from "./services/supabaseClient";
@@ -165,11 +173,13 @@ const App: React.FC = () => {
 
       <main className="flex-grow flex flex-col transition-opacity duration-150 container mx-auto py-6 px-4">
         <div key={lang} className="animate-[langFadeIn_0.25s_ease-out] flex-1 flex flex-col">
+          <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/s/:shopSlug/upload" element={<UploadRoute lang={lang} onSettingsLoaded={setSettings} onShopVisited={handleShopVisited} />} />
             <Route path="/account" element={<AccountView lang={lang} onToggleLang={setLang} />} />
             <Route path="*" element={<NoShopSpecified isRtl={lang === "ar"} />} />
           </Routes>
+          </Suspense>
         </div>
       </main>
     </div>

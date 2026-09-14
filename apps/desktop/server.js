@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from "express";
+import compression from "compression";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -35,12 +36,42 @@ const PUBLIC_SETTINGS_KEYS = new Set([
   "shopName", "logoUrl", "pricing", "discounts",
   "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
   "currency",
+  // Public storefront link — the customer share sheet builds its QR from these.
+  // Both are already public information (the site URL and its slug).
+  "cloudSyncUrl", "cloudShopSlug",
 ]);
 
 // Keys that must NEVER be serialized into any HTTP response, even for admins.
 const SECRET_SETTINGS_KEYS = new Set([
   "gmailTokens", "gmailToken",
 ]);
+
+// ── Cloud link parsing ──
+// Operators hand out ONE link per store: https://cloud.example.com/s/<slug>
+// (with or without a trailing /upload and query). The desktop app talks to the
+// platform root, so split that link into the API base URL and the storefront
+// slug. A bare root URL is accepted too — the slug then arrives on the first
+// settings sync.
+function parseCloudLink(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return { baseUrl: '', slug: '' };
+  const withScheme = /^https?:\/\//i.test(text) ? text : `https://${text}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { baseUrl: text.replace(/\/+$/, ''), slug: '' };
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  const marker = segments.indexOf('s');
+  let slug = '';
+  if (marker !== -1 && segments[marker + 1]) {
+    slug = decodeURIComponent(segments[marker + 1]);
+    segments.length = marker; // everything before /s/<slug> stays in the base
+  }
+  const basePath = segments.length ? `/${segments.join('/')}` : '';
+  return { baseUrl: `${url.origin}${basePath}`, slug };
+}
 
 function pickPublicSettings(settings) {
   const out = {};
@@ -222,6 +253,19 @@ const DB_PATH = process.env.PRINTSHOP_DB_PATH || path.join(__dirname, "database.
 
 const app = express();
 
+// gzip everything text-shaped. The JSON job list and the JS bundle are the two
+// biggest payloads the dashboard waits on. SSE is excluded — buffering the
+// event stream would hold job notifications back until the connection closed.
+app.use(
+  compression({
+    filter: (req, res) => {
+      const type = String(res.getHeader("Content-Type") || "");
+      if (type.includes("text/event-stream")) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
+
 // Middleware — cap body sizes; uploads go through multer, not these.
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
@@ -292,33 +336,72 @@ const getPdfPageCount = async (filePath) => {
   }
 };
 
-// Backfill missing pageCount for existing PDF jobs (runs once at startup)
+/**
+ * Page count for any supported upload, computed server-side so the admin list
+ * never has to download files to work it out.
+ *
+ * @param {string} filePath - Absolute path to the stored file.
+ * @param {string} mimeType - Claimed MIME type (already magic-byte validated).
+ * @param {number} fileSize - Size in bytes, used by the size heuristics.
+ * @returns {Promise<number|null>} Page count, or null if it cannot be derived.
+ */
+const computePageCount = async (filePath, mimeType, fileSize) => {
+  const type = String(mimeType || "").toLowerCase();
+
+  if (type.includes("pdf")) return await getPdfPageCount(filePath);
+  if (type.startsWith("image/")) return 1;
+
+  const size = Number(fileSize) || (() => {
+    try {
+      return fs.statSync(filePath).size;
+    } catch {
+      return 0;
+    }
+  })();
+
+  if (type.includes("word") || type.includes("document")) {
+    // DOCX is a ZIP; docProps/app.xml carries <Pages>N</Pages> uncompressed
+    // often enough to be worth a scan before falling back to the size estimate.
+    try {
+      const bytes = fs.readFileSync(filePath);
+      const match = bytes.toString("latin1").match(/<Pages>(\d+)<\/Pages>/);
+      if (match) return Math.max(1, parseInt(match[1], 10));
+    } catch (err) {
+      console.warn(`⚠️  Could not scan ${path.basename(filePath)} for a page count:`, err.message);
+    }
+    // ~40KB of container overhead, then ~8KB per page of text.
+    return Math.max(1, Math.round((size - 40000) / 8000));
+  }
+
+  return Math.max(1, Math.ceil(size / 75000));
+};
+
+// Backfill missing pageCount for existing jobs (runs once at startup)
 const backfillPageCounts = async () => {
-  const pdfJobsMissingCount = db.prepare(`
-    SELECT * FROM jobs 
-    WHERE fileType = 'application/pdf' 
-    AND (pageCount IS NULL OR pageCount = 0)
+  const jobsMissingCount = db.prepare(`
+    SELECT * FROM jobs
+    WHERE pageCount IS NULL OR pageCount = 0
   `).all();
 
-  if (pdfJobsMissingCount.length === 0) {
-    console.log("✅ All PDF jobs already have page counts.");
+  if (jobsMissingCount.length === 0) {
+    console.log("✅ All jobs already have page counts.");
     return;
   }
 
   console.log(
-    `📚 Backfilling page counts for ${pdfJobsMissingCount.length} PDF job(s)...`,
+    `📚 Backfilling page counts for ${jobsMissingCount.length} job(s)...`,
   );
 
   const updateStmt = db.prepare('UPDATE jobs SET pageCount = ? WHERE id = ?');
 
-  for (const job of pdfJobsMissingCount) {
+  for (const job of jobsMissingCount) {
     if (!job.serverFileName) {
       console.warn(`  ⚠️  Job ${job.id} has no serverFileName — skipping.`);
       continue;
     }
     const filePath = path.join(UPLOADS_DIR, job.serverFileName);
     if (fs.existsSync(filePath)) {
-      const count = await getPdfPageCount(filePath);
+      const count = await computePageCount(filePath, job.fileType, job.fileSize);
       if (count !== null) {
         updateStmt.run(count, job.id);
         console.log(`  ✅ ${job.fileName}: ${count} page(s)`);
@@ -385,8 +468,36 @@ app.get("/api/health", (req, res) => {
 });
 
 // Get all jobs (admin only)
+// Newest-first page of jobs. The dashboard filters and counts client-side, so
+// it asks for a generous page and only fetches the rest when the operator asks
+// — an unbounded SELECT here is what made the list crawl on old shop databases.
+const JOBS_PAGE_DEFAULT = 500;
+const JOBS_PAGE_MAX = 5000;
+
 app.get("/api/jobs", requireAdmin, (req, res) => {
-  const jobs = db.prepare('SELECT * FROM jobs ORDER BY uploadDate DESC').all();
+  const rawLimit = parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(rawLimit, 1), JOBS_PAGE_MAX)
+    : JOBS_PAGE_DEFAULT;
+  const rawOffset = parseInt(req.query.offset, 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
+  const total = db.prepare('SELECT COUNT(*) AS count FROM jobs').get().count;
+  const page = db
+    .prepare('SELECT * FROM jobs ORDER BY uploadDate DESC LIMIT ? OFFSET ?')
+    .all(limit, offset);
+
+  // The review queue lives in this same payload, so a job awaiting review must
+  // never fall off the end of a page — always append the ones the page missed.
+  const seen = new Set(page.map((j) => j.id));
+  const pendingReview = db
+    .prepare("SELECT * FROM jobs WHERE status = 'pending_review' ORDER BY uploadDate DESC")
+    .all()
+    .filter((j) => !seen.has(j.id));
+  const jobs = page.concat(pendingReview);
+
+  res.set("X-Total-Count", String(total));
+  res.set("Access-Control-Expose-Headers", "X-Total-Count");
   const formattedJobs = jobs.map(job => ({
     ...job,
     paymentAmount: job.paymentAmount || 0,
@@ -449,11 +560,7 @@ app.post("/api/upload", uploadLimit, upload.single("file"), async (req, res) => 
       return res.status(400).json({ success: false, error: "File content does not match its type" });
     }
 
-    // Get page count for PDF files
-    let pageCount = null;
-    if (req.file.mimetype === "application/pdf") {
-      pageCount = await getPdfPageCount(filePath);
-    }
+    const pageCount = await computePageCount(filePath, req.file.mimetype, req.file.size);
 
     // The server owns the primary key and the delete secret — never the client.
     const id = randomUUID();
@@ -527,10 +634,7 @@ app.post("/api/jobs", requireAdmin, upload.single("file"), async (req, res) => {
       return res.status(400).json({ success: false, error: "File content does not match its type" });
     }
 
-    let pageCount = null;
-    if (req.file.mimetype === "application/pdf") {
-      pageCount = await getPdfPageCount(filePath);
-    }
+    const pageCount = await computePageCount(filePath, req.file.mimetype, req.file.size);
 
     const id = randomUUID();
     const deleteToken = randomBytes(16).toString("hex");
@@ -621,20 +725,24 @@ app.post("/api/jobs/:id/file", requireAdmin, upload.single("file"), async (req, 
       }
     }
 
-    // Get page count for PDF files
-    let pageCount = null;
-    if (req.file.mimetype === "application/pdf") {
-      const filePath = path.join(UPLOADS_DIR, req.file.filename);
-      pageCount = await getPdfPageCount(filePath);
-    }
+    const pageCount = await computePageCount(
+      path.join(UPLOADS_DIR, req.file.filename),
+      req.file.mimetype,
+      req.file.size,
+    );
+
+    // Optional display-name update — a job whose image was replaced by a
+    // processed PDF must not keep advertising the old "photo.jpg".
+    const rawName = typeof req.body?.fileName === "string" ? req.body.fileName.trim() : "";
+    const newFileName = rawName ? path.basename(rawName).slice(0, 255) : job.fileName;
 
     // Update job in DB
     const updateStmt = db.prepare(`
-      UPDATE jobs 
-      SET serverFileName = ?, fileSize = ?, fileType = ?, pageCount = ? 
+      UPDATE jobs
+      SET serverFileName = ?, fileName = ?, fileSize = ?, fileType = ?, pageCount = ?
       WHERE id = ?
     `);
-    updateStmt.run(req.file.filename, req.file.size, req.file.mimetype, pageCount, jobId);
+    updateStmt.run(req.file.filename, newFileName, req.file.size, req.file.mimetype, pageCount, jobId);
 
     const updatedJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
     res.status(200).json({ success: true, job: updatedJob });
@@ -1008,6 +1116,31 @@ app.get("/api/files/localpath/:id", requireAdmin, (req, res) => {
   }
 });
 
+// Admin preview/download by job id — unlike /api/files/public/:id this does
+// NOT hide jobs awaiting review, because reviewing a job means looking at its
+// file before accepting or rejecting it. Admin token required.
+app.get("/api/files/review/:id", requireAdmin, (req, res) => {
+  try {
+    const job = db.prepare('SELECT serverFileName, fileName, fileType FROM jobs WHERE id = ?').get(req.params.id);
+    if (!job || !job.serverFileName) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    const filePath = path.resolve(path.join(UPLOADS_DIR, job.serverFileName));
+    if (!filePath.startsWith(path.resolve(UPLOADS_DIR))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found on disk" });
+    }
+    const safeName = (job.fileName || "file").replace(/[^a-zA-Z0-9._-]/g, '_');
+    const inline = /^image\//.test(job.fileType || "") || job.fileType === "application/pdf";
+    res.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${safeName}"`);
+    res.sendFile(filePath);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/api/files/public/:id", (req, res) => {
   try {
     const job = db.prepare('SELECT serverFileName, fileName, fileType, status FROM jobs WHERE id = ?').get(req.params.id);
@@ -1045,7 +1178,10 @@ app.get(/^\/api\/files\/(.+)/, requireAdmin, (req, res) => {
   }
 
   if (fs.existsSync(filePath)) {
-    res.sendFile(filePath);
+    // Stored uploads are immutable for a given serverFileName — a replaced file
+    // gets a new name — so the preview pane can reuse them instead of
+    // re-downloading on every open.
+    res.sendFile(filePath, { maxAge: "1h", etag: true });
   } else {
     res.status(404).json({ error: "File not found" });
   }
@@ -1136,8 +1272,19 @@ app.post("/api/settings", requireAdmin, (req, res) => {
     if (req.body.currency !== undefined) {
       updateSetting('currency', String(req.body.currency || ''));
     }
+    // One pasted store link carries both values: the API base and the slug.
+    let slugFromUrl = '';
     if (req.body.cloudSyncUrl !== undefined) {
-      updateSetting('cloudSyncUrl', req.body.cloudSyncUrl);
+      const parsed = parseCloudLink(req.body.cloudSyncUrl);
+      updateSetting('cloudSyncUrl', parsed.baseUrl);
+      slugFromUrl = parsed.slug;
+      if (slugFromUrl) updateSetting('cloudShopSlug', slugFromUrl);
+    }
+    // Normally derived from the link above or cached by the cloud settings
+    // sync; still settable by hand. A slug embedded in the pasted link wins.
+    if (!slugFromUrl && req.body.cloudShopSlug !== undefined) {
+      updateSetting('cloudShopSlug', parseCloudLink(req.body.cloudShopSlug).slug
+        || String(req.body.cloudShopSlug || '').trim().replace(/^\/+|\/+$/g, ''));
     }
     if (req.body.shopApiToken !== undefined) {
       updateSetting('shopApiToken', req.body.shopApiToken);
@@ -2153,8 +2300,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 if (!isDev) {
   app.use(
     express.static(DIST_DIR, {
-      maxAge: "1d", // Cache static assets for 1 day
       etag: true,
+      setHeaders: (res, filePath) => {
+        // Vite content-hashes everything under /assets, so those can be cached
+        // forever; index.html must not be, or a new build never reaches the UI.
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=86400");
+        }
+      },
     }),
   );
 }

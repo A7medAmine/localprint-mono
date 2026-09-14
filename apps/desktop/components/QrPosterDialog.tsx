@@ -45,11 +45,27 @@ const buildLocalUrl = async (lang: Language) => {
   return `http://${host}?ref=upload&lang=${lang}`;
 };
 
+/**
+ * The public site is multi-tenant: every shop lives under /s/<slug>/upload, and
+ * the platform root is a generic landing page. The slug is owned by the cloud
+ * and cached locally (cloudShopSlug) on each settings sync. If the operator
+ * already pasted a storefront URL that contains /s/<slug>, honour it as-is.
+ */
 const buildOnlineUrl = (shopSettings: ShopSettings | null, lang: Language) => {
   const raw = shopSettings?.cloudSyncUrl?.trim();
   if (!raw) return null;
   const cleaned = raw.replace(/\/+$/, "");
-  return `${cleaned}?ref=upload&lang=${lang}`;
+  const query = `?ref=upload&lang=${lang}`;
+
+  const embedded = cleaned.match(/\/s\/([^/?#]+)/);
+  if (embedded) {
+    const base = cleaned.slice(0, embedded.index! + embedded[0].length);
+    return `${base}/upload${query}`;
+  }
+
+  const slug = shopSettings?.cloudShopSlug?.trim();
+  if (!slug) return null;
+  return `${cleaned}/s/${encodeURIComponent(slug)}/upload${query}`;
 };
 
 const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
@@ -154,11 +170,34 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
       url: targetUrl,
       mode,
     });
-    const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    // A hidden iframe, not window.open(): under Electron an about:blank popup
+    // is handed to the OS shell ("Get an app to open this 'about' link") and
+    // never prints.
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    // Kept at A4 pixel size and merely off-screen — a 0x0 frame can print blank.
+    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;";
+    frame.srcdoc = html;
+    frame.onload = () => {
+      const win = frame.contentWindow;
+      if (!win) {
+        frame.remove();
+        return;
+      }
+      const cleanup = () => setTimeout(() => frame.remove(), 1000);
+      win.addEventListener("afterprint", cleanup, { once: true });
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        setError(isRtl ? "تعذّرت الطباعة" : "Could not open the print dialog");
+        frame.remove();
+        return;
+      }
+      // afterprint never fires in some engines — reap the frame anyway.
+      setTimeout(cleanup, 60000);
+    };
+    document.body.appendChild(frame);
   };
 
   return (
@@ -216,7 +255,7 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
                 ? "bg-background shadow-sm text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            title={!onlineUrl ? (isRtl ? "لم يتم تعيين رابط الموقع" : "Cloud sync URL not set") : ""}
+            title={!onlineUrl ? (isRtl ? "لم يتم تعيين رابط الموقع أو معرّف المتجر" : "Cloud URL or store slug not set") : ""}
           >
             {isRtl ? "الموقع الإلكتروني" : "Online Website"}
           </button>
@@ -226,8 +265,8 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
         {!shareOnly && mode === "online" && !onlineUrl && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
             {isRtl
-              ? "أضف رابط المزامنة السحابية من الإعدادات لتفعيل هذا الخيار."
-              : "Add the cloud sync URL in settings to enable this option."}
+              ? "أضف رابط المزامنة السحابية ومعرّف المتجر من الإعدادات لتفعيل هذا الخيار."
+              : "Add the cloud sync URL and store slug in settings to enable this option."}
           </p>
         )}
 
@@ -418,11 +457,6 @@ const buildPosterHtml = (props: PosterProps) => `<!doctype html>
 </head>
 <body>
 ${buildPosterInner(props)}
-<script>
-  window.addEventListener('load', function(){
-    setTimeout(function(){ window.focus(); window.print(); }, 300);
-  });
-</script>
 </body>
 </html>`;
 

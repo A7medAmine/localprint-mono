@@ -162,6 +162,11 @@ db.exec(`
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- The admin list reads jobs newest-first and the review queue filters on
+  -- status; without these both are full table scans that grow with the shop.
+  CREATE INDEX IF NOT EXISTS idx_jobs_uploadDate ON jobs(uploadDate DESC);
+  CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
   CREATE INDEX IF NOT EXISTS idx_inventory_items_paperType ON inventory_items(paperTypeId);
   CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_itemId ON inventory_adjustments(itemId, createdAt DESC);
 `);

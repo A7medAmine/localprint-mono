@@ -2,17 +2,23 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
-import db, { getSettings, getPaperTypes, getDiscountRules } from '../db.js';
+import db, { getSettings, getPaperTypes, getDiscountRules, updateSetting } from '../db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 
+// Legacy rows can still hold a full storefront link (…/s/<slug>/upload); the
+// API lives at the platform root, so trim anything from /s/ onwards.
+function apiBase(raw) {
+  return String(raw || '').trim().replace(/\/s\/[^/?#]+.*$/i, '').replace(/\/+$/, '');
+}
+
 function getConfig() {
   const s = getSettings();
   return {
-    url: s.cloudSyncUrl || '',
+    url: apiBase(s.cloudSyncUrl),
     token: s.shopApiToken || '',
     pollInterval: parseInt(s.cloudSyncPollInterval || '30000', 10),
   };
@@ -123,6 +129,19 @@ export async function syncSettings() {
 
   if (res && res.ok) {
     log('info', 'Settings synced to cloud');
+    // The cloud owns the shop slug; cache it locally so the QR poster can
+    // link to this shop's storefront (/s/<slug>/upload) instead of the
+    // platform root.
+    try {
+      const body = await res.json();
+      const slug = typeof body?.shopSlug === 'string' ? body.shopSlug.trim() : '';
+      if (slug && slug !== settings.cloudShopSlug) {
+        updateSetting('cloudShopSlug', slug);
+        log('info', 'Cached shop slug from cloud', { slug });
+      }
+    } catch {
+      // Older cloud builds answer with an empty body — keep whatever slug we have.
+    }
     return true;
   }
   log('error', 'Failed to sync settings', { status: res?.status });

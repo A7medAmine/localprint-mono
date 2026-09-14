@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { PDFDocument, degrees } from "pdf-lib";
 import { renderPdfFirstPageToDataUrl } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
+import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import ImageEditor from "../components/ImageEditor";
 import { useLanguage } from "../lib/useLanguage";
 import { cn } from "@localprint/shared";
@@ -14,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { toast } from "../components/ui/use-toast";
 import { isElectron, printData } from "../lib/electronPrint";
 import { storageService } from "../services/storageService";
-import type { PrinterJobDefaults } from "../types";
+import type { PrinterJobDefaults, PrintJob } from "../types";
 import {
   Dialog,
   DialogContent,
@@ -155,9 +156,11 @@ const CardIDTool: React.FC = () => {
   const [exportError, setExportError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
-  const [jobName, setJobName] = useState("");
-  const [jobPhone, setJobPhone] = useState("");
-  const [jobNotes, setJobNotes] = useState("");
+  const targets = useJobTargets();
+  // Jobs the card faces were loaded from — offered for replacement by the
+  // processed PDF when saving.
+  const [frontSourceJob, setFrontSourceJob] = useState<PrintJob | null>(null);
+  const [backSourceJob, setBackSourceJob] = useState<PrintJob | null>(null);
   const [lastPdfBlob, setLastPdfBlob] = useState<Blob | null>(null);
   const [multiCard, setMultiCard] = useState(false);
   const [copies, setCopies] = useState(4);
@@ -191,6 +194,7 @@ const CardIDTool: React.FC = () => {
   const handleFrontFile = useCallback(async (f: File) => {
     setExportError("");
     setFrontFile(f);
+    setFrontSourceJob(null);
     try {
       setFrontDataUrl(await readFileAsDataUrl(f));
     } catch (e: any) {
@@ -201,6 +205,7 @@ const CardIDTool: React.FC = () => {
   const handleBackFile = useCallback(async (f: File) => {
     setExportError("");
     setBackFile(f);
+    setBackSourceJob(null);
     try {
       setBackDataUrl(await readFileAsDataUrl(f));
     } catch (e: any) {
@@ -450,11 +455,19 @@ const CardIDTool: React.FC = () => {
     // stale blob (or nothing).
     const blob = await generatePdf();
     if (!blob) return;
+    await targets.refresh();
+    // Pre-select the customer the faces came from, so "save it back onto that
+    // job" is one click.
+    targets.reset({ job: frontSourceJob || backSourceJob, selectJob: false });
     setShowJobForm(true);
   };
 
+  const sourceJobIds = Array.from(
+    new Set([frontSourceJob?.id, backSourceJob?.id].filter(Boolean) as string[]),
+  );
+
   const submitJob = async () => {
-    if (!jobName.trim()) return;
+    if (!targets.targetJob && !targets.name.trim()) return;
     setExportError("");
     setExporting(true);
     try {
@@ -463,31 +476,33 @@ const CardIDTool: React.FC = () => {
       const blob = await generatePdf();
       if (!blob) throw new Error(exportError || "Could not generate the card PDF");
       const file = new File([blob], "id-cards.pdf", { type: "application/pdf" });
-      const metadata = JSON.stringify({
-        customerName: jobName.trim(),
-        phoneNumber: jobPhone.trim(),
-        notes: jobNotes.trim(),
-        fileName: "id-cards.pdf",
-        status: "PENDING",
-        source: "card-tool",
-        printPreferences: {
-          // Server/pricing expect "blackWhite"/"color", not this tool's "bw".
+      const result = await targets.save({
+        file,
+        // Server/pricing expect "blackWhite"/"color", not this tool's "bw".
+        preferences: {
           colorMode: colorMode === "bw" ? "blackWhite" : "color",
           copies: 1,
           paperType: "cardboard",
         },
+        pageCount: (frontDataUrl ? 1 : 0) + (backDataUrl ? 1 : 0),
+        sourceJobIds,
+        source: "card-tool",
       });
-      const body = new FormData();
-      body.append("file", file);
-      body.append("metadata", metadata);
-      const res = await fetch("/api/upload", { method: "POST", body });
-      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+      if (result.replaced) {
+        setFrontSourceJob(null);
+        setBackSourceJob(null);
+      } else if (targets.replaceSources) {
+        setFrontSourceJob(null);
+        setBackSourceJob(null);
+      }
       setShowJobForm(false);
-      setJobName("");
-      setJobPhone("");
-      setJobNotes("");
       setLastPdfBlob(null);
-      toast({ title: isRtl ? "تمت إضافة المهمة" : "Job added", variant: "success" });
+      toast({
+        title: result.replaced
+          ? isRtl ? "تم تحديث المهمة" : "Job updated"
+          : isRtl ? "تمت إضافة المهمة" : "Job added",
+        variant: "success",
+      });
     } catch (e: any) {
       setExportError(e?.message || "Failed to add job");
     } finally {
@@ -495,11 +510,16 @@ const CardIDTool: React.FC = () => {
     }
   };
 
-  const jobLoaderSelect = (job: any, file: File | null) => {
+  const jobLoaderSelect = (job: PrintJob, file: File | null) => {
     if (!file) return;
     setExportError("");
-    if (loadTarget === "front") handleFrontFile(file);
-    else handleBackFile(file);
+    if (loadTarget === "front") {
+      handleFrontFile(file);
+      setFrontSourceJob(job);
+    } else {
+      handleBackFile(file);
+      setBackSourceJob(job);
+    }
   };
 
   return (
@@ -532,7 +552,7 @@ const CardIDTool: React.FC = () => {
                 <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تدوير 90 درجة" : "Rotate 90°"} onClick={() => setFrontRot((r) => (r + 90) % 360)}>
                   ⟳ {frontRot ? `${frontRot}°` : ""}
                 </Button>
-                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setFrontFile(null); setFrontDataUrl(null); setFrontRot(0); }}>
+                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setFrontFile(null); setFrontDataUrl(null); setFrontRot(0); setFrontSourceJob(null); }}>
                   {t("remove")}
                 </Button>
               </div>
@@ -567,7 +587,7 @@ const CardIDTool: React.FC = () => {
                 <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" title={isRtl ? "تدوير 90 درجة" : "Rotate 90°"} onClick={() => setBackRot((r) => (r + 90) % 360)}>
                   ⟳ {backRot ? `${backRot}°` : ""}
                 </Button>
-                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setBackFile(null); setBackDataUrl(null); setBackRot(0); }}>
+                <Button variant="ghost" size="sm" className="text-destructive h-auto px-2 py-1 text-xs" onClick={() => { setBackFile(null); setBackDataUrl(null); setBackRot(0); setBackSourceJob(null); }}>
                   {t("remove")}
                 </Button>
               </div>
@@ -670,24 +690,28 @@ const CardIDTool: React.FC = () => {
             <DialogHeader>
               <DialogTitle>{t("addToJobsTitle")}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>{t("customerNameRequired")}</Label>
-                <Input value={jobName} onChange={(e) => setJobName(e.target.value)} autoFocus />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("phone")}</Label>
-                <Input value={jobPhone} onChange={(e) => setJobPhone(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("studioNotes")}</Label>
-                <Textarea value={jobNotes} onChange={(e) => setJobNotes(e.target.value)} />
-              </div>
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              <JobTargetPicker
+                targets={targets}
+                isRtl={isRtl}
+                sourceJobCount={sourceJobIds.length}
+                sourceLabel={isRtl ? "صورة" : "source image(s)"}
+              />
+              {!targets.targetJob && (
+                <div className="space-y-1.5">
+                  <Label>{t("studioNotes")}</Label>
+                  <Textarea value={targets.notes} onChange={(e) => targets.setNotes(e.target.value)} />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowJobForm(false)}>{t("studioCancel")}</Button>
-              <Button disabled={!jobName.trim() || exporting} onClick={submitJob}>
-                {exporting ? t("uploading") : t("addJob")}
+              <Button disabled={(!targets.targetJob && !targets.name.trim()) || exporting} onClick={submitJob}>
+                {exporting
+                  ? t("uploading")
+                  : targets.targetJob
+                    ? isRtl ? "استبدال الملف" : "Replace file"
+                    : t("addJob")}
               </Button>
             </DialogFooter>
           </DialogContent>

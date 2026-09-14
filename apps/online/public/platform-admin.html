@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
   <title>LocalPrint — Platform Admin</title>
-  <link rel="stylesheet" href="/platform-admin.css" />
+  <link rel="stylesheet" href="/platform-admin.css?v=2" />
 </head>
 <body>
   <!-- Login screen -->
@@ -57,7 +57,7 @@
             <thead>
               <tr>
                 <th>Store</th><th>Status</th><th class="num">Orders</th>
-                <th class="num">Pages</th><th class="num">Revenue</th><th>Actions</th>
+                <th class="num">Pages</th><th>Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -73,19 +73,19 @@
     <div class="card modal-card">
       <h2 id="tokenTitle">Store token</h2>
       <p class="hint">Shown once. Copy it now — it cannot be retrieved later.</p>
-      <p class="field-label">Cloud URL</p>
+      <p class="field-label">Store link — paste into the desktop app</p>
       <code id="cloudUrlValue" class="token"></code>
       <p class="field-label">API token</p>
       <code id="tokenValue" class="token"></code>
       <div class="modal-actions">
-        <button id="copyBoth">Copy URL + token</button>
-        <button id="copyCloudUrl" class="ghost">Copy URL</button>
+        <button id="copyBoth">Copy link + token</button>
+        <button id="copyCloudUrl" class="ghost">Copy link</button>
         <button id="copyToken" class="ghost">Copy token</button>
         <button id="closeToken" class="ghost">Done</button>
       </div>
     </div>
   </div>
 
-  <script src="/platform-admin.js" type="module"></script>
+  <script src="/platform-admin.js?v=2" type="module"></script>
 </body>
 </html>

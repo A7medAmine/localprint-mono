@@ -38,6 +38,27 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // "hidden" still emits maps for crash triage but keeps the //# sourceMappingURL
+    // comment out of the shipped bundle, so browsers never fetch the 4.8MB file.
+    sourcemap: "hidden",
+    rollupOptions: {
+      output: {
+        // Split the rarely-changing vendor code out of the app chunk so a UI
+        // tweak doesn't invalidate 1MB+ of cached React/Radix on every release.
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-radix": [
+            "@radix-ui/react-alert-dialog",
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-label",
+            "@radix-ui/react-select",
+            "@radix-ui/react-slot",
+            "@radix-ui/react-switch",
+            "@radix-ui/react-toast",
+          ],
+        },
+      },
+    },
   },
 });

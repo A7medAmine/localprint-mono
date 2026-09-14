@@ -33,6 +33,18 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Maps are still emitted for triage, but without the sourceMappingURL
+    // comment that makes every browser download them.
+    sourcemap: "hidden",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          // Auth state is needed at app start, so this can't be deferred — but
+          // isolating it keeps a UI release from invalidating 200KB of cache.
+          "vendor-supabase": ["@supabase/supabase-js"],
+        },
+      },
+    },
   },
 });

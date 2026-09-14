@@ -34,6 +34,54 @@ if (typeof (Uint8Array.prototype as { toHex?: unknown }).toHex !== "function") {
   });
 }
 
+// Uint8Array#toBase64 (TC39 stage-3, Chromium 140+). pdf.js builds the
+// `url(data:font/...;base64,…)` src for every embedded font with it
+// (`FontFaceObject.createNativeFontFace`). On Chromium 130 the call throws,
+// the @font-face never installs, and Chrome silently falls back to a default
+// font — which for an Identity-H/CID font means the glyph ids render as
+// garbage. That is what makes Arabic PDFs come out with broken, disconnected
+// letters in the Electron build while the same file is fine in a modern
+// browser.
+if (typeof (Uint8Array.prototype as { toBase64?: unknown }).toBase64 !== "function") {
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  // eslint-disable-next-line no-extend-native
+  Object.defineProperty(Uint8Array.prototype, "toBase64", {
+    value: function toBase64(this: Uint8Array) {
+      let out = "";
+      let i = 0;
+      for (; i + 2 < this.length; i += 3) {
+        const n = (this[i] << 16) | (this[i + 1] << 8) | this[i + 2];
+        out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+      }
+      const rest = this.length - i;
+      if (rest === 1) {
+        const n = this[i] << 16;
+        out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + "==";
+      } else if (rest === 2) {
+        const n = (this[i] << 16) | (this[i + 1] << 8);
+        out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + "=";
+      }
+      return out;
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
+// Uint8Array.fromBase64 — same vintage; pdf.js uses it on the signature path.
+if (typeof (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64 !== "function") {
+  Object.defineProperty(Uint8Array, "fromBase64", {
+    value: function fromBase64(str: string) {
+      const bin = atob(str);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 type MapLike<K, V> = { has(k: K): boolean; get(k: K): V | undefined; set(k: K, v: V): unknown };
 
 function installGetOrInsert(proto: MapLike<any, any>) {

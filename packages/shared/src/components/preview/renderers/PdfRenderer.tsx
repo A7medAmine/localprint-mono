@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getPdfjs } from "../../../lib/pdfRender";
+import { getPdfjs, PDF_DOC_OPTIONS } from "../../../lib/pdfRender";
 
 interface PdfRendererProps {
   src: string;
@@ -32,7 +32,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
           return r.arrayBuffer();
         });
         if (cancelled) return;
-        const doc = await pdfjs.getDocument({ data }).promise;
+        const doc = await pdfjs.getDocument({ data, ...PDF_DOC_OPTIONS }).promise;
         if (cancelled) return;
         setPdf(doc);
         setPageCount(doc.numPages);

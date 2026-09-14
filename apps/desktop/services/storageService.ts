@@ -12,6 +12,13 @@ class StorageService {
   }
 
   private async safeFetch(url: string, options?: RequestInit) {
+    return (await this.safeFetchWithHeaders(url, options)).data;
+  }
+
+  private async safeFetchWithHeaders(
+    url: string,
+    options?: RequestInit,
+  ): Promise<{ data: any; headers: Headers }> {
     try {
       const token = this.authToken || localStorage.getItem("ps_admin_token");
       if (token && !this.authToken) this.authToken = token;
@@ -54,10 +61,10 @@ class StorageService {
         throw new Error(msg);
       }
 
-      if (!text) return {};
+      if (!text) return { data: {}, headers: response.headers };
 
       try {
-        return JSON.parse(text);
+        return { data: JSON.parse(text), headers: response.headers };
       } catch (parseError) {
         console.error("Failed to parse JSON response:", text);
         throw new Error("Malformed JSON response from server");
@@ -128,9 +135,12 @@ class StorageService {
   }
 
   // New method to replace a file for an existing job
-  async updateJobFile(jobId: string, file: File): Promise<PrintJob | null> {
+  async updateJobFile(jobId: string, file: File, fileName?: string): Promise<PrintJob | null> {
     const formData = new FormData();
     formData.append("file", file);
+    // Replacing an image job with a processed PDF changes the display name too
+    // — without this the job keeps showing the old "photo.jpg".
+    if (fileName) formData.append("fileName", fileName);
 
     const res = await this.safeFetch(`/api/jobs/${jobId}/file`, {
       method: "POST",
@@ -140,8 +150,20 @@ class StorageService {
   }
 
   async getMetadata(): Promise<PrintJob[]> {
-    const data = await this.safeFetch("/api/jobs");
-    return Array.isArray(data) ? data : [];
+    return (await this.getJobsPage()).jobs;
+  }
+
+  /**
+   * Newest-first page of jobs plus the server's total row count, so the
+   * dashboard can show "newest N of M" and fetch the rest on demand instead of
+   * pulling the whole table on every refresh.
+   */
+  async getJobsPage(opts?: { limit?: number }): Promise<{ jobs: PrintJob[]; total: number }> {
+    const query = opts?.limit ? `?limit=${opts.limit}` : "";
+    const { data, headers } = await this.safeFetchWithHeaders(`/api/jobs${query}`);
+    const jobs = Array.isArray(data) ? data : [];
+    const headerTotal = parseInt(headers.get("X-Total-Count") || "", 10);
+    return { jobs, total: Number.isFinite(headerTotal) ? headerTotal : jobs.length };
   }
 
   getMyJobIds(): string[] {
@@ -186,6 +208,29 @@ class StorageService {
     return `/api/files/public/${id}`;
   }
 
+  // Admin-side file URL. Goes through the token-protected review endpoint so
+  // jobs still awaiting review (cloud orders with auto-accept off) can be
+  // opened; the public endpoint hides those on purpose. Returns an object URL
+  // — the caller must revoke it when done.
+  async getAdminFileUrl(id: string): Promise<string | null> {
+    try {
+      const token = this.getAuthToken();
+      const response = await fetch(`/api/files/review/${id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.status === 401) {
+        localStorage.removeItem("ps_admin_token");
+        this.authToken = null;
+        window.dispatchEvent(new CustomEvent("session-expired"));
+        return null;
+      }
+      if (!response.ok) return null;
+      return URL.createObjectURL(await response.blob());
+    } catch {
+      return null;
+    }
+  }
+
   // Absolute path on the machine running the server — used by native
   // printing in the Electron desktop app. Admin-only server-side.
   async getFileLocalPath(id: string): Promise<string | null> {
@@ -227,6 +272,7 @@ class StorageService {
     returnPolicy?: string;
     currency?: string;
     cloudSyncUrl?: string;
+    cloudShopSlug?: string;
     shopApiToken?: string;
     cloudSyncPollInterval?: string;
     autoAcceptCloudJobs?: boolean;
@@ -315,6 +361,7 @@ class StorageService {
         returnPolicy: settings?.returnPolicy || undefined,
         currency: settings?.currency || undefined,
         cloudSyncUrl: settings?.cloudSyncUrl || undefined,
+        cloudShopSlug: settings?.cloudShopSlug || undefined,
         shopApiToken: settings?.shopApiToken || undefined,
         cloudSyncPollInterval: settings?.cloudSyncPollInterval || undefined,
         autoAcceptCloudJobs: settings?.autoAcceptCloudJobs !== false,

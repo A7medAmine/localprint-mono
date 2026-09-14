@@ -85,6 +85,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const [newPaperTypeForm, setNewPaperTypeForm] = useState({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
   const [showPasswords, setShowPasswords] = useState({ current: false, newPass: false, confirm: false });
   const [cloudSyncUrl, setCloudSyncUrl] = useState(currentSettings.cloudSyncUrl || "");
+  const [cloudShopSlug, setCloudShopSlug] = useState(currentSettings.cloudShopSlug || "");
   const [shopApiToken, setShopApiToken] = useState(currentSettings.shopApiToken || "");
   const [cloudSyncPollInterval, setCloudSyncPollInterval] = useState(currentSettings.cloudSyncPollInterval || "30000");
   const [autoAcceptCloudJobs, setAutoAcceptCloudJobs] = useState(currentSettings.autoAcceptCloudJobs !== false);
@@ -140,6 +141,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     if (clean(workingHours, prev?.workingHours ?? "")) setWorkingHours(currentSettings.workingHours || "");
     if (clean(returnPolicy, prev?.returnPolicy ?? "")) setReturnPolicy(currentSettings.returnPolicy || "");
     if (clean(cloudSyncUrl, prev?.cloudSyncUrl ?? "")) setCloudSyncUrl(currentSettings.cloudSyncUrl || "");
+    if (clean(cloudShopSlug, prev?.cloudShopSlug ?? "")) setCloudShopSlug(currentSettings.cloudShopSlug || "");
     if (clean(shopApiToken, prev?.shopApiToken ?? "")) setShopApiToken(currentSettings.shopApiToken || "");
     if (clean(cloudSyncPollInterval, prev?.cloudSyncPollInterval || "30000")) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval || "30000");
     if (clean(autoAcceptCloudJobs, prev ? prev.autoAcceptCloudJobs !== false : undefined)) setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
@@ -368,7 +370,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const saveShopInfo = () =>
     persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy });
   const saveCloudSync = () =>
-    persistSection("cloud", { cloudSyncUrl, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
+    persistSection("cloud", { cloudSyncUrl, cloudShopSlug, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
   const saveInventory = () => persistSection("inventory", { autoDeductStock });
   const savePrinters = () => persistSection("printers", { defaultPrinterName, printerDefaults });
 
@@ -385,6 +387,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     returnPolicy !== (currentSettings.returnPolicy || "");
   const cloudDirty =
     cloudSyncUrl !== (currentSettings.cloudSyncUrl || "") ||
+    cloudShopSlug !== (currentSettings.cloudShopSlug || "") ||
     shopApiToken !== (currentSettings.shopApiToken || "") ||
     cloudSyncPollInterval !== (currentSettings.cloudSyncPollInterval || "30000") ||
     autoAcceptCloudJobs !== (currentSettings.autoAcceptCloudJobs !== false);
@@ -891,9 +894,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <CardContent className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
-                    {isRtl ? "رابط السحابة" : "Cloud URL"}
+                    {isRtl ? "رابط المتجر السحابي" : "Store link"}
                   </label>
-                  <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://your-cloud-app.com" />
+                  <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://print.example.com/s/your-store" />
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    {isRtl
+                      ? "الصق الرابط كما زوّدك به المشرف؛ يُستخرج معرّف المتجر منه تلقائيًا."
+                      : "Paste the link exactly as your platform admin gave it — the store slug is extracted automatically."}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                    {isRtl ? "معرّف المتجر (slug)" : "Store slug"}
+                  </label>
+                  <Input value={cloudShopSlug} onChange={(e) => setCloudShopSlug(e.target.value)} placeholder="your-store" />
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    {isRtl
+                      ? "يُملأ تلقائيًا من الرابط أعلاه أو بعد أول مزامنة. يُستخدم لبناء رابط الرفع: /s/<slug>/upload"
+                      : "Filled automatically from the link above, or after the first sync. Used to build the upload link: /s/<slug>/upload"}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">

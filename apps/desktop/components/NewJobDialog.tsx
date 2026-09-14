@@ -199,7 +199,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
     setPhotoBatchHandoff(images);
     reset();
     onOpenChange(false);
-    navigate("/admin/studio?tab=photos");
+    navigate("/admin/dashboard?tab=studio-photos");
   };
 
   const canCreate = !!customerName.trim() && files.length > 0 && !working;

@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { PDFDocument, PDFEmbeddedPage, PageSizes, degrees } from "pdf-lib";
-import { getPdfjs } from "../lib/pdfRender";
+import { getPdfjs, PDF_DOC_OPTIONS } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
+import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { useLanguage } from "../lib/useLanguage";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -104,13 +105,8 @@ const PDFJobManager: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [showJobLoader, setShowJobLoader] = useState(false);
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
-  const [addJobName, setAddJobName] = useState("");
-  const [addJobPhone, setAddJobPhone] = useState("");
-  const [addJobNotes, setAddJobNotes] = useState("");
   const [addJobUploading, setAddJobUploading] = useState(false);
-  const [allJobs, setAllJobs] = useState<PrintJob[]>([]);
-  const [selectedCustomerKey, setSelectedCustomerKey] = useState<string>("__new__");
-  const [removeJobIds, setRemoveJobIds] = useState<Set<string>>(new Set());
+  const targets = useJobTargets();
   const [dragId, setDragId] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [defaultPrinter, setDefaultPrinter] = useState<string>("");
@@ -125,108 +121,21 @@ const PDFJobManager: React.FC = () => {
   }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Full job list — powers the existing-customer picker and the "remove the
-  // customer's previous files" option in the Save-to-Job dialog.
-  const refreshJobs = useCallback(async () => {
-    try {
-      const token = localStorage.getItem("ps_admin_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/jobs", { headers });
-      const data = await res.json();
-      if (Array.isArray(data)) setAllJobs(data);
-    } catch {
-      // Non-fatal — the dialog just won't show existing customers.
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshJobs();
-  }, [refreshJobs]);
-
-  // Refresh the customer/job list whenever the save dialog opens so the
-  // "previous files to remove" list is current.
-  useEffect(() => {
-    if (showNewJobDialog) refreshJobs();
-  }, [showNewJobDialog, refreshJobs]);
-
-  // Unique customers (by name + phone) grouped from the job list, newest first.
-  const customers = useMemo(() => {
-    const groups = new Map<string, PrintJob[]>();
-    for (const job of allJobs) {
-      const name = (job.customerName || "").trim();
-      if (!name) continue;
-      const key = `${name.toLowerCase()}::${(job.phoneNumber || "").trim().toLowerCase()}`;
-      const list = groups.get(key);
-      if (list) list.push(job);
-      else groups.set(key, [job]);
-    }
-    return Array.from(groups.entries())
-      .map(([key, jobs]) => {
-        const sorted = [...jobs].sort((a, b) => (b.uploadDate || "").localeCompare(a.uploadDate || ""));
-        const latest = sorted[0];
-        return { key, name: latest.customerName, phone: latest.phoneNumber || "", jobs: sorted };
-      })
-      .sort((a, b) => (b.jobs[0]?.uploadDate || "").localeCompare(a.jobs[0]?.uploadDate || ""));
-  }, [allJobs]);
-
-  const selectedCustomer =
-    selectedCustomerKey === "__new__"
-      ? null
-      : customers.find((c) => c.key === selectedCustomerKey) || null;
-
-  const openNewJobDialog = () => {
-    setRemoveJobIds(new Set());
-    setAddJobNotes("");
-    if (sourceJob) {
-      const key = `${(sourceJob.customerName || "").trim().toLowerCase()}::${(sourceJob.phoneNumber || "").trim().toLowerCase()}`;
-      setSelectedCustomerKey(sourceJob.customerName?.trim() ? key : "__new__");
-      setAddJobName(sourceJob.customerName || "");
-      setAddJobPhone(sourceJob.phoneNumber || "");
-    } else {
-      setSelectedCustomerKey("__new__");
-      setAddJobName("");
-      setAddJobPhone("");
-    }
+  // Refresh the customer/job list whenever the save dialog opens so the target
+  // picker and the "previous files" list are current.
+  const openNewJobDialog = async () => {
+    await targets.refresh();
+    // A PDF loaded from a job defaults to saving straight back onto that job.
+    targets.reset({ job: sourceJob, selectJob: true });
     setShowNewJobDialog(true);
   };
-
-  const handleCustomerChange = (key: string) => {
-    setSelectedCustomerKey(key);
-    setRemoveJobIds(new Set());
-    if (key === "__new__") return;
-    const c = customers.find((c) => c.key === key);
-    if (c) {
-      setAddJobName(c.name);
-      setAddJobPhone(c.phone);
-    }
-  };
-
-  const toggleRemoveJob = (id: string) => {
-    setRemoveJobIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleRemoveAll = () => {
-    if (!selectedCustomer) return;
-    setRemoveJobIds((prev) =>
-      prev.size === selectedCustomer.jobs.length
-        ? new Set()
-        : new Set(selectedCustomer.jobs.map((j) => j.id)),
-    );
-  };
-
 
   const tPages = t("studioPagesLabel");
 
   const renderThumbnails = useCallback(async (buf: ArrayBuffer, pageEntries: PageEntry[]) => {
     try {
       const pdfjsLib = await getPdfjs();
-      const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: buf.slice(0), ...PDF_DOC_OPTIONS }).promise;
       const results: Record<string, string> = {};
       for (const entry of pageEntries) {
         try {
@@ -475,7 +384,7 @@ const PDFJobManager: React.FC = () => {
     setExporting(true);
     try {
       const pdfjsLib = await getPdfjs();
-      const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0), ...PDF_DOC_OPTIONS }).promise;
       const scale = 2;
       for (let i = 0; i < pages.length; i++) {
         const entry = pages[i];
@@ -555,41 +464,34 @@ const PDFJobManager: React.FC = () => {
 
   const addToNewJob = async () => {
     if (!file || !pdfBytes) return;
+    if (!targets.targetJob && !targets.name.trim()) return;
     setAddJobUploading(true);
     try {
       const output = await buildPdfFromPages();
       const blob = new Blob([output], { type: "application/pdf" });
       const outFile = new File([blob], file.name, { type: "application/pdf" });
-      const job: PrintJob = {
-        id: crypto.randomUUID(),
-        customerName: addJobName,
-        phoneNumber: addJobPhone,
-        notes: addJobNotes,
-        fileName: file.name,
-        fileType: "application/pdf",
-        fileSize: blob.size,
-        uploadDate: new Date().toISOString(),
-        status: "PENDING" as any,
-        pageCount: pages.length,
-        printPreferences: {
+      const result = await targets.save({
+        file: outFile,
+        preferences: {
           colorMode: colorMode === "bw" ? "blackWhite" : "color",
           copies,
           paperType: "normal",
         },
-      };
-      await storageService.saveJob(job, outFile);
-      if (removeJobIds.size > 0) {
-        for (const id of removeJobIds) {
-          try { await storageService.deleteJob(id); } catch {}
-        }
+        pageCount: pages.length,
+        sourceJobIds: sourceJob ? [sourceJob.id] : [],
+      });
+      if (result.replaced && result.jobId === sourceJob?.id) {
+        // Saved back onto the same job — keep it as the session's source.
+      } else if (sourceJob && result.removedIds.includes(sourceJob.id)) {
+        setSourceJob(null);
       }
       setShowNewJobDialog(false);
-      setAddJobName("");
-      setAddJobPhone("");
-      setAddJobNotes("");
-      setRemoveJobIds(new Set());
-      setSelectedCustomerKey("__new__");
-      toast({ title: t("studioJobCreated"), variant: "success" });
+      toast({
+        title: result.replaced
+          ? t("studioJobSaved")
+          : t("studioJobCreated"),
+        variant: "success",
+      });
     } catch (err: any) {
       toast({ title: t("studioSaveFailed"), description: err.message, variant: "destructive" });
     } finally {
@@ -1001,70 +903,17 @@ const PDFJobManager: React.FC = () => {
             <DialogTitle>{t("studioNewJobTitle")}</DialogTitle>
             <DialogDescription>{t("studioNewJobDesc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label>{isRtl ? "العميل" : "Customer"}</Label>
-              <Select value={selectedCustomerKey} onValueChange={handleCustomerChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder={isRtl ? "اختر عميلاً أو أنشئ جديداً…" : "Choose a customer or create new…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__new__">{isRtl ? "عميل جديد…" : "New customer…"}</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.key} value={c.key}>
-                      {c.name}{c.phone ? ` · ${c.phone}` : ""} ({c.jobs.length})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("studioCustomerName")}</Label>
-              <Input value={addJobName} onChange={(e) => setAddJobName(e.target.value)} placeholder={t("studioCustomerName")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("studioPhone")}</Label>
-              <Input value={addJobPhone} onChange={(e) => setAddJobPhone(e.target.value)} placeholder={t("studioPhone")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("studioNotes")}</Label>
-              <Input value={addJobNotes} onChange={(e) => setAddJobNotes(e.target.value)} placeholder={t("studioNotes")} />
-            </div>
-            {selectedCustomer && (
-              <div className="space-y-1.5 rounded-lg border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    {isRtl ? "الملفات السابقة لهذا العميل" : "Customer's previous files"}
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={toggleRemoveAll}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {removeJobIds.size === selectedCustomer.jobs.length
-                      ? isRtl ? "إلغاء التحديد" : "Deselect all"
-                      : isRtl ? "تحديد الكل" : "Select all"}
-                  </button>
-                </div>
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {selectedCustomer.jobs.map((job) => (
-                    <label key={job.id} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={removeJobIds.has(job.id)}
-                        onChange={() => toggleRemoveJob(job.id)}
-                        className="accent-indigo-600 shrink-0"
-                      />
-                      <span className="flex-1 min-w-0 truncate">{job.fileName}</span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">{new Date(job.uploadDate).toLocaleDateString()}</span>
-                    </label>
-                  ))}
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {isRtl
-                    ? "الملفات المحددة سيتم حذفها عند الحفظ واستبدالها بالملف المعالج."
-                    : "Checked files will be deleted on save and replaced by the processed file."}
-                </p>
+          <div className="space-y-3 py-2 max-h-[65vh] overflow-y-auto pr-1">
+            <JobTargetPicker
+              targets={targets}
+              isRtl={isRtl}
+              sourceJobCount={sourceJob ? 1 : 0}
+              sourceLabel={isRtl ? "المهمة المصدر" : "source job"}
+            />
+            {!targets.targetJob && (
+              <div className="space-y-1.5">
+                <Label>{t("studioNotes")}</Label>
+                <Input value={targets.notes} onChange={(e) => targets.setNotes(e.target.value)} placeholder={t("studioNotes")} />
               </div>
             )}
           </div>
@@ -1072,12 +921,17 @@ const PDFJobManager: React.FC = () => {
             <Button variant="outline" onClick={() => setShowNewJobDialog(false)}>
               {isRtl ? "إلغاء" : "Cancel"}
             </Button>
-            <Button onClick={addToNewJob} disabled={addJobUploading || !addJobName.trim()}>
+            <Button
+              onClick={addToNewJob}
+              disabled={addJobUploading || (!targets.targetJob && !targets.name.trim())}
+            >
               {addJobUploading
                 ? t("uploading")
-                : removeJobIds.size > 0
-                  ? isRtl ? "حفظ واستبدال" : "Save & Replace"
-                  : t("studioCreate")}
+                : targets.targetJob
+                  ? isRtl ? "استبدال الملف" : "Replace file"
+                  : targets.removeJobIds.size > 0 || targets.replaceSources
+                    ? isRtl ? "حفظ واستبدال" : "Save & Replace"
+                    : t("studioCreate")}
             </Button>
           </DialogFooter>
         </DialogContent>

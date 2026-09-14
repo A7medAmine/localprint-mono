@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from "express";
+import compression from "compression";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -283,6 +284,18 @@ const app = express();
 app.set("trust proxy", 1);
 
 // Cap body sizes; file uploads go through multer, not these parsers.
+// gzip text responses. Excludes SSE — buffering the order-status stream would
+// delay the very updates it exists to push.
+app.use(
+  compression({
+    filter: (req, res) => {
+      const type = String(res.getHeader("Content-Type") || "");
+      if (type.includes("text/event-stream")) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
+
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
@@ -845,6 +858,9 @@ app.get("/api/s/:shopSlug/settings", resolveShopBySlug, async (req, res) => {
 app.get("/api/shop/settings", requireShopToken, async (req, res) => {
   const settings = await getSettings(req.shop.id);
   settings.paperTypes = await getPaperTypes(req.shop.id);
+  // The desktop app needs the slug to build its public storefront links
+  // (QR posters point at /s/:slug/upload, not the platform root).
+  settings.shopSlug = req.shop.slug;
   res.status(200).json(settings);
 });
 
@@ -1082,7 +1098,7 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
       if (rpcErr) throw rpcErr;
     }
 
-    res.status(200).json({ success: true });
+    res.status(200).json({ success: true, shopSlug: req.shop.slug });
   } catch (err) {
     console.error("❌ Settings sync error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -1128,7 +1144,21 @@ setTimeout(cleanupOldOrders, 60_000);
 app.use(express.static(path.join(__dirname, 'public')));
 
 if (!isDev) {
-  app.use(express.static(DIST_DIR, { maxAge: "1d", etag: true }));
+  app.use(
+    express.static(DIST_DIR, {
+      etag: true,
+      setHeaders: (res, filePath) => {
+        // Hashed asset filenames are safe to cache forever; index.html is not.
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=86400");
+        }
+      },
+    }),
+  );
 }
 
 app.use((err, req, res, next) => {

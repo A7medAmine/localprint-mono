@@ -45,6 +45,8 @@ There are no roles and no second operator account — a single hardened login.
 - `DELETE /api/jobs/:id` requires the matching `deleteToken` (or an admin token).
 - `/api/files/public/:id` serves a file only if the job has cleared review;
   non-inline types get `Content-Disposition: attachment`.
+- `/api/files/review/:id` serves the same file regardless of review state, so
+  the operator can look at a job before accepting it. Admin token required.
 - `/api/upload` is unauthenticated (LAN customers) but rate-limited
   (30 files / 5 min / IP) and size-capped (50 MB, magic-byte checked).
 

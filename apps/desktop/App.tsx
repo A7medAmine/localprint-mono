@@ -1,16 +1,34 @@
-import React, { useState, useEffect } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
 import { isNativePrintActive } from "./lib/electronPrint";
-import UploadView from "./views/UploadView";
-import AdminView from "./views/AdminView";
-import PrintStudio from "./views/PrintStudio";
 import LanguageToggle from "./components/LanguageToggle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./components/LoginPage";
-import OnboardingWizard from "./views/onboarding/OnboardingWizard";
+
+// Each route is its own chunk. The admin views drag in pdf-lib, pdf.js, xlsx
+// and the whole Radix surface — loading them eagerly made the first paint wait
+// on code the customer-facing upload page never runs.
+const UploadView = lazy(() => import("./views/UploadView"));
+const AdminView = lazy(() => import("./views/AdminView"));
+const OnboardingWizard = lazy(() => import("./views/onboarding/OnboardingWizard"));
+
+// The studio lives inside the dashboard now. Old links (and the Ctrl+P
+// shortcut's former target) map onto the matching dashboard tab.
+const StudioRedirect: React.FC = () => {
+  const { search } = useLocation();
+  const legacy = new URLSearchParams(search).get("tab");
+  const tab = legacy === "pdf" ? "studio-pdf" : legacy === "photos" ? "studio-photos" : "studio-cards";
+  return <Navigate to={`/admin/dashboard?tab=${tab}`} replace />;
+};
+
+const RouteFallback: React.FC = () => (
+  <div className="flex-1 flex items-center justify-center py-20" role="status" aria-live="polite">
+    <div className="w-8 h-8 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+  </div>
+);
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -68,8 +86,6 @@ const App: React.FC = () => {
 
   const cycleTheme = () =>
     setThemeMode((prev) => (prev === "light" ? "dark" : prev === "dark" ? "system" : "light"));
-
-  const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
     const onSessionExpired = () => {
@@ -156,7 +172,7 @@ const App: React.FC = () => {
       if ((e.ctrlKey || e.metaKey) && e.key === "p") {
         e.preventDefault();
         if (isAdmin) {
-          navigate("/admin/studio");
+          navigate("/admin/dashboard?tab=studio-cards");
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "n") {
@@ -188,19 +204,17 @@ const App: React.FC = () => {
     navigate("/upload", { replace: true });
   };
 
+  // Navigate immediately — the old 150ms fade-out ran before every mode switch
+  // and read as lag. The route itself still cross-fades via the main opacity
+  // transition below.
   const handleToggleMode = () => {
-    setIsTransitioning(true);
-    setTimeout(() => {
-      if (isAdmin) {
-        handleLogout();
-      } else {
-        navigate("/admin/login");
-      }
-      setIsTransitioning(false);
-    }, 150);
+    if (isAdmin) {
+      handleLogout();
+    } else {
+      navigate("/admin/login");
+    }
   };
 
-  const isStudio = location.pathname === "/admin/studio";
   const isAdminRoute = location.pathname.startsWith("/admin");
 
   return (
@@ -209,7 +223,7 @@ const App: React.FC = () => {
         <nav
           dir="ltr"
           style={{ direction: "ltr", flexDirection: "row" }}
-          className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-100/50 dark:border-gray-800/50 px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-sm dark:shadow-gray-900/30"
+          className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100/50 dark:border-gray-800/50 px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-sm dark:shadow-gray-900/30"
         >
           <div className="flex items-center gap-3 cursor-pointer" style={{ direction: "ltr" }} onClick={() => navigate("/upload")}>
             <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white overflow-hidden shadow-sm">
@@ -267,32 +281,22 @@ const App: React.FC = () => {
                 onClick={handleToggleMode}
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:shadow-sm dark:hover:shadow-indigo-900/20 border border-transparent hover:border-indigo-100 dark:hover:border-indigo-800/50 active:scale-95"
               >
-                {isStudio ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                    {lang === "ar" ? "لوحة التحكم" : "Dashboard"}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                    {lang === "ar" ? "صفحة الرفع" : "Back to Upload"}
-                  </>
-                )}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                {lang === "ar" ? "صفحة الرفع" : "Back to Upload"}
               </button>
             )}
           </div>
         </nav>
       )}
 
-      <main className={`flex-grow flex flex-col transition-opacity duration-150 ${isAdminRoute ? "" : "container mx-auto py-6 px-4"} ${isTransitioning ? "opacity-0" : "opacity-100"}`}>
+      <main className={`flex-grow flex flex-col transition-opacity duration-150 ${isAdminRoute ? "" : "container mx-auto py-6 px-4"}`}>
         {/* No key={lang} here — that was remounting every route (including
             the PDF Studio) on language change and wiping local state like
             the loaded PDF. `useLanguage` already re-renders in place. */}
         <div className="flex-1 flex flex-col">
+          <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/upload" element={<UploadView lang={lang} shopSettings={settings} />} />
             <Route
@@ -319,14 +323,7 @@ const App: React.FC = () => {
               path="/admin/studio"
               element={
                 <ProtectedRoute isAdmin={isAdmin}>
-                  <PrintStudio
-                    darkMode={darkMode}
-                    themeMode={themeMode}
-                    onToggleDarkMode={cycleTheme}
-                    lang={lang}
-                    onToggleLang={setLang}
-                    currentSettings={settings}
-                  />
+                  <StudioRedirect />
                 </ProtectedRoute>
               }
             />
@@ -340,6 +337,7 @@ const App: React.FC = () => {
             />
             <Route path="*" element={<Navigate to="/upload" replace />} />
           </Routes>
+          </Suspense>
         </div>
       </main>
     </div>

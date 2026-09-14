@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Language, PrintJob, PrintStatus, ShopSettings, DiscountRule, PaperType } from "../types";
 import { TRANSLATIONS } from "../constants";
@@ -14,9 +14,18 @@ import ReviewQueuePanel from "./admin/review/ReviewQueuePanel";
 import SettingsPanel from "./admin/settings/SettingsPanel";
 import JobsPanel from "./admin/jobs/JobsPanel";
 import { useAdminJobs } from "./admin/jobs/useAdminJobs";
-import CardIDTool from "./CardIDTool";
-import PDFJobManager from "./PDFJobManager";
-import PhotoBatchTool from "./PhotoBatchTool";
+// The studio tools carry pdf-lib/pdf.js and heavy canvas code. Most dashboard
+// sessions never open them, so they load on first use rather than with the
+// admin bundle.
+const CardIDTool = lazy(() => import("./CardIDTool"));
+const PDFJobManager = lazy(() => import("./PDFJobManager"));
+const PhotoBatchTool = lazy(() => import("./PhotoBatchTool"));
+
+const TabFallback: React.FC = () => (
+  <div className="flex items-center justify-center py-16" role="status" aria-live="polite">
+    <div className="w-7 h-7 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+  </div>
+);
 import { openAdminEventSource } from "../utils/adminEvents";
 
 interface AdminViewProps {
@@ -104,11 +113,24 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
 
   const jobs = useAdminJobs({ currentSettings, onLowStockRefresh: loadLowStockCount });
 
+  const closePreview = () => {
+    setPreviewJob(null);
+    setPreviewUrl((prev) => {
+      if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
   const handlePreview = async (job: PrintJob) => {
-    const url = await storageService.getFileUrl(job.id);
+    const url = await storageService.getAdminFileUrl(job.id);
     if (url) {
       setPreviewJob(job);
       setPreviewUrl(url);
+    } else {
+      toast({
+        title: isRtl ? "تعذّر فتح الملف" : "Could not open the file",
+        variant: "destructive",
+      });
     }
   };
 
@@ -307,6 +329,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
         <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
           <div className={`p-8 ${isRtl ? "rtl text-right" : ""} text-gray-900 dark:text-gray-100`}>
       <div className="min-h-0">
+        <Suspense fallback={<TabFallback />}>
         {activeTab === "jobs" ? (
           <JobsPanel jobs={jobs} paperTypes={paperTypes} discountRules={discountRules} onPreview={handlePreview} />
         ) : activeTab === "review" ? (
@@ -338,6 +361,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
             }}
           />
         )}
+        </Suspense>
       </div>
 
       {/* Toaster */}
@@ -346,7 +370,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
 
       <PreviewModal
         open={previewJob !== null}
-        onClose={() => { setPreviewJob(null); setPreviewUrl(null); }}
+        onClose={closePreview}
         url={previewUrl}
         fileName={previewJob?.fileName ?? ""}
         fileType={previewJob?.fileType}

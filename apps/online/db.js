@@ -104,7 +104,7 @@ export const getPlatformStats = async () => {
 
   const byShop = new Map((shops || []).map((s) => [s.id, {
     id: s.id, slug: s.slug, name: s.name, isActive: s.is_active !== false,
-    orderCount: 0, totalPages: 0, totalRevenue: 0,
+    orderCount: 0, totalPages: 0,
   }]));
 
   let totalOrders = 0, totalPages = 0, totalRevenue = 0, ordersLast30d = 0;
@@ -120,7 +120,6 @@ export const getPlatformStats = async () => {
     if (s) {
       s.orderCount += 1;
       s.totalPages += pages;
-      s.totalRevenue += revenue;
     }
   }
 
@@ -131,7 +130,7 @@ export const getPlatformStats = async () => {
     totalPages,
     totalRevenue,
     ordersLast30d,
-    shops: [...byShop.values()].sort((a, b) => b.totalRevenue - a.totalRevenue),
+    shops: [...byShop.values()].sort((a, b) => b.orderCount - a.orderCount),
   };
 };
 

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { PrintJob, PrintStatus, PaymentStatus, ShopSettings, PrinterJobDefaults } from "../../../types";
 import { storageService } from "../../../services/storageService";
 import { isElectron, printFile, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
-import { getActualPageCount } from "../../../utils/pricingUtils";
 import { toast } from "../../../components/ui/use-toast";
 import { openAdminEventSource } from "../../../utils/adminEvents";
 
@@ -72,6 +71,10 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
   const [groups, setGroups] = useState<CustomerGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  // True while a refresh is in flight over data that is already on screen —
+  // drives a thin progress hint instead of blowing the list away.
+  const [refreshing, setRefreshing] = useState(false);
+  const hasDataRef = useRef(false);
   const [reviewJobs, setReviewJobs] = useState<PrintJob[]>([]);
   const [jobPageCounts, setJobPageCounts] = useState<{ [jobId: string]: number }>({});
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
@@ -91,6 +94,14 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printOptionsJob, setPrintOptionsJob] = useState<PrintJob | null>(null);
   const [recentlyChanged, setRecentlyChanged] = useState<Set<string>>(new Set());
+  // How many rows the server was asked for, and how many exist in total. The
+  // list loads the newest page and only pulls older jobs when asked.
+  const [jobLimit, setJobLimit] = useState<number | undefined>(undefined);
+  const [totalJobCount, setTotalJobCount] = useState(0);
+  // Read through a ref so SSE-driven refreshes always use the current page
+  // size without re-subscribing the event source.
+  const jobLimitRef = useRef(jobLimit);
+  jobLimitRef.current = jobLimit;
 
   // Job ids present at the last load, so a soft refresh can highlight only the
   // rows that are genuinely new. Timers clear each highlight after a short beat.
@@ -145,30 +156,15 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
   const printerDefaults: Record<string, PrinterJobDefaults> = currentSettings.printerDefaults || {};
 
-  const countPagesForAllJobs = useCallback(async (grps: CustomerGroup[]) => {
+  // The server computes and stores pageCount for every upload (and backfills
+  // older rows at startup), so the list just reads it. This used to download
+  // and parse every job file in a serial loop on each refresh — that was the
+  // single biggest reason the dashboard felt frozen on a busy shop.
+  const collectPageCounts = useCallback((grps: CustomerGroup[]) => {
     const pageCounts: { [jobId: string]: number } = {};
     for (const group of grps) {
       for (const job of group.jobs) {
-        if (job.pageCount && job.pageCount > 0) pageCounts[job.id] = job.pageCount;
-      }
-    }
-    for (const group of grps) {
-      for (const job of group.jobs) {
-        if (pageCounts[job.id]) continue;
-        try {
-          const url = await storageService.getFileUrl(job.id);
-          if (url) {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            const file = new File([blob], job.fileName, { type: job.fileType });
-            pageCounts[job.id] = await getActualPageCount(file);
-          } else {
-            pageCounts[job.id] = 1;
-          }
-        } catch (error) {
-          console.error(`Error counting pages for job ${job.id}:`, error);
-          pageCounts[job.id] = 1;
-        }
+        pageCounts[job.id] = job.pageCount && job.pageCount > 0 ? job.pageCount : 1;
       }
     }
     setJobPageCounts(pageCounts);
@@ -176,10 +172,15 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
   const loadJobs = useCallback(async (opts?: { soft?: boolean }) => {
     const soft = opts?.soft === true;
-    // A soft refresh (SSE-driven) skips the skeleton so the list doesn't flash
-    // and scroll-jump; a hard load (mount / explicit action) shows it.
-    if (!soft) setLoading(true);
-    const allData = await storageService.getMetadata();
+    // The skeleton is only for a genuinely empty list. Once rows are on screen,
+    // any refresh — SSE or an explicit one from another panel — keeps the
+    // current data visible so the list never flashes or scroll-jumps.
+    const showSkeleton = !soft && !hasDataRef.current;
+    if (showSkeleton) setLoading(true);
+    else setRefreshing(true);
+    try {
+    const { jobs: allData, total } = await storageService.getJobsPage({ limit: jobLimitRef.current });
+    setTotalJobCount(total);
     const data = allData.filter((j) => (j.status as string) !== "pending_review");
     setReviewJobs(allData.filter((j) => (j.status as string) === "pending_review"));
     const grouped = data.reduce((acc: { [key: string]: CustomerGroup }, job) => {
@@ -211,12 +212,23 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     }
     prevJobIdsRef.current = nextIds;
     setGroups(sortedGroups);
-    if (!soft) setLoading(false);
-    countPagesForAllJobs(sortedGroups);
-  }, [countPagesForAllJobs, markRecentlyChanged]);
+    hasDataRef.current = true;
+    collectPageCounts(sortedGroups);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [collectPageCounts, markRecentlyChanged]);
 
   const loadJobsRef = useRef(loadJobs);
   loadJobsRef.current = loadJobs;
+
+  /** Pull every remaining job — the escape hatch behind the "showing N of M" bar. */
+  const loadAllJobs = useCallback(async () => {
+    jobLimitRef.current = 5000;
+    setJobLimit(5000);
+    await loadJobsRef.current();
+  }, []);
 
   useEffect(() => {
     loadJobsRef.current();
@@ -581,7 +593,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const handleEdit = async (job: PrintJob) => {
     if (job.fileType.includes("pdf")) {
       sessionStorage.setItem("ps_edit_job", job.id);
-      navigate("/admin/studio");
+      navigate("/admin/dashboard?tab=studio-pdf");
     } else {
       const url = await storageService.getFileUrl(job.id);
       if (url && job.fileType.includes("image")) {
@@ -654,22 +666,61 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
   const handleSavePayment = async () => {
     if (!paymentEditJob) return;
+    const jobId = paymentEditJob.id;
+    const nextStatus = paymentEditStatus;
+    const nextAmount = paymentEditAmount;
+
+    // Apply locally and close the dialog straight away; the round-trip used to
+    // hold the dialog open and then refetch the whole list to show one change.
+    let previous: { paymentStatus?: PaymentStatus; paymentAmount?: number } | undefined;
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        jobs: g.jobs.map((j) => {
+          if (j.id !== jobId) return j;
+          previous = { paymentStatus: j.paymentStatus, paymentAmount: j.paymentAmount };
+          return { ...j, paymentStatus: nextStatus as PaymentStatus, paymentAmount: nextAmount };
+        }),
+      })),
+    );
+    setPaymentEditJob(null);
+
     try {
-      await storageService.updatePaymentStatus(paymentEditJob.id, paymentEditStatus, paymentEditAmount);
-      setPaymentEditJob(null);
-      loadJobs();
+      await storageService.updatePaymentStatus(jobId, nextStatus, nextAmount);
       toast({ title: rtl ? "تم تحديث حالة الدفع" : "Payment status updated", variant: "success" });
     } catch (err) {
+      if (previous) {
+        const rollback = previous;
+        setGroups((prev) =>
+          prev.map((g) => ({
+            ...g,
+            jobs: g.jobs.map((j) =>
+              j.id === jobId
+                ? { ...j, paymentStatus: rollback.paymentStatus, paymentAmount: rollback.paymentAmount }
+                : j,
+            ),
+          })),
+        );
+      }
       toast({ title: rtl ? "فشل تحديث الدفع" : "Failed to update payment", variant: "destructive" });
     }
   };
 
   const handleBulkPaymentStatus = async (status: string) => {
     const ids = Array.from(selectedJobIds);
+    const idSet = new Set(ids);
     try {
       await storageService.bulkUpdatePayment(ids, status);
       setSelectedJobIds(new Set());
-      loadJobs();
+      // Patch the affected rows instead of refetching and regrouping everything.
+      setGroups((prev) =>
+        prev.map((g) => ({
+          ...g,
+          jobs: g.jobs.map((j) =>
+            idSet.has(j.id) ? { ...j, paymentStatus: status as PaymentStatus } : j,
+          ),
+        })),
+      );
       toast({ title: `${ids.length} ${rtl ? "تم تحديث الدفع" : "payment(s) updated"}`, variant: "success" });
     } catch (err) {
       toast({ title: rtl ? "فشل" : "Failed", variant: "destructive" });
@@ -759,7 +810,10 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   return {
     groups,
     loading,
+    refreshing,
     reviewJobs,
+    totalJobCount,
+    loadAllJobs,
     jobPageCounts,
     selectedJobIds,
     setSelectedJobIds,

@@ -392,8 +392,14 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
           {step.id === "cloud" && (
             <div className="space-y-4">
               <div>
-                <Label>{tr("رابط المزامنة السحابية", "Cloud sync URL")}</Label>
-                <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://…" />
+                <Label>{tr("رابط المتجر السحابي", "Store link")}</Label>
+                <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://print.example.com/s/your-store" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {tr(
+                    "الصق الرابط الذي زوّدك به المشرف — يتضمّن معرّف المتجر تلقائيًا.",
+                    "Paste the link your platform admin gave you — the store slug is picked up automatically.",
+                  )}
+                </p>
               </div>
               <div>
                 <Label>{tr("رمز المتجر", "Shop token")}</Label>

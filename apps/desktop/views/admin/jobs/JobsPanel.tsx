@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PrintJob, PrintStatus, PaymentStatus, PaperType, DiscountRule } from "../../../types";
 import {
@@ -11,6 +11,7 @@ import { formatRelativeTime } from "../../../utils/timeUtils";
 import ImageEditor from "../../../components/ImageEditor";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { toast } from "../../../components/ui/use-toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -124,7 +125,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
       { replace: true },
     );
 
-  const jobMatchesFilters = (job: PrintJob): boolean => {
+  const jobMatchesFilters = useCallback((job: PrintJob): boolean => {
     if (statusFilter !== "all") {
       const want =
         statusFilter === "pending"
@@ -152,18 +153,39 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
       if (sourceFilter === "admin" && src !== "admin") return false;
     }
     return true;
-  };
+  }, [statusFilter, paymentFilter, sourceFilter]);
 
+  // Hands the selection to the dashboard's own studio tabs (the standalone
+  // /admin/studio screen is gone): images open in the photo batch tool, a PDF
+  // opens in the PDF tool.
   const sendSelectionToStudio = () => {
-    const ids = jobs.groups.flatMap((g) => g.jobs).filter((j) => jobs.selectedJobIds.has(j.id)).map((j) => j.id);
-    if (ids.length === 0) return;
-    sessionStorage.setItem("ps_batch_jobs", JSON.stringify(ids));
-    navigate("/admin/studio");
+    const selected = jobs.groups.flatMap((g) => g.jobs).filter((j) => jobs.selectedJobIds.has(j.id));
+    if (selected.length === 0) return;
+    const images = selected.filter((j) => j.fileType?.startsWith("image/"));
+    if (images.length > 0) {
+      sessionStorage.setItem("ps_batch_jobs", JSON.stringify(images.map((j) => j.id)));
+      navigate("/admin/dashboard?tab=studio-photos");
+      return;
+    }
+    const pdf = selected.find((j) => j.fileType === "application/pdf");
+    if (!pdf) {
+      toast({
+        title: isRtl ? "لا توجد صور أو ملفات PDF في التحديد" : "Selection has no images or PDFs",
+        variant: "destructive",
+      });
+      return;
+    }
+    // The PDF tool works on one document at a time.
+    sessionStorage.setItem("ps_edit_job", pdf.id);
+    navigate("/admin/dashboard?tab=studio-pdf");
   };
 
   const {
     groups,
     loading,
+    refreshing,
+    totalJobCount,
+    loadAllJobs,
     jobPageCounts,
     selectedJobIds,
     setSelectedJobIds,
@@ -214,6 +236,78 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     handleToggleColorMode,
     handleSaveCopies,
   } = jobs;
+
+  const loadedJobCount = useMemo(
+    () => groups.reduce((acc, g) => acc + g.jobs.length, 0),
+    [groups],
+  );
+
+  // One pass for the summary bar. These were three separate full traversals
+  // rebuilt on every keystroke in the search box.
+  const statusCounts = useMemo(() => {
+    let pending = 0;
+    let ready = 0;
+    let printed = 0;
+    for (const group of groups) {
+      for (const job of group.jobs) {
+        if (job.status === PrintStatus.PENDING) pending++;
+        else if (job.status === PrintStatus.READY) ready++;
+        else if (job.status === PrintStatus.PRINTED) printed++;
+      }
+    }
+    return { pending, ready, printed };
+  }, [groups]);
+
+  // Filtering ran inline in the JSX, so every render — including each keystroke
+  // in the search box — rebuilt and re-spread every group.
+  const filteredGroups = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const phoneQuery = searchQuery.trim();
+    return groups
+      .map((g) => {
+        const groupMatchesSearch =
+          !q || g.customerName.toLowerCase().includes(q) || g.phoneNumber.includes(phoneQuery);
+        const matched = g.jobs.filter(
+          (job) =>
+            jobMatchesFilters(job) &&
+            (groupMatchesSearch || job.fileName.toLowerCase().includes(q)),
+        );
+        return matched.length === g.jobs.length ? g : { ...g, jobs: matched };
+      })
+      .filter((g) => g.jobs.length > 0);
+  }, [groups, searchQuery, jobMatchesFilters]);
+
+  // Render groups in windows. Mounting several hundred customer cards (each
+  // with a full job table) in one pass is what makes the first paint after
+  // "Load all" — or a large search reset — hang for seconds.
+  const GROUP_PAGE = 25;
+  const [visibleGroupCount, setVisibleGroupCount] = React.useState(GROUP_PAGE);
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Any change to the result set starts the window over at the top.
+  React.useEffect(() => {
+    setVisibleGroupCount(GROUP_PAGE);
+  }, [searchQuery, statusFilter, paymentFilter, sourceFilter, groups.length]);
+
+  const visibleGroups = useMemo(
+    () => filteredGroups.slice(0, visibleGroupCount),
+    [filteredGroups, visibleGroupCount],
+  );
+
+  React.useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || visibleGroupCount >= filteredGroups.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisibleGroupCount((n) => n + GROUP_PAGE);
+        }
+      },
+      { rootMargin: "400px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visibleGroupCount, filteredGroups.length]);
 
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
 
@@ -600,6 +694,13 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
   return (
     <>
+            {/* A refresh over existing rows shows this hairline instead of
+                replacing the list with a skeleton. */}
+            <div className="h-0.5 -mt-0.5 mb-1 overflow-hidden" aria-hidden={!refreshing}>
+              {refreshing && (
+                <div className="h-full w-1/3 bg-indigo-500/70 rounded-full animate-[ps-refresh_1.1s_ease-in-out_infinite]" />
+              )}
+            </div>
             {/* Manual job entry */}
             <div className="flex items-center justify-between mb-3">
               <Button onClick={() => setNewJobOpen(true)} size="sm" className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white">
@@ -614,6 +715,25 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 </span>
               )}
             </div>
+            {/* The list loads the newest page; older jobs are one click away so a
+                shop with years of history doesn't pay for them on every refresh. */}
+            {!loading && totalJobCount > loadedJobCount && (
+              <div className="flex items-center justify-between gap-3 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50">
+                <span className="text-xs text-amber-800 dark:text-amber-200">
+                  {isRtl
+                    ? `عرض أحدث ${loadedJobCount} من أصل ${totalJobCount} طلب`
+                    : `Showing the newest ${loadedJobCount} of ${totalJobCount} jobs`}
+                </span>
+                <Button
+                  onClick={loadAllJobs}
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs shrink-0"
+                >
+                  {isRtl ? "تحميل الكل" : "Load all"}
+                </Button>
+              </div>
+            )}
             {editingJob && editingBlob && (
               <ImageEditor
                 imageBlob={editingBlob}
@@ -672,7 +792,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                         const [front, back] = selectedImages;
                         sessionStorage.setItem("ps_card_front", front.id);
                         sessionStorage.setItem("ps_card_back", back.id);
-                        navigate("/admin/studio");
+                        navigate("/admin/dashboard?tab=studio-cards");
                       }} title="Print as Card" className="flex-col gap-1 h-auto text-inherit hover:text-pink-400 dark:hover:text-pink-300">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                         <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "بطاقة" : "Card"}</span>
@@ -702,7 +822,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     <svg className="w-4 h-4 text-yellow-600 dark:text-yellow-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-lg font-bold text-yellow-600 dark:text-yellow-200 leading-none">{groups.reduce((acc, g) => acc + g.jobs.filter(j => j.status === PrintStatus.PENDING).length, 0)}</span>
+                    <span className="text-lg font-bold text-yellow-600 dark:text-yellow-200 leading-none">{statusCounts.pending}</span>
                     <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "قيد الانتظار" : "Pending"}</span>
                   </div>
                 </div>
@@ -711,7 +831,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     <svg className="w-4 h-4 text-blue-600 dark:text-blue-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-lg font-bold text-blue-600 dark:text-blue-200 leading-none">{groups.reduce((acc, g) => acc + g.jobs.filter(j => j.status === PrintStatus.READY).length, 0)}</span>
+                    <span className="text-lg font-bold text-blue-600 dark:text-blue-200 leading-none">{statusCounts.ready}</span>
                     <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "جاهز للاستلام" : "Ready"}</span>
                   </div>
                 </div>
@@ -720,7 +840,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     <svg className="w-4 h-4 text-green-600 dark:text-green-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-lg font-bold text-green-600 dark:text-green-200 leading-none">{groups.reduce((acc, g) => acc + g.jobs.filter(j => j.status === PrintStatus.PRINTED).length, 0)}</span>
+                    <span className="text-lg font-bold text-green-600 dark:text-green-200 leading-none">{statusCounts.printed}</span>
                     <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "تمت الطباعة" : "Printed"}</span>
                   </div>
                 </div>
@@ -848,24 +968,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               </div>
             )}
 
-            {(() => {
-              const q = searchQuery.trim().toLowerCase();
-              const filteredGroups = groups
-                .map((g) => {
-                  const groupMatchesSearch =
-                    !q ||
-                    g.customerName.toLowerCase().includes(q) ||
-                    g.phoneNumber.includes(searchQuery.trim());
-                  const jobs = g.jobs.filter(
-                    (job) =>
-                      jobMatchesFilters(job) &&
-                      (groupMatchesSearch || job.fileName.toLowerCase().includes(q)),
-                  );
-                  return { ...g, jobs };
-                })
-                .filter((g) => g.jobs.length > 0);
-              return (
-            <>
             {loading ? (
               <div className="space-y-3 animate-pulse">
                 {[1, 2, 3].map((i) => (
@@ -968,7 +1070,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               </div>
             ) : (
               <div className="space-y-2">
-                {filteredGroups.map((group) => {
+                {visibleGroups.map((group) => {
                   const isCollapsed = collapsedGroups.has(group.key);
                   const isExpanded = !isCollapsed;
                   const pendingCount = group.jobs.filter(
@@ -1495,11 +1597,15 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     </div>
                   );
                 })}
+                {visibleGroupCount < filteredGroups.length && (
+                  <div ref={sentinelRef} className="py-6 text-center text-xs text-gray-400 dark:text-gray-500">
+                    {isRtl
+                      ? `جارٍ عرض ${visibleGroups.length} من ${filteredGroups.length} زبون…`
+                      : `Showing ${visibleGroups.length} of ${filteredGroups.length} customers…`}
+                  </div>
+                )}
               </div>
             )}
-            </>
-            );
-            })()}
       {/* Bulk Delete Confirmation */}
       <AlertDialog open={bulkDeleteConfirm} onOpenChange={setBulkDeleteConfirm}>
         <AlertDialogContent>

@@ -143,6 +143,7 @@ function renderShops() {
     const box = document.createElement("div");
     box.className = "actions";
     box.append(
+      button("Copy link", (ev) => copyStoreLink(shop, ev.currentTarget)),
       button("Rename", () => startRename(tr, shop)),
       button("Rotate token", () => rotateToken(shop)),
       button(shop.isActive ? "Deactivate" : "Activate", () => setActive(shop, !shop.isActive)),
@@ -154,7 +155,6 @@ function renderShops() {
       statusCell,
       td(num(shop.orderCount), "num"),
       td(num(shop.totalPages), "num"),
-      td(money(shop.totalRevenue), "num"),
       actions,
     );
     tbody.append(tr);
@@ -189,7 +189,7 @@ async function rotateToken(shop) {
   if (!ok) return;
   try {
     const r = await api(`/api/admin/shops/${shop.id}/rotate-token`, { method: "POST" });
-    revealToken(`New token — ${r.name}`, r.token);
+    revealToken(`New token — ${r.name}`, r.token, r.slug || shop.slug);
   } catch (err) { handleError(err); }
 }
 
@@ -201,13 +201,33 @@ async function setActive(shop, isActive) {
   } catch (err) { handleError(err); }
 }
 
+// ── Store link ──
+// ONE link per store, built on this console's own origin. The desktop app
+// splits it back into the API base URL and the storefront slug, so the shop
+// never has to be told two separate values.
+function storeLink(slug) {
+  return `${window.location.origin}/s/${encodeURIComponent(slug)}`;
+}
+
+async function copyStoreLink(shop, btn) {
+  const label = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(storeLink(shop.slug));
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = label; }, 1500);
+  } catch {
+    // Clipboard blocked (insecure origin / permission) — surface the link
+    // so it can still be selected by hand.
+    toast(`Copy manually: ${storeLink(shop.slug)}`);
+  }
+}
+
 // ── Token reveal (shown once, never stored) ──
-// The cloud URL is this console's own origin — the same value the desktop
-// app's Cloud Sync URL setting expects, so the pair can be copied as-is.
-function revealToken(title, token) {
+// Paired with the store link so the whole desktop setup is one copy.
+function revealToken(title, token, slug) {
   $("tokenTitle").textContent = title;
   $("tokenValue").textContent = token;
-  $("cloudUrlValue").textContent = window.location.origin;
+  $("cloudUrlValue").textContent = slug ? storeLink(slug) : window.location.origin;
   $("tokenModal").hidden = false;
 }
 
@@ -231,13 +251,13 @@ async function copyText(text, btnId, label, selectEl) {
 $("copyToken").addEventListener("click", () =>
   copyText($("tokenValue").textContent, "copyToken", "Copy token", $("tokenValue")));
 $("copyCloudUrl").addEventListener("click", () =>
-  copyText($("cloudUrlValue").textContent, "copyCloudUrl", "Copy URL", $("cloudUrlValue")));
+  copyText($("cloudUrlValue").textContent, "copyCloudUrl", "Copy link", $("cloudUrlValue")));
 $("copyBoth").addEventListener("click", () =>
   copyText(
-    `Cloud URL: ${$("cloudUrlValue").textContent}
+    `Store link: ${$("cloudUrlValue").textContent}
 API token: ${$("tokenValue").textContent}`,
     "copyBoth",
-    "Copy URL + token",
+    "Copy link + token",
     $("tokenModal").querySelector(".modal-card"),
   ));
 $("closeToken").addEventListener("click", () => { $("tokenModal").hidden = true; });
@@ -293,7 +313,7 @@ $("createForm").addEventListener("submit", async (e) => {
   try {
     const r = await api("/api/admin/shops", { method: "POST", body: { name } });
     $("newName").value = "";
-    revealToken(`Store created — ${r.name} (/s/${r.slug})`, r.token);
+    revealToken(`Store created — ${r.name} (/s/${r.slug})`, r.token, r.slug);
     await load();
   } catch (err) {
     handleError(err);

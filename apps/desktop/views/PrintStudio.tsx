@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import CardIDTool from "./CardIDTool";
-import PhotoBatchTool from "./PhotoBatchTool";
-import PDFJobManager from "./PDFJobManager";
+// Same chunks AdminView uses — only the selected tool's code is fetched.
+const CardIDTool = lazy(() => import("./CardIDTool"));
+const PhotoBatchTool = lazy(() => import("./PhotoBatchTool"));
+const PDFJobManager = lazy(() => import("./PDFJobManager"));
 import { useLanguage } from "../lib/useLanguage";
 import { Toaster } from "../components/ui/toaster";
 import LanguageToggle from "../components/LanguageToggle";
@@ -330,7 +331,15 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
           <div className={`p-3 sm:p-4 lg:p-6 ${isRtl ? "text-right" : ""}`} dir={isRtl ? "rtl" : "ltr"}>
-            {tab === "cards" ? <CardIDTool /> : tab === "photos" ? <PhotoBatchTool /> : <PDFJobManager />}
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-16" role="status" aria-live="polite">
+                  <div className="w-7 h-7 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+                </div>
+              }
+            >
+              {tab === "cards" ? <CardIDTool /> : tab === "photos" ? <PhotoBatchTool /> : <PDFJobManager />}
+            </Suspense>
           </div>
         </main>
       </div>

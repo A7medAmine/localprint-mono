@@ -68,6 +68,8 @@ export interface ShopSettings {
   /** ISO-ish currency label shown next to prices (e.g. "DZD", "USD"). */
   currency?: string;
   cloudSyncUrl?: string;
+  /** Storefront slug on the cloud platform, cached from the settings sync. */
+  cloudShopSlug?: string;
   shopApiToken?: string;
   cloudSyncPollInterval?: string;
   autoAcceptCloudJobs?: boolean;

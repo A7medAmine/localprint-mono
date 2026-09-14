@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import PhotoSourceModal, { PickedPhoto } from "../components/PhotoSourceModal";
+import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { consumePhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType, PrinterJobDefaults, ShopSettings } from "../types";
 import { formatPrice } from "../utils/pricingUtils";
@@ -81,9 +82,7 @@ const PhotoBatchTool: React.FC = () => {
   const [building, setBuilding] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
-  const [jobName, setJobName] = useState("");
-  const [jobPhone, setJobPhone] = useState("");
-  const [jobNotes, setJobNotes] = useState("");
+  const targets = useJobTargets();
   const dragIndexRef = useRef<number | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,6 +101,44 @@ const PhotoBatchTool: React.FC = () => {
   useEffect(() => {
     const files = consumePhotoBatchHandoff();
     if (files && files.length) addFiles(files.map((f) => ({ file: f })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handoff from the dashboard's bulk "Send to Print Studio" action: job ids
+  // only, so the files are fetched here and keep their source job for the
+  // replace-source option on save.
+  useEffect(() => {
+    const raw = sessionStorage.getItem("ps_batch_jobs");
+    if (!raw) return;
+    sessionStorage.removeItem("ps_batch_jobs");
+    let ids: string[] = [];
+    try { ids = JSON.parse(raw); } catch { return; }
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    (async () => {
+      try {
+        const jobs = await storageService.getMetadata();
+        const picked: { file: File; sourceJobId?: string; sourceCustomerName?: string }[] = [];
+        for (const id of ids) {
+          const job = jobs.find((j) => j.id === id);
+          if (!job?.fileType?.startsWith("image/")) continue;
+          const res = await fetch(`/api/files/public/${job.id}`);
+          if (!res.ok) continue;
+          const blob = await res.blob();
+          picked.push({
+            file: new File([blob], job.fileName, { type: job.fileType }),
+            sourceJobId: job.id,
+            sourceCustomerName: job.customerName?.trim() || undefined,
+          });
+        }
+        if (picked.length) addFiles(picked);
+      } catch (e: any) {
+        toast({
+          title: isRtl ? "تعذر تحميل الصور المحددة" : "Could not load the selected photos",
+          description: e?.message,
+          variant: "destructive",
+        });
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -315,48 +352,51 @@ const PhotoBatchTool: React.FC = () => {
     }
   };
 
+  // Photos pulled in from existing jobs — those jobs can be replaced by the
+  // laid-out PDF on save.
+  const sourceJobIds = useMemo(
+    () => Array.from(new Set(items.map((it) => it.sourceJobId).filter(Boolean) as string[])),
+    [items],
+  );
+
   const handleSaveAsJob = async () => {
     const blob = await buildPdf();
     if (!blob) return;
     const customers = items.filter((it) => it.sourceCustomerName).map((it) => it.sourceCustomerName);
     const allSame = customers.length === items.length && new Set(customers).size === 1;
-    setJobName(allSame ? customers[0]! : "");
-    setJobPhone("");
-    setJobNotes("");
+    const jobs = await targets.refresh();
+    const sourceJob = sourceJobIds.length > 0 ? jobs.find((j) => j.id === sourceJobIds[0]) : null;
+    targets.reset(
+      sourceJob && allSame ? { job: sourceJob } : { name: allSame ? customers[0]! : "" },
+    );
     setShowJobForm(true);
   };
 
   const submitJob = async () => {
-    if (!jobName.trim()) return;
+    if (!targets.targetJob && !targets.name.trim()) return;
     const blob = await buildPdf();
     if (!blob) return;
     setBuilding(true);
     try {
       const file = new File([blob], "photos.pdf", { type: "application/pdf" });
-      const metadata = JSON.stringify({
-        customerName: jobName.trim(),
-        phoneNumber: jobPhone.trim(),
-        notes: jobNotes.trim(),
-        fileName: file.name,
-        printPreferences: {
+      const result = await targets.save({
+        file,
+        preferences: {
           colorMode: colorMode === "bw" ? "blackWhite" : "color",
           copies: 1, // baked into the PDF
           paperType,
         },
+        pageCount: pages.length,
+        sourceJobIds,
         source: "admin",
       });
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("metadata", metadata);
-      const token = localStorage.getItem("ps_admin_token");
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
       setShowJobForm(false);
-      toast({ title: isRtl ? "تم حفظ المهمة" : "Job saved", variant: "success" });
+      toast({
+        title: result.replaced
+          ? isRtl ? "تم تحديث المهمة" : "Job updated"
+          : isRtl ? "تم حفظ المهمة" : "Job saved",
+        variant: "success",
+      });
       navigate("/admin/dashboard");
     } catch (e: any) {
       toast({ title: isRtl ? "فشل حفظ المهمة" : "Failed to save job", description: e?.message, variant: "destructive" });
@@ -751,24 +791,28 @@ const PhotoBatchTool: React.FC = () => {
           <DialogHeader>
             <DialogTitle>{t("saveAsJob")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>{t("customerNameRequired")}</Label>
-              <Input value={jobName} onChange={(e) => setJobName(e.target.value)} autoFocus />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("phone")}</Label>
-              <Input value={jobPhone} onChange={(e) => setJobPhone(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("studioNotes")}</Label>
-              <Input value={jobNotes} onChange={(e) => setJobNotes(e.target.value)} />
-            </div>
+          <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+            <JobTargetPicker
+              targets={targets}
+              isRtl={isRtl}
+              sourceJobCount={sourceJobIds.length}
+              sourceLabel={isRtl ? "مهمة مصدر" : "source job(s)"}
+            />
+            {!targets.targetJob && (
+              <div className="space-y-1.5">
+                <Label>{t("studioNotes")}</Label>
+                <Input value={targets.notes} onChange={(e) => targets.setNotes(e.target.value)} />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowJobForm(false)}>{t("studioCancel")}</Button>
-            <Button disabled={!jobName.trim() || building} onClick={submitJob}>
-              {building ? t("uploading") : t("addJob")}
+            <Button disabled={(!targets.targetJob && !targets.name.trim()) || building} onClick={submitJob}>
+              {building
+                ? t("uploading")
+                : targets.targetJob
+                  ? isRtl ? "استبدال الملف" : "Replace file"
+                  : t("addJob")}
             </Button>
           </DialogFooter>
         </DialogContent>
