@@ -374,8 +374,67 @@ async function assertPrinterExists(printerName) {
   }
 }
 
-function nativePrint({ filePath, printerName, silent, options }) {
+// Chromium renders a bare image file as an "image document", whose UA
+// stylesheet paints the page background dark (#0e0e0e). Neither the window's
+// backgroundColor nor a late insertCSS overrides it, so an image print came out
+// as the photo letterboxed on a solid black sheet — every printer spitting out
+// a full page of toner. Wrapping the image in our own minimal HTML gives us a
+// document we control: white sheet, image contained inside the page margins.
+//
+// The image is inlined as a data: URI rather than referenced by file:// — a
+// file:// page fetching a file:// subresource is subject to Chromium's
+// file-access rules, and a silently blocked <img> would print a blank sheet,
+// which is worse than the black one we're fixing.
+//
+// Returns the wrapper's path (caller unlinks it) or null for non-images.
+function makeImagePrintWrapper(imagePath, fileType) {
+  const mime = /^image\/[a-z0-9.+-]+$/i.test(fileType || '') ? fileType : 'image/png';
+  const dataUri = `data:${mime};base64,${fs.readFileSync(imagePath).toString('base64')}`;
+  const html = `<!doctype html>
+<meta charset="utf-8">
+<title>print</title>
+<style>
+  @page { margin: 8mm; }
+  :root { color-scheme: light; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+  img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: #ffffff;
+  }
+</style>
+<img src="${dataUri}">
+`;
+  const wrapperPath = path.join(
+    os.tmpdir(),
+    `printshop-wrap-${crypto.randomBytes(8).toString('hex')}.html`,
+  );
+  fs.writeFileSync(wrapperPath, html, 'utf8');
+  return wrapperPath;
+}
+
+function nativePrint({ filePath, fileType, printerName, silent, options }) {
   return new Promise((resolve, reject) => {
+    // Images go through the white HTML wrapper above; PDFs load directly into
+    // the built-in viewer.
+    let wrapperPath = null;
+    if (fileType && fileType.startsWith('image/')) {
+      try {
+        wrapperPath = makeImagePrintWrapper(filePath, fileType);
+      } catch (err) {
+        return reject(new Error(`Could not prepare the image for printing: ${err.message}`));
+      }
+    }
+    const loadPath = wrapperPath || filePath;
     const win = new BrowserWindow({
       // Must be a *shown* window, just parked off-screen. `show: false` skips
       // compositing on Windows/Electron 33 — webContents.print() then snapshots
@@ -425,6 +484,9 @@ function nativePrint({ filePath, printerName, silent, options }) {
       settled = true;
       if (watchdog) clearTimeout(watchdog);
       try { win.destroy(); } catch { /* already gone */ }
+      if (wrapperPath) {
+        try { fs.unlinkSync(wrapperPath); } catch { /* already gone */ }
+      }
       nativeTheme.themeSource = priorTheme;
       if (err) reject(err);
       else resolve(value);
@@ -507,7 +569,7 @@ function nativePrint({ filePath, printerName, silent, options }) {
       finish(new Error(`Failed to load file for printing: ${description}`));
     });
 
-    win.loadFile(filePath).catch((err) => finish(err));
+    win.loadFile(loadPath).catch((err) => finish(err));
   });
 }
 
@@ -550,7 +612,7 @@ ipcMain.handle('print-data', async (_event, payload) => {
       return { ok: true, handedOff: true };
     }
     await assertPrinterExists(printerName);
-    const result = await nativePrint({ filePath: tmpPath, printerName, silent, options });
+    const result = await nativePrint({ filePath: tmpPath, fileType, printerName, silent, options });
     cleanup();
     return result;
   } catch (err) {
@@ -579,7 +641,7 @@ ipcMain.handle('print-file', async (_event, payload) => {
   }
 
   await assertPrinterExists(printerName);
-  return nativePrint({ filePath, printerName, silent, options });
+  return nativePrint({ filePath, fileType, printerName, silent, options });
 });
 
 app.whenReady().then(async () => {
