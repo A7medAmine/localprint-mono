@@ -62,7 +62,7 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-gray-400 dark:text-gray-500 gap-3">
+      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
         </svg>
@@ -75,8 +75,8 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
     return (
       <div className="flex items-center justify-center h-full min-h-[300px]">
         <div className="flex flex-col items-center gap-4 animate-pulse">
-          <div className="w-14 h-14 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-32 rounded-full bg-gray-200 dark:bg-gray-700" />
+          <div className="w-14 h-14 rounded-xl bg-muted" />
+          <div className="h-3 w-32 rounded-full bg-muted" />
           <div className="h-2.5 w-48 rounded-full bg-gray-100 dark:bg-gray-600" />
         </div>
       </div>
@@ -87,7 +87,7 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
 
   if (!current || current.rows.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[300px] text-gray-400 dark:text-gray-500">
+      <div className="flex items-center justify-center h-full min-h-[300px] text-muted-foreground">
         <p className="text-sm font-medium">Empty spreadsheet</p>
       </div>
     );
@@ -99,7 +99,7 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
   return (
     <div className="flex flex-col h-full">
       {sheets.length > 1 && (
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-100 dark:border-gray-700 overflow-x-auto shrink-0 scrollbar-none">
+        <div className="flex items-center gap-1 px-4 py-2 border-b border-border overflow-x-auto shrink-0 scrollbar-none">
           {sheets.map((sheet, i) => (
             <button
               key={sheet.name}
@@ -107,7 +107,7 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 i === activeSheet
                   ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 shadow-sm"
-                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               }`}
             >
               {sheet.name}
@@ -123,7 +123,7 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
               {headerRow.map((cell, i) => (
                 <th
                   key={i}
-                  className="sticky top-0 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-semibold px-3 py-2.5 text-left border-b-2 border-gray-200 dark:border-gray-600 whitespace-nowrap"
+                  className="sticky top-0 bg-muted/40 text-foreground font-semibold px-3 py-2.5 text-start border-b-2 border-border whitespace-nowrap"
                 >
                   {cell || ""}
                 </th>
@@ -134,13 +134,13 @@ const SpreadsheetRenderer: React.FC<SpreadsheetRendererProps> = ({ src, fileName
             {dataRows.map((row, rowIdx) => (
               <tr
                 key={rowIdx}
-                className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
+                className="border-b border-border hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
               >
                 {Array.from({ length: Math.max(headerRow.length, row.length) }).map(
                   (_, colIdx) => (
                     <td
                       key={colIdx}
-                      className="px-3 py-2 text-gray-600 dark:text-gray-400 border-r border-gray-50 dark:border-gray-800 last:border-r-0 truncate max-w-[200px]"
+                      className="px-3 py-2 text-muted-foreground border-r border-gray-50 dark:border-gray-800 last:border-r-0 truncate max-w-[200px]"
                     >
                       {row[colIdx] || ""}
                     </td>

@@ -36,20 +36,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
 
   return (
     <div className="max-w-md mx-auto mt-16">
-      <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-gray-100 dark:border-gray-700">
-        <h2 className="text-2xl font-bold mb-6 text-center text-gray-900 dark:text-gray-100">
+      <div className="bg-card p-8 rounded-2xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-border">
+        <h2 className="text-2xl font-bold mb-6 text-center text-foreground">
           {TRANSLATIONS.adminLogin[lang]}
         </h2>
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               {TRANSLATIONS.password[lang]}
             </label>
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
                 autoFocus
-                className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full px-4 py-2 pe-10 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -57,7 +57,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground transition"
                 tabIndex={-1}
               >
                 {showPassword ? (

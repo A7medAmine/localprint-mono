@@ -185,7 +185,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
     return (
       <div className="max-w-3xl mx-auto px-1" dir={isRtl ? "rtl" : "ltr"}>
         {pageHeader}
-        <div className="max-w-md mx-auto mt-16 text-center text-gray-500 dark:text-gray-400">
+        <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
           <p className="text-sm">
             {isRtl ? "حسابات العملاء غير مُفعّلة على هذا الخادم." : "Customer accounts aren't configured on this server."}
           </p>
@@ -198,7 +198,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
     return (
       <div className="max-w-3xl mx-auto px-1" dir={isRtl ? "rtl" : "ltr"}>
         {pageHeader}
-        <p className="text-center text-gray-400 dark:text-gray-500 mt-16 text-sm">{isRtl ? "جارٍ التحميل..." : "Loading..."}</p>
+        <p className="text-center text-muted-foreground mt-16 text-sm">{isRtl ? "جارٍ التحميل..." : "Loading..."}</p>
       </div>
     );
   }
@@ -223,8 +223,8 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
 
       <div className="flex items-start sm:items-center justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{isRtl ? "حسابي" : "My Account"}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate" dir="ltr">{user.email}</p>
+          <h1 className="text-xl font-bold text-foreground">{isRtl ? "حسابي" : "My Account"}</h1>
+          <p className="text-sm text-muted-foreground truncate" dir="ltr">{user.email}</p>
         </div>
         <Button variant="outline" onClick={() => signOut()} className="shrink-0">
           {isRtl ? "تسجيل الخروج" : "Sign out"}
@@ -234,7 +234,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
       {/* Per-shop stats */}
       {shopStats.length > 0 && (
         <div>
-          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">
+          <h2 className="text-sm font-bold text-foreground mb-3">
             {isRtl ? "إحصائيات حسب المتجر" : "Stats by shop"}
           </h2>
           <div className="grid gap-2 sm:gap-3">
@@ -245,7 +245,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                     <Link to={`/s/${s.shopSlug}/upload`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block">
                       {s.shopName}
                     </Link>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       {s.orderCount} {isRtl ? "طلب" : "orders"} · {s.totalPages} {isRtl ? "صفحة" : "pages"}
                     </p>
                   </div>
@@ -257,13 +257,13 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
             ))}
           </div>
           {shopStats.length > 1 && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400 px-1">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground px-1">
               <span>
                 {isRtl
                   ? `${totalOrders} طلب · ${totalPagesAll} صفحة عبر ${shopStats.length} متجر`
                   : `${totalOrders} orders · ${totalPagesAll} pages across ${shopStats.length} shops`}
               </span>
-              <span className="font-bold text-gray-700 dark:text-gray-200 tabular-nums" dir="ltr">
+              <span className="font-bold text-foreground tabular-nums" dir="ltr">
                 {isRtl ? "الإجمالي: " : "Total: "}
                 {formatPrice(totalSpentAll)}
               </span>
@@ -274,7 +274,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
 
       <Card>
         <CardContent className="p-4 sm:p-6">
-          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4">
+          <h2 className="text-sm font-bold text-foreground mb-4">
             {isRtl ? "المعلومات الافتراضية للرفع" : "Default upload info"}
           </h2>
           <form onSubmit={handleSaveProfile} className="space-y-4">
@@ -301,7 +301,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {isRtl ? "يُستخدم عندما يتوفر هذا النوع لدى المتجر" : "Used whenever a shop offers this paper type"}
                 </p>
               </div>
@@ -327,13 +327,13 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
       </Card>
 
       <div>
-        <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">
+        <h2 className="text-sm font-bold text-foreground mb-3">
           {isRtl ? "طلباتي السابقة" : "My past uploads"}
         </h2>
         {loadingData ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">{isRtl ? "جارٍ التحميل..." : "Loading..."}</p>
+          <p className="text-sm text-muted-foreground">{isRtl ? "جارٍ التحميل..." : "Loading..."}</p>
         ) : orders.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">{isRtl ? "لا توجد طلبات بعد" : "No uploads yet"}</p>
+          <p className="text-sm text-muted-foreground">{isRtl ? "لا توجد طلبات بعد" : "No uploads yet"}</p>
         ) : (
           <div className="grid gap-2 sm:gap-3">
             {orders.map((order) => {
@@ -349,10 +349,10 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                 <Card key={order.id}>
                   <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 dark:text-gray-100 truncate text-sm sm:text-base" dir="auto">
+                      <p className="font-semibold text-foreground truncate text-sm sm:text-base" dir="auto">
                         {order.fileName}
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex-wrap">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
                         {order.shopSlug ? (
                           <Link to={`/s/${order.shopSlug}/upload`} className="hover:underline text-indigo-600 dark:text-indigo-400" dir="auto">
                             {order.shopName || order.shopSlug}
@@ -374,7 +374,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {price !== null && (
-                        <span className="text-sm font-bold text-gray-700 dark:text-gray-200 tabular-nums" dir="ltr">
+                        <span className="text-sm font-bold text-foreground tabular-nums" dir="ltr">
                           {formatPrice(price)}
                         </span>
                       )}

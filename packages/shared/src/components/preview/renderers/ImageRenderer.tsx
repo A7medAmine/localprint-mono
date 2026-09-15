@@ -53,7 +53,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-gray-400 dark:text-gray-500 gap-3">
+      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
         </svg>
@@ -64,15 +64,15 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-center gap-2 px-4 py-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 min-w-[3rem] text-center">
+      <div className="flex items-center justify-center gap-2 px-4 py-2 border-b border-border shrink-0">
+        <span className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
           {Math.round(zoom * 100)}%
         </span>
         <div className="flex items-center gap-1">
           <button
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom out"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +81,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
           </button>
           <button
             onClick={resetZoom}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-xs font-medium min-w-[2.5rem]"
+            className="p-1.5 rounded-lg hover:bg-muted transition-colors text-xs font-medium min-w-[2.5rem]"
             title="Reset zoom"
           >
             Fit
@@ -89,7 +89,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom in"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

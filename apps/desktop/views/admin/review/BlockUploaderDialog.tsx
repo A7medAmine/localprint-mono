@@ -157,7 +157,7 @@ const BlockUploaderDialog: React.FC<BlockUploaderDialogProps> = ({ job, isRtl, o
         </DialogHeader>
 
         {candidates.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-muted-foreground">
             {isRtl
               ? "لا توجد بيانات كافية لحظر هذا الطلب (طلب محلي أو بدون رقم هاتف)."
               : "Nothing to block on this order — it has no phone number and did not come from the online link."}
@@ -167,7 +167,7 @@ const BlockUploaderDialog: React.FC<BlockUploaderDialogProps> = ({ job, isRtl, o
             {candidates.map((candidate) => (
               <label
                 key={candidate.kind}
-                className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                className="flex items-start gap-3 p-3 rounded-lg border border-border cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60"
               >
                 <input
                   type="checkbox"
@@ -176,20 +176,20 @@ const BlockUploaderDialog: React.FC<BlockUploaderDialogProps> = ({ job, isRtl, o
                   onChange={() => toggle(candidate.kind)}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span className="block text-sm font-semibold text-foreground">
                     {candidate.title}
                     {candidate.kind !== "fingerprint" && (
-                      <span className="ms-2 font-normal text-gray-500 dark:text-gray-400" dir="ltr">
+                      <span className="ms-2 font-normal text-muted-foreground" dir="ltr">
                         {candidate.value}
                       </span>
                     )}
                   </span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">{candidate.hint}</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">{candidate.hint}</span>
                 </span>
               </label>
             ))}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "السبب (اختياري)" : "Reason (optional)"}
               </label>
               <Textarea

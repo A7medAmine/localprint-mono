@@ -13,7 +13,7 @@ const LanguageToggle: React.FC<LanguageToggleProps> = ({
   return (
     <div
       dir="ltr"
-      className="relative inline-flex items-center bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full p-[3px]"
+      className="relative inline-flex items-center bg-muted border border-border rounded-full p-[3px]"
       role="group"
       aria-label="Language selector"
     >
@@ -37,7 +37,7 @@ const LanguageToggle: React.FC<LanguageToggleProps> = ({
           onClick={() => onToggle(lang)}
           aria-pressed={currentLang === lang}
           className={`relative z-10 w-12 py-1.5 text-xs font-medium rounded-full transition-colors duration-200 text-center ${
-            currentLang === lang ? "text-white" : "text-gray-500 dark:text-gray-400"
+            currentLang === lang ? "text-white" : "text-muted-foreground"
           }`}
         >
           {lang === "en" ? "EN" : "عربي"}

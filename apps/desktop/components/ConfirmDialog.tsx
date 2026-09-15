@@ -35,7 +35,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
       {/* Dialog */}
       <div
-        className={`relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 transform transition-all scale-100 ${isRtl ? "rtl" : ""}`}
+        className={`relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 transform transition-all scale-100 ${""}`}
       >
         {/* Icon */}
         <div

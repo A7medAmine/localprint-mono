@@ -513,7 +513,7 @@ const PhotoBatchTool: React.FC = () => {
                   type="button"
                   onClick={() => setPaperPreset(v)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                    paperPreset === v ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    paperPreset === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {label}
@@ -560,7 +560,7 @@ const PhotoBatchTool: React.FC = () => {
                     type="button"
                     onClick={() => setFit(v)}
                     className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                      fit === v ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      fit === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {label}
@@ -578,7 +578,7 @@ const PhotoBatchTool: React.FC = () => {
                     type="button"
                     onClick={() => setMarginPreset(m.mm)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                      marginPreset === m.mm ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      marginPreset === m.mm ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {m.label}
@@ -588,7 +588,7 @@ const PhotoBatchTool: React.FC = () => {
                   type="button"
                   onClick={() => setMarginPreset(null)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                    marginPreset === null ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    marginPreset === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {t("marginCustom")}
@@ -627,7 +627,7 @@ const PhotoBatchTool: React.FC = () => {
                     type="button"
                     onClick={() => setColorMode(v)}
                     className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                      colorMode === v ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      colorMode === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {label}
@@ -711,10 +711,10 @@ const PhotoBatchTool: React.FC = () => {
                       onDragStart={() => { dragIndexRef.current = i; }}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); const from = dragIndexRef.current; if (from !== null && from !== i) move(from, i); dragIndexRef.current = null; }}
-                      className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 cursor-grab active:cursor-grabbing"
+                      className="rounded-xl border border-border bg-card p-2 cursor-grab active:cursor-grabbing"
                     >
                       <div className="relative">
-                        <canvas ref={(el) => drawPreview(el, page, item)} className="w-full h-auto rounded-lg border border-gray-100 dark:border-gray-700" />
+                        <canvas ref={(el) => drawPreview(el, page, item)} className="w-full h-auto rounded-lg border border-border" />
                         {item.error && (
                           <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/80 rounded-lg text-xs text-red-700 dark:text-red-200 p-2 text-center">
                             {item.error}
@@ -730,16 +730,16 @@ const PhotoBatchTool: React.FC = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-1 mt-1.5">
-                        <div className="flex flex-col mr-auto rtl:ml-auto rtl:mr-0">
+                        <div className="flex flex-col me-auto">
                           <button
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
+                            className="text-gray-400 hover:text-foreground p-0.5"
                             title={isRtl ? "لأعلى" : "Move up"}
                             onClick={() => move(i, i - 1)}
                           >
                             ▲
                           </button>
                           <button
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5"
+                            className="text-gray-400 hover:text-foreground p-0.5"
                             title={isRtl ? "لأسفل" : "Move down"}
                             onClick={() => move(i, i + 1)}
                           >
@@ -747,7 +747,7 @@ const PhotoBatchTool: React.FC = () => {
                           </button>
                         </div>
                         <button
-                          className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className="p-1 rounded-lg text-gray-400 hover:text-foreground hover:bg-muted"
                           title={t("rotate90")}
                           onClick={() => updateItem(page.photoId, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 })}
                         >
@@ -756,14 +756,14 @@ const PhotoBatchTool: React.FC = () => {
                           </svg>
                         </button>
                         <button
-                          className="p-1 rounded-lg text-xs font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className="p-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted"
                           title={t("fillMode")}
                           onClick={() => updateItem(page.photoId, { objectFit: (item.objectFit ?? fit) === "cover" ? "contain" : "cover" })}
                         >
                           {(item.objectFit ?? fit) === "cover" ? t("fillCover") : t("fitContain")}
                         </button>
                         <button
-                          className="p-1 ml-auto rtl:ml-0 rtl:mr-auto rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          className="p-1 ms-auto rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                           title={t("remove")}
                           onClick={() => removeItem(page.photoId)}
                         >
@@ -772,7 +772,7 @@ const PhotoBatchTool: React.FC = () => {
                           </svg>
                         </button>
                       </div>
-                      <div className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500 truncate" title={item.file.name}>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground truncate" title={item.file.name}>
                         {item.file.name}
                       </div>
                     </div>
@@ -791,7 +791,7 @@ const PhotoBatchTool: React.FC = () => {
           <DialogHeader>
             <DialogTitle>{t("saveAsJob")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+          <div className="space-y-4 max-h-[65vh] overflow-y-auto pe-1">
             <JobTargetPicker
               targets={targets}
               isRtl={isRtl}

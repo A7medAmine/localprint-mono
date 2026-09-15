@@ -690,7 +690,7 @@ const CardIDTool: React.FC = () => {
             <DialogHeader>
               <DialogTitle>{t("addToJobsTitle")}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pe-1">
               <JobTargetPicker
                 targets={targets}
                 isRtl={isRtl}

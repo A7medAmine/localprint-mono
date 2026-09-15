@@ -236,7 +236,7 @@ const App: React.FC = () => {
               )}
             </div>
             <div className="flex flex-col justify-center">
-              <span dir="auto" className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100 truncate max-w-[150px] sm:max-w-[300px]">
+              <span dir="auto" className="text-xl font-bold tracking-tight text-foreground truncate max-w-[150px] sm:max-w-[300px]">
                 {settings.shopName || TRANSLATIONS.appTitle[lang]}
               </span>
             </div>
@@ -245,7 +245,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={cycleTheme}
-              className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-all active:scale-95"
+              className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95"
               aria-label={
                 themeMode === "light"
                   ? lang === "ar" ? "الوضع الفاتح" : "Light mode"

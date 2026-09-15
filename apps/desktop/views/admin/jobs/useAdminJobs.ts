@@ -235,12 +235,33 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     loadPrinters();
     const es = openAdminEventSource();
     es.addEventListener("new-job", () => loadJobsRef.current({ soft: true }));
+    // One upload can bring in several files, and the server pushes one event
+    // per job. Coalesce a burst into a single toast per customer so a 10-file
+    // order doesn't stack 10 notifications.
+    const pendingCustomers = new Set<string>();
+    let importFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushImportToasts = () => {
+      importFlushTimer = null;
+      if (pendingCustomers.size === 0) return;
+      pendingCustomers.forEach((name) => {
+        const title = name
+          ? rtl
+            ? `طلب جديد من الرفع الإلكتروني: ${name}`
+            : `New online upload: ${name}`
+          : rtl
+            ? "زبون مجهول رفع ملفات"
+            : "Anonymous uploaded files";
+        toast({ title, variant: "success" });
+      });
+      pendingCustomers.clear();
+      new Audio("/notification.mp3").play().catch(() => {});
+    };
     es.addEventListener("cloud-job-imported", (e) => {
       try {
         const data = JSON.parse((e as MessageEvent).data);
-        const label = data.customerName ? `${data.customerName} — ${data.fileName}` : data.fileName;
-        toast({ title: rtl ? `طلب جديد من الرفع الإلكتروني: ${label}` : `New online upload: ${label}`, variant: "success" });
-        new Audio("/notification.mp3").play().catch(() => {});
+        pendingCustomers.add(String(data?.customerName || "").trim());
+        if (importFlushTimer) clearTimeout(importFlushTimer);
+        importFlushTimer = setTimeout(flushImportToasts, 1500);
       } catch {}
       loadJobsRef.current({ soft: true });
     });
@@ -266,6 +287,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     es.onerror = () => {};
     return () => {
       es.close();
+      if (importFlushTimer) clearTimeout(importFlushTimer);
       Object.values(highlightTimersRef.current).forEach((t) => clearTimeout(t));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

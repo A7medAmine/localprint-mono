@@ -1,0 +1,179 @@
+/* Shared design-token base for both apps.
+ *
+ * Every colour the UI paints lives here as an HSL triple and is exposed to
+ * Tailwind by the shared preset (packages/shared/tailwind-preset.js). Component
+ * code uses the semantic utility (bg-card, text-muted-foreground, bg-success-subtle)
+ * and never a raw palette class — that is what keeps light and dark in sync
+ * without a hand-written `dark:` twin on every element.
+ *
+ * Each app imports this from its own index.css, then adds only what is
+ * genuinely app-local (fonts, app-specific keyframes). */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --primary-subtle: 226 100% 96%;
+    --primary-subtle-foreground: 243 75% 43%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 40%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --destructive-subtle: 0 93% 95%;
+    --destructive-subtle-foreground: 0 74% 35%;
+    --success: 142 71% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-subtle: 141 78% 94%;
+    --success-subtle-foreground: 143 64% 24%;
+    --warning: 33 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    --warning-subtle: 48 96% 91%;
+    --warning-subtle-foreground: 26 90% 27%;
+    --info: 217 91% 50%;
+    --info-foreground: 0 0% 100%;
+    --info-subtle: 214 95% 94%;
+    --info-subtle-foreground: 224 76% 33%;
+    --violet: 271 81% 53%;
+    --violet-foreground: 0 0% 100%;
+    --violet-subtle: 269 100% 96%;
+    --violet-subtle-foreground: 273 72% 34%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 239 84% 67%;
+    --radius: 0.75rem;
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-ring: 239 84% 67%;
+    --scrollbar-track: 210 40% 96.1%;
+    --scrollbar-thumb: 214.3 20% 80%;
+    --scrollbar-thumb-hover: 215.4 16.3% 60%;
+  }
+
+  .dark {
+    --background: 229 84% 5%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 217 33% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --primary-subtle: 243 47% 20%;
+    --primary-subtle-foreground: 226 100% 88%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 70%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --destructive-subtle: 0 49% 20%;
+    --destructive-subtle-foreground: 0 94% 90%;
+    --success: 142 69% 45%;
+    --success-foreground: 143 64% 10%;
+    --success-subtle: 143 45% 16%;
+    --success-subtle-foreground: 141 79% 85%;
+    --warning: 43 96% 56%;
+    --warning-foreground: 26 90% 12%;
+    --warning-subtle: 28 50% 18%;
+    --warning-subtle-foreground: 48 96% 85%;
+    --info: 213 94% 68%;
+    --info-foreground: 224 76% 12%;
+    --info-subtle: 224 50% 22%;
+    --info-subtle-foreground: 214 95% 88%;
+    --violet: 270 95% 75%;
+    --violet-foreground: 273 72% 12%;
+    --violet-subtle: 274 45% 22%;
+    --violet-subtle-foreground: 269 100% 90%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 239 84% 67%;
+    --sidebar: 217 33% 9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-ring: 239 84% 67%;
+    --scrollbar-track: 217 33% 12%;
+    --scrollbar-thumb: 217 33% 24%;
+    --scrollbar-thumb-hover: 217 25% 36%;
+  }
+
+  /* Default every border to the theme token so bare `border` utilities don't
+     fall back to Tailwind's light gray (which reads as a white border in dark
+     mode). */
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  /* One focus treatment for the whole app, on every focusable element that
+     doesn't already define its own ring. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+html {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--scrollbar-track));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--scrollbar-thumb));
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--scrollbar-thumb-hover));
+}
+
+::-webkit-scrollbar-corner {
+  background: hsl(var(--scrollbar-track));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

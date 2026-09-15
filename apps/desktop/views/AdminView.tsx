@@ -182,7 +182,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-[220px] flex-shrink-0 flex flex-col bg-gray-50 dark:bg-[#111] border-r border-gray-200 dark:border-gray-800 transition-transform duration-250 ease md:translate-x-0 ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-[220px] flex-shrink-0 flex flex-col bg-gray-50 dark:bg-[#111] border-r border-border transition-transform duration-250 ease md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } ${isRtl ? "font-['IBMPlexArabic']" : ""}`}
       >
@@ -193,14 +193,14 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
               <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm-1 9H8v2h4v-2z" clipRule="evenodd" />
             </svg>
           </div>
-          <span dir="auto" className="text-base font-bold tracking-tight text-gray-900 dark:text-gray-100 truncate">
+          <span dir="auto" className="text-base font-bold tracking-tight text-foreground truncate">
             {currentSettings.shopName || TRANSLATIONS.appTitle[lang]}
           </span>
         </div>
 
         {/* Section: MAIN */}
         <div className="px-4 pt-6 pb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
             {isRtl ? "رئيسي" : "MAIN"}
           </span>
         </div>
@@ -239,7 +239,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
 
         {/* Section: STUDIO */}
         <div className="px-4 pt-2 pb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
             {isRtl ? "الاستوديو" : "STUDIO"}
           </span>
         </div>
@@ -270,10 +270,10 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
         <div className="flex-1" />
 
         {/* Dark mode + Language toggles */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
           <button
             onClick={onToggleDarkMode}
-            className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+            className="p-2 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
             aria-label={
               themeMode === "light"
                 ? lang === "ar" ? "الوضع الفاتح" : "Light mode"
@@ -310,24 +310,24 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile header with hamburger */}
-        <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-card border-b border-border">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06]"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <span className="text-sm font-semibold text-foreground">
             {currentSettings.shopName || TRANSLATIONS.appTitle[lang]}
           </span>
           <div className="w-5" />
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
-          <div className={`p-8 ${isRtl ? "rtl text-right" : ""} text-gray-900 dark:text-gray-100`}>
+        <div className="flex-1 overflow-y-auto bg-card">
+          <div className={`p-8 ${""} text-foreground`}>
       <div className="min-h-0">
         <Suspense fallback={<TabFallback />}>
         {activeTab === "jobs" ? (

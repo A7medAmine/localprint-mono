@@ -115,7 +115,7 @@ const PrintOptionsDialog: React.FC<PrintOptionsDialogProps> = ({ job, printers, 
               </p>
             )}
             {!opts.printerName && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {isRtl ? "سيظهر حوار الطباعة في النظام." : "The OS print dialog will be shown."}
               </p>
             )}
@@ -155,15 +155,15 @@ const PrintOptionsDialog: React.FC<PrintOptionsDialogProps> = ({ job, printers, 
               onChange={(e) => set("pageRanges", e.target.value)} />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <Label className="text-xs cursor-pointer">{isRtl ? "ألوان" : "Colour"}</Label>
             <Switch checked={opts.color} onCheckedChange={(c) => set("color", c)} />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <Label className="text-xs cursor-pointer">{isRtl ? "ترتيب" : "Collate"}</Label>
             <Switch checked={opts.collate} onCheckedChange={(c) => set("collate", c)} />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <Label className="text-xs cursor-pointer">{isRtl ? "أفقي" : "Landscape"}</Label>
             <Switch checked={opts.landscape} onCheckedChange={(c) => set("landscape", c)} />
           </div>

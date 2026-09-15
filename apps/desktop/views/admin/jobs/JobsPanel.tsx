@@ -354,14 +354,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
           <div className="flex flex-col flex-1 min-w-0">
             <span className="flex items-center gap-1.5">
               <span
-                className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate"
+                className="text-sm font-semibold text-foreground truncate"
                 title={job.fileName}
               >
                 {job.fileName}
               </span>
               {renderSourceBadge(job)}
             </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">
+            <span className="text-xs text-muted-foreground">
               {formatSize(job.fileSize)}
             </span>
           </div>
@@ -378,14 +378,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   {job.notes.length > 120 ? job.notes.slice(0, 120) + "..." : job.notes}
                 </div>
                 {job.notes.length > 120 && (
-                  <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ml-1 align-middle underline">
+                  <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
                     {isRtl ? "قراءة المزيد" : "Read more"}
                   </button>
                 )}
               </>
             )}
             {expandedNotes.has(job.id) && (
-              <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ml-1 align-middle underline">
+              <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
                 {isRtl ? "طي" : "Less"}
               </button>
             )}
@@ -420,7 +420,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
           {/* Copies Stepper */}
           {editingCopiesJobId === job.id ? (
-            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
+            <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
               <Button
                 type="button"
                 variant="ghost"
@@ -454,7 +454,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               <Button
                 type="button"
                 size="icon"
-                className="w-6 h-6 ml-1"
+                className="w-6 h-6 ms-1"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSaveCopies(job, editingCopiesValue)}
               >
@@ -500,7 +500,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     (currentSettings.pricing || (currentSettings.paperTypes && currentSettings.paperTypes.length > 0)) ? (
       (() => {
         const isOffice = job.fileType?.includes("word") || job.fileType?.includes("document") || job.fileType?.includes("excel") || job.fileType?.includes("spreadsheet") || job.fileType?.includes("presentation") || job.fileType?.includes("powerpoint");
-        if (isOffice) return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
+        if (isOffice) return <span className="text-xs text-muted-foreground">-</span>;
         const pageCount = jobPageCounts[job.id] || 1;
         const priceCalc = calculatePrintPrice(job, currentSettings, pageCount);
         const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, priceCalc.totalPages, discountRules);
@@ -510,7 +510,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
           <div className="flex flex-col gap-1">
             <div className="flex flex-col">
               {hasDiscount && (
-                <span className="text-xs text-gray-400 dark:text-gray-500 line-through">
+                <span className="text-xs text-muted-foreground line-through">
                   {formatPrice(discountResult.originalAmount)}
                 </span>
               )}
@@ -523,7 +523,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
               <span>
                 {isRtl ? "الصفحات:" : "Pages:"}
               </span>
@@ -535,7 +535,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
         );
       })()
     ) : (
-      <span className="text-xs text-gray-400 dark:text-gray-500">
+      <span className="text-xs text-muted-foreground">
         -
       </span>
     );
@@ -704,13 +704,13 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Manual job entry */}
             <div className="flex items-center justify-between mb-3">
               <Button onClick={() => setNewJobOpen(true)} size="sm" className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white">
-                <svg className="w-3.5 h-3.5 mr-1.5 rtl:ml-1.5 rtl:mr-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                 </svg>
                 {t("newJob")}
               </Button>
               {!loading && groups.length > 0 && (
-                <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                <span className="text-[11px] text-muted-foreground">
                   {isRtl ? "اضغط Ctrl+N لطلب جديد" : "Ctrl+N for a new job"}
                 </span>
               )}
@@ -748,7 +748,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Bulk Action Bar */}
             {selectedJobIds.size > 0 && (
               <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[90] bg-gray-900/90 backdrop-blur-md text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 animate-slide-up border border-white/10 max-w-[95vw] md:max-w-max">
-                <div className="flex items-center gap-3 border-r border-white/20 pr-6 mr-2">
+                <div className="flex items-center gap-3 border-r border-white/20 pe-6 me-2">
                   <span className="bg-indigo-50 dark:bg-indigo-900/20 text-white dark:text-gray-100 w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm">
                     {selectedJobIds.size}
                   </span>
@@ -809,7 +809,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   </Button>
                 </div>
 
-                <Button variant="ghost" size="icon" onClick={() => setSelectedJobIds(new Set())} className="ml-4 text-white hover:bg-white dark:bg-gray-800/10">
+                <Button variant="ghost" size="icon" onClick={() => setSelectedJobIds(new Set())} className="ms-4 text-white hover:bg-white dark:bg-gray-800/10">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </Button>
               </div>
@@ -817,40 +817,40 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Stats Summary Bar */}
             {!loading && groups.length > 0 && (
               <div className="grid grid-cols-4 gap-2 mb-3">
-                <div className="bg-white dark:bg-gray-800 rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
+                <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-yellow-100 dark:bg-yellow-900 flex items-center justify-center flex-shrink-0">
                     <svg className="w-4 h-4 text-yellow-600 dark:text-yellow-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-yellow-600 dark:text-yellow-200 leading-none">{statusCounts.pending}</span>
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "قيد الانتظار" : "Pending"}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "قيد الانتظار" : "Pending"}</span>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
+                <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
                     <svg className="w-4 h-4 text-blue-600 dark:text-blue-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-blue-600 dark:text-blue-200 leading-none">{statusCounts.ready}</span>
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "جاهز للاستلام" : "Ready"}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "جاهز للاستلام" : "Ready"}</span>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
+                <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
                     <svg className="w-4 h-4 text-green-600 dark:text-green-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-green-600 dark:text-green-200 leading-none">{statusCounts.printed}</span>
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "تمت الطباعة" : "Printed"}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "تمت الطباعة" : "Printed"}</span>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
+                <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center flex-shrink-0">
                     <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-indigo-600 dark:text-indigo-200 leading-none">{groups.length}</span>
-                    <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{isRtl ? "إجمالي العملاء" : "Customers"}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "إجمالي العملاء" : "Customers"}</span>
                   </div>
                 </div>
               </div>
@@ -859,21 +859,21 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Search Bar */}
             {!loading && groups.length > 0 && (
               <div className="relative my-3">
-                <div className={`absolute ${isRtl ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500`}>
+                <div className={`absolute ${"start-3"} top-1/2 -translate-y-1/2 text-muted-foreground`}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 </div>
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={isRtl ? "ابحث بالاسم أو رقم الهاتف..." : "Search by name or phone..."}
-                  className={`${isRtl ? "pr-9 pl-4" : "pl-9 pr-4"}`}
+                  className={`${"ps-9 pe-4"}`}
                 />
                 {searchQuery && (
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setSearchQuery("")}
-                    className={`absolute ${isRtl ? "left-1" : "right-1"} top-1/2 -translate-y-1/2 h-7 w-7`}
+                    className={`absolute ${"end-1"} top-1/2 -translate-y-1/2 h-7 w-7`}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
                   </Button>
@@ -929,7 +929,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 <select
                   value={sourceFilter}
                   onChange={(e) => setParam("source", e.target.value)}
-                  className="px-2 py-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                  className="px-2 py-1 rounded-lg border border-border bg-card text-foreground"
                 >
                   <option value="all">{isRtl ? "كل المصادر" : "Any source"}</option>
                   <option value="upload">{isRtl ? "رفع" : "Upload"}</option>
@@ -946,7 +946,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     {isRtl ? "مسح التصفية" : "Clear filters"}
                   </button>
                 )}
-                <div className={`flex items-center gap-1 ${isRtl ? "mr-auto" : "ml-auto"}`}>
+                <div className={`flex items-center gap-1 ${"ms-auto"}`}>
                   {([
                     ["compact", isRtl ? "جدول" : "Compact"],
                     ["cards", isRtl ? "بطاقات" : "Cards"],
@@ -958,7 +958,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                       className={`px-2.5 py-1 rounded-lg font-medium ${
                         density === v
                           ? "bg-slate-700 text-white dark:bg-slate-600"
-                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                          : "bg-muted text-muted-foreground hover:bg-muted"
                       }`}
                     >
                       {label}
@@ -971,33 +971,33 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {loading ? (
               <div className="space-y-3 animate-pulse">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div className="flex items-center px-4 py-3 gap-3 border-b border-gray-100 dark:border-gray-700">
-                      <div className="w-4 h-4 rounded bg-gray-200 dark:bg-gray-700 shrink-0" />
-                      <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 shrink-0" />
+                  <div key={i} className="bg-card rounded-xl border border-border overflow-hidden">
+                    <div className="flex items-center px-4 py-3 gap-3 border-b border-border">
+                      <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                      <div className="w-8 h-8 rounded-full bg-muted shrink-0" />
                       <div className="flex-1 space-y-1.5">
-                        <div className="h-3.5 w-36 rounded-full bg-gray-200 dark:bg-gray-700" />
-                        <div className="h-3 w-24 rounded-full bg-gray-100 dark:bg-gray-800" />
+                        <div className="h-3.5 w-36 rounded-full bg-muted" />
+                        <div className="h-3 w-24 rounded-full bg-muted" />
                       </div>
-                      <div className="h-5 w-16 rounded-full bg-gray-200 dark:bg-gray-700" />
-                      <div className="h-5 w-5 rounded bg-gray-200 dark:bg-gray-700" />
+                      <div className="h-5 w-16 rounded-full bg-muted" />
+                      <div className="h-5 w-5 rounded bg-muted" />
                     </div>
                     <div className="px-4 py-2 space-y-2">
                       {[1, 2].map((j) => (
                         <div key={j} className="flex items-center gap-3 min-h-[80px] py-2">
-                          <div className="w-4 h-4 rounded bg-gray-200 dark:bg-gray-700 shrink-0" />
-                          <div className="w-10 h-10 rounded bg-gray-200 dark:bg-gray-700 shrink-0" />
+                          <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                          <div className="w-10 h-10 rounded bg-muted shrink-0" />
                           <div className="flex-1 space-y-1">
-                            <div className="h-3 w-44 rounded-full bg-gray-200 dark:bg-gray-700" />
-                            <div className="h-2.5 w-28 rounded-full bg-gray-100 dark:bg-gray-800" />
+                            <div className="h-3 w-44 rounded-full bg-muted" />
+                            <div className="h-2.5 w-28 rounded-full bg-muted" />
                           </div>
-                          <div className="h-5 w-16 rounded-full bg-gray-200 dark:bg-gray-700" />
-                          <div className="h-5 w-12 rounded-full bg-gray-200 dark:bg-gray-700" />
+                          <div className="h-5 w-16 rounded-full bg-muted" />
+                          <div className="h-5 w-12 rounded-full bg-muted" />
                           <div className="flex gap-1">
-                            <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700" />
-                            <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700" />
-                            <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700" />
-                            <div className="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700" />
+                            <div className="w-8 h-8 rounded bg-muted" />
+                            <div className="w-8 h-8 rounded bg-muted" />
+                            <div className="w-8 h-8 rounded bg-muted" />
+                            <div className="w-8 h-8 rounded bg-muted" />
                           </div>
                         </div>
                       ))}
@@ -1006,7 +1006,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 ))}
               </div>
             ) : groups.length === 0 ? (
-              <div className="px-6 py-14 sm:py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-6 py-14 sm:py-16 bg-card rounded-xl border border-border overflow-hidden">
                 <div className="max-w-sm mx-auto flex flex-col items-center text-center">
                   <div className="relative w-40 h-40 sm:w-48 sm:h-48 mb-5">
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-100 via-sky-100 to-transparent dark:from-indigo-500/10 dark:via-sky-500/10 dark:to-transparent rounded-full blur-2xl" />
@@ -1053,10 +1053,10 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                       </g>
                     </svg>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <h3 className="text-lg font-semibold text-foreground">
                     {isRtl ? "لا توجد طلبات طباعة بعد" : "No print jobs yet"}
                   </h3>
-                  <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                  <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
                     {isRtl
                       ? "الطابعة مرتاحة الآن. أول طلب يصل سيظهر هنا مباشرة."
                       : "Your printer is taking a breather. New jobs will land here the moment they arrive."}
@@ -1064,7 +1064,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 </div>
               </div>
             ) : filteredGroups.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <div className="p-8 text-center text-muted-foreground bg-card rounded-xl border border-border">
                 <svg className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 <p>{isRtl ? "لا توجد نتائج" : "No results found"}</p>
               </div>
@@ -1094,9 +1094,9 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   return (
                     <div
                       key={group.key}
-                      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-2 transition-all shadow-sm"
+                      className="bg-card rounded-xl border border-border overflow-hidden mb-2 transition-all shadow-sm"
                     >
-                      <div className="flex items-center border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 group/header">
+                      <div className="flex items-center border-b border-border bg-card group/header">
                         <div className="px-4 py-2.5 flex items-center">
                           <input
                             type="checkbox"
@@ -1109,14 +1109,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                         </div>
                         <button
                           onClick={() => toggleGroup(group.key)}
-                          className="flex-1 px-2 py-2.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                          className="flex-1 px-2 py-2.5 flex items-center justify-between hover:bg-muted/40 transition-colors"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             <div
                               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                                 pendingCount > 0
                                   ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
-                                  : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
+                                  : "bg-muted text-muted-foreground"
                               }`}
                             >
                               <svg
@@ -1133,16 +1133,16 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                 ></path>
                               </svg>
                             </div>
-                            <div className="truncate text-left">
-                              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
+                            <div className="truncate text-start">
+                              <h3 className="text-sm font-bold text-foreground truncate">
                                 {group.customerName ||
                                   (isRtl ? "بدون اسم" : "No Name")}
                               </h3>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                              <p className="text-xs text-muted-foreground">
                                 {group.phoneNumber ||
                                   (isRtl ? "بدون هاتف" : "No Phone")}
                                 {" · "}
-                                <span className="text-gray-400 dark:text-gray-500">{formatRelativeTime(group.latestDate, lang)}</span>
+                                <span className="text-muted-foreground">{formatRelativeTime(group.latestDate, lang)}</span>
                               </p>
                             </div>
                           </div>
@@ -1150,7 +1150,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                             {customerTotal > 0 && (
                               <div className="flex flex-col items-end">
                                 {customerDiscount > 0 && (
-                                  <span className="text-xs text-gray-400 dark:text-gray-500 line-through">
+                                  <span className="text-xs text-muted-foreground line-through">
                                     {formatPrice(customerTotal + customerDiscount)}
                                   </span>
                                 )}
@@ -1174,7 +1174,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                               {group.jobs.length} {isRtl ? "ملف" : "files"}
                             </span>
                             <svg
-                              className={`w-5 h-5 text-gray-400 dark:text-gray-500 transition-transform ${
+                              className={`w-5 h-5 text-muted-foreground transition-transform ${
                                 isExpanded ? "rotate-180" : ""
                               }`}
                               fill="none"
@@ -1193,8 +1193,8 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                       </div>
                       {isExpanded && density === "compact" && (
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
-                            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                          <table className="w-full text-start border-collapse">
+                            <thead className="bg-muted/40 border-b border-border">
                               <tr>
                                 <th className="px-4 py-2.5 w-10">
                                   <input
@@ -1210,31 +1210,31 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                   />
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}
+                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
                                 >
                                   {t("fileName")}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}
+                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
                                 >
                                   {isRtl ? "الإعدادات" : "Settings"}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}
+                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
                                 >
                                   {isRtl ? "التكلفة" : "Cost"}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}
+                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
                                 >
                                   {t("status")}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}
+                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
                                 >
                                   {t("payment")}
                                 </th>
-                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                   {t("actions")}
                                 </th>
                               </tr>
@@ -1282,14 +1282,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                         <div className="flex flex-col flex-1 min-w-0">
                                           <span className="flex items-center gap-1.5">
                                             <span
-                                              className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate"
+                                              className="text-sm font-semibold text-foreground truncate"
                                               title={job.fileName}
                                             >
                                               {job.fileName}
                                             </span>
                                             {renderSourceBadge(job)}
                                           </span>
-                                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                                          <span className="text-xs text-muted-foreground">
                                             {formatSize(job.fileSize)}
                                           </span>
                                         </div>
@@ -1306,14 +1306,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                                 {job.notes.length > 120 ? job.notes.slice(0, 120) + "..." : job.notes}
                                               </div>
                                               {job.notes.length > 120 && (
-                                                <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ml-1 align-middle underline">
+                                                <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
                                                   {isRtl ? "قراءة المزيد" : "Read more"}
                                                 </button>
                                               )}
                                             </>
                                           )}
                                           {expandedNotes.has(job.id) && (
-                                            <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ml-1 align-middle underline">
+                                            <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
                                               {isRtl ? "طي" : "Less"}
                                             </button>
                                           )}
@@ -1347,7 +1347,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
                                             {/* Copies Stepper */}
                                             {editingCopiesJobId === job.id ? (
-                                              <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
+                                              <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
                                                 <Button
                                                   type="button"
                                                   variant="ghost"
@@ -1381,7 +1381,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                                 <Button
                                                   type="button"
                                                   size="icon"
-                                                  className="w-6 h-6 ml-1"
+                                                  className="w-6 h-6 ms-1"
                                                   onMouseDown={(e) => e.preventDefault()}
                                                   onClick={() => handleSaveCopies(job, editingCopiesValue)}
                                                 >
@@ -1429,7 +1429,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                       {(currentSettings.pricing || (currentSettings.paperTypes && currentSettings.paperTypes.length > 0)) ? (
                                         (() => {
                                           const isOffice = job.fileType?.includes("word") || job.fileType?.includes("document") || job.fileType?.includes("excel") || job.fileType?.includes("spreadsheet") || job.fileType?.includes("presentation") || job.fileType?.includes("powerpoint");
-                                          if (isOffice) return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
+                                          if (isOffice) return <span className="text-xs text-muted-foreground">-</span>;
                                           const pageCount = jobPageCounts[job.id] || 1;
                                           const priceCalc = calculatePrintPrice(job, currentSettings, pageCount);
                                           const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, priceCalc.totalPages, discountRules);
@@ -1439,7 +1439,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                             <div className="flex flex-col gap-1">
                                               <div className="flex flex-col">
                                                 {hasDiscount && (
-                                                  <span className="text-xs text-gray-400 dark:text-gray-500 line-through">
+                                                  <span className="text-xs text-muted-foreground line-through">
                                                     {formatPrice(discountResult.originalAmount)}
                                                   </span>
                                                 )}
@@ -1452,7 +1452,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                                   </span>
                                                 )}
                                               </div>
-                                              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                                                 <span>
                                                   {isRtl ? "الصفحات:" : "Pages:"}
                                                 </span>
@@ -1464,7 +1464,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                           );
                                         })()
                                       ) : (
-                                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                                        <span className="text-xs text-muted-foreground">
                                           -
                                         </span>
                                       )}
@@ -1598,7 +1598,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   );
                 })}
                 {visibleGroupCount < filteredGroups.length && (
-                  <div ref={sentinelRef} className="py-6 text-center text-xs text-gray-400 dark:text-gray-500">
+                  <div ref={sentinelRef} className="py-6 text-center text-xs text-muted-foreground">
                     {isRtl
                       ? `جارٍ عرض ${visibleGroups.length} من ${filteredGroups.length} زبون…`
                       : `Showing ${visibleGroups.length} of ${filteredGroups.length} customers…`}
@@ -1649,7 +1649,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               ))}
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("paymentAmount")} (DZD)</label>
+              <label className="block text-sm font-semibold text-foreground mb-2">{t("paymentAmount")} (DZD)</label>
               <Input
                 type="number"
                 min="0"

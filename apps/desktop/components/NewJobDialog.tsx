@@ -289,7 +289,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
           {files.length > 0 && (
             <div className="space-y-1.5">
               {files.map((f) => (
-                <div key={f.name + f.size + f.lastModified} className="flex items-center gap-2 rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm">
+                <div key={f.name + f.size + f.lastModified} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 text-sm">
                   <span className="flex-1 truncate">{f.name}</span>
                   <span className="text-[11px] text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
                   <button

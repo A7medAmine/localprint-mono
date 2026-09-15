@@ -106,7 +106,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-gray-400 dark:text-gray-500 gap-3">
+      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
         </svg>
@@ -119,8 +119,8 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
     return (
       <div className="flex items-center justify-center h-full min-h-[300px]">
         <div className="flex flex-col items-center gap-4 animate-pulse">
-          <div className="w-14 h-14 rounded-xl bg-gray-200 dark:bg-gray-700" />
-          <div className="h-3 w-32 rounded-full bg-gray-200 dark:bg-gray-700" />
+          <div className="w-14 h-14 rounded-xl bg-muted" />
+          <div className="h-3 w-32 rounded-full bg-muted" />
           <div className="h-2.5 w-48 rounded-full bg-gray-100 dark:bg-gray-600" />
         </div>
       </div>
@@ -129,25 +129,25 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <button
             onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage <= 1}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Previous page"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="text-xs font-medium text-gray-600 dark:text-gray-400 min-w-[5rem] text-center tabular-nums">
+          <span className="text-xs font-medium text-muted-foreground min-w-[5rem] text-center tabular-nums">
             {currentPage} / {pageCount}
           </span>
           <button
             onClick={() => goToPage(currentPage + 1)}
             disabled={currentPage >= pageCount}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Next page"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,13 +157,13 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 min-w-[3rem] text-center">
+          <span className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
             {Math.round(zoom * 100)}%
           </span>
           <button
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom out"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,7 +172,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
           </button>
           <button
             onClick={resetZoom}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
+            className="p-1.5 rounded-lg hover:bg-muted transition-colors text-xs font-medium"
             title="Reset zoom"
           >
             Fit
@@ -180,7 +180,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom in"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

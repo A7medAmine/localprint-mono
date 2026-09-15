@@ -50,12 +50,12 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ isRtl }) => {
 
   return (
     <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl shadow-indigo-100/40 dark:shadow-indigo-900/20 border border-white dark:border-gray-700">
-      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1 text-center">
+      <h2 className="text-lg font-bold text-foreground mb-1 text-center">
         {mode === "signin"
           ? (isRtl ? "تسجيل الدخول" : "Sign in")
           : (isRtl ? "إنشاء حساب" : "Create account")}
       </h2>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 text-center">
+      <p className="text-xs text-muted-foreground mb-5 text-center">
         {isRtl
           ? "اختياري — يمكنك الرفع كضيف بدون تسجيل الدخول"
           : "Optional — you can still upload as a guest without signing in"}
@@ -104,9 +104,9 @@ const AuthPanel: React.FC<AuthPanelProps> = ({ isRtl }) => {
       </form>
 
       <div className="flex items-center gap-2 my-4">
-        <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-        <span className="text-xs text-gray-400 dark:text-gray-500">{isRtl ? "أو" : "or"}</span>
-        <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+        <div className="h-px flex-1 bg-muted" />
+        <span className="text-xs text-muted-foreground">{isRtl ? "أو" : "or"}</span>
+        <div className="h-px flex-1 bg-muted" />
       </div>
 
       <Button type="button" variant="outline" className="w-full gap-2" onClick={handleGoogle}>

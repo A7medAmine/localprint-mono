@@ -101,24 +101,24 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-gray-200 dark:border-gray-700 w-full max-w-2xl max-h-[80vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">{t("loadFromPrintJobs")}</h2>
-          <button className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none" onClick={onClose}>&times;</button>
+      <div className="bg-card rounded-xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-border w-full max-w-2xl max-h-[80vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="font-semibold text-foreground">{t("loadFromPrintJobs")}</h2>
+          <button className="text-muted-foreground hover:text-muted-foreground text-xl leading-none" onClick={onClose}>&times;</button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading ? (
-            <div className="text-center text-gray-400 dark:text-gray-500 py-8 text-sm">{t("loading")}</div>
+            <div className="text-center text-muted-foreground py-8 text-sm">{t("loading")}</div>
           ) : error && jobs.length === 0 ? (
             <div className="text-center text-red-500 dark:text-red-400 py-8 text-sm">{error}</div>
           ) : jobs.length === 0 ? (
-            <div className="text-center text-gray-400 dark:text-gray-500 py-8 text-sm">{t("noPrintJobsFound")}</div>
+            <div className="text-center text-muted-foreground py-8 text-sm">{t("noPrintJobsFound")}</div>
           ) : (
             groups.map((group) => {
               const allSelected = group.jobs.every((j) => selected.has(j.id));
               return (
                 <div key={group.customer}>
-                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1 py-2 sticky top-0 bg-white dark:bg-gray-800 z-10 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 py-2 sticky top-0 bg-card z-10 border-b border-border flex items-center justify-between">
                     <span>
                       {group.customer} &middot; {group.jobs.length} {group.jobs.length === 1 ? t("file") : t("files")}
                     </span>
@@ -137,7 +137,7 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
                     return (
                       <label
                         key={job.id}
-                        className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition cursor-pointer text-left ${
+                        className={`w-full flex items-center gap-3 p-2.5 rounded-lg transition cursor-pointer text-start ${
                           isSelected ? "bg-indigo-50 dark:bg-indigo-900/30" : "hover:bg-gray-50 dark:hover:bg-gray-700/40"
                         }`}
                       >
@@ -147,14 +147,14 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
                           checked={isSelected}
                           onChange={() => toggleJob(job.id)}
                         />
-                        <div className="w-9 h-9 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center shrink-0">
-                          <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0">
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                           </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{job.fileName}</div>
-                          <div className="text-xs text-gray-400 dark:text-gray-500">{new Date(job.uploadDate).toLocaleDateString()}</div>
+                          <div className="text-sm font-medium text-foreground truncate">{job.fileName}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(job.uploadDate).toLocaleDateString()}</div>
                         </div>
                       </label>
                     );
@@ -164,12 +164,12 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
             })
           )}
         </div>
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
-          {error && jobs.length > 0 && <div className="text-sm text-red-500 dark:text-red-400">{error}</div>}
+        <div className="p-4 border-t border-border flex items-center justify-between gap-3">
+          {error && jobs.length > 0 && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
           <div className="flex-1" />
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted rounded-lg transition"
           >
             {t("cancel")}
           </button>

@@ -236,7 +236,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
 
   return (
     <div dir={isRtl ? "rtl" : "ltr"} className="min-h-screen bg-slate-50 dark:bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-slate-200 dark:border-gray-800 overflow-hidden">
+      <div className="w-full max-w-2xl bg-card rounded-2xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-slate-200 dark:border-gray-800 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-900 px-6 py-5 text-white">
           <div className="flex items-center justify-between">
@@ -277,7 +277,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
               <div>
                 <Label>{tr("كلمة المرور الحالية", "Current password")}</Label>
                 <Input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} placeholder={DEFAULT_PASSWORD} />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {tr("الافتراضية عند التثبيت الأول هي admin123.", "The default on a fresh install is admin123.")}
                 </p>
               </div>
@@ -289,7 +289,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
                 <Label>{tr("تأكيد كلمة المرور", "Confirm password")}</Label>
                 <Input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} placeholder="••••••••" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 {tr("8 أحرف على الأقل، وليست أرقامًا فقط.", "At least 8 characters, not all digits.")}
               </p>
               {pwError && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{pwError}</p>}
@@ -305,7 +305,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
               <div>
                 <Label>{tr("العملة", "Currency")}</Label>
                 <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="DZD" className="max-w-[140px]" />
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {tr("تظهر بجانب الأسعار (مثل DZD أو USD).", "Shown next to prices (e.g. DZD, USD).")}
                 </p>
               </div>
@@ -320,7 +320,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
                     )}
                   </div>
                   <label className="cursor-pointer">
-                    <span className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-gray-700">
+                    <span className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-gray-800 text-foreground hover:bg-slate-200 dark:hover:bg-gray-700">
                       {logoUploading ? tr("جارٍ الرفع…", "Uploading…") : tr("رفع صورة", "Upload image")}
                     </span>
                     <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} disabled={logoUploading} />
@@ -354,7 +354,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
                     </div>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                <p className="text-xs text-muted-foreground mt-2">
                   {tr("يمكنك تعديلها لاحقًا من الإعدادات.", "You can refine these later in Settings.")}
                 </p>
               </div>
@@ -365,7 +365,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
             <div className="space-y-4">
               <Label>{tr("اختر الطابعة الافتراضية", "Pick the default printer")}</Label>
               {printers.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   {tr("لم يتم العثور على طابعات.", "No printers detected.")}
                 </p>
               ) : (
@@ -383,7 +383,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
                   </SelectContent>
                 </Select>
               )}
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 {tr("تُستخدم للطباعة السريعة بنقرة واحدة.", "Used for one-click Quick Print.")}
               </p>
             </div>
@@ -394,7 +394,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
               <div>
                 <Label>{tr("رابط المتجر السحابي", "Store link")}</Label>
                 <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://print.example.com/s/your-store" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-muted-foreground">
                   {tr(
                     "الصق الرابط الذي زوّدك به المشرف — يتضمّن معرّف المتجر تلقائيًا.",
                     "Paste the link your platform admin gave you — the store slug is picked up automatically.",
@@ -405,7 +405,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
                 <Label>{tr("رمز المتجر", "Shop token")}</Label>
                 <Input value={shopApiToken} onChange={(e) => setShopApiToken(e.target.value)} placeholder="shop_…" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 {tr("اتركه فارغًا إذا لم تكن تستخدم الاستقبال السحابي.", "Leave blank if you don't use cloud intake.")}
               </p>
             </div>

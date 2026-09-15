@@ -260,9 +260,9 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
   };
 
   const reasonClasses = (reason: string) => {
-    if (reason === "restock") return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+    if (reason === "restock") return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
     if (reason === "auto_deduct") return "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400";
-    return "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400";
+    return "bg-muted text-muted-foreground";
   };
 
   return (
@@ -270,10 +270,10 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       {/* Page Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">
+          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
             {isRtl ? "المخزون" : "Inventory"}
           </h2>
-          <p className="text-gray-600 dark:text-gray-300 mt-1 text-sm sm:text-base">
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
             {isRtl
               ? "تتبع الورق والحبر والمستلزمات الأخرى"
               : "Track paper, ink & toner, and other shop supplies"}
@@ -307,21 +307,21 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       {loading ? (
         <div className="space-y-4 animate-pulse">
           {[1, 2].map((i) => (
-            <div key={i} className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
-              <div className="h-4 w-40 rounded-full bg-gray-200 dark:bg-gray-700 mb-4" />
+            <div key={i} className="bg-card rounded-2xl border border-border p-6">
+              <div className="h-4 w-40 rounded-full bg-muted mb-4" />
               <div className="space-y-2">
-                <div className="h-10 rounded-lg bg-gray-100 dark:bg-gray-800" />
-                <div className="h-10 rounded-lg bg-gray-100 dark:bg-gray-800" />
+                <div className="h-10 rounded-lg bg-muted" />
+                <div className="h-10 rounded-lg bg-muted" />
               </div>
             </div>
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="p-12 text-center bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+        <div className="p-12 text-center bg-card rounded-2xl border border-border">
           <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
-          <p className="text-gray-500 dark:text-gray-400">
+          <p className="text-muted-foreground">
             {isRtl ? "لا توجد عناصر في المخزون بعد" : "No inventory items yet"}
           </p>
           <Button variant="outline" onClick={openAddDialog} className="mt-4 gap-2">
@@ -363,22 +363,22 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="border-b border-gray-200 dark:border-gray-700">
+                    <table className="w-full text-start border-collapse">
+                      <thead className="border-b border-border">
                         <tr>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
                             {isRtl ? "العنصر" : "Item"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
                             {isRtl ? "المخزون" : "Stock"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider hidden sm:table-cell ${isRtl ? "text-right" : ""}`}>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell ${""}`}>
                             {isRtl ? "حد التنبيه" : "Low at"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider ${isRtl ? "text-right" : ""}`}>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
                             {isRtl ? "تعديل" : "Adjust"}
                           </th>
-                          <th className="px-3 py-2.5 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             {isRtl ? "إجراءات" : "Actions"}
                           </th>
                         </tr>
@@ -401,7 +401,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                               {/* Name + paper link */}
                               <td className="px-3 py-3 align-middle">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  <span className="text-sm font-semibold text-foreground">
                                     {item.name}
                                   </span>
                                   {low && (
@@ -420,7 +420,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                         {linkedName}
                                       </span>
                                     ) : (
-                                      <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                                      <span className="text-[10px] text-muted-foreground">
                                         {isRtl ? "غير مرتبط" : "Not linked"}
                                       </span>
                                     )}
@@ -433,19 +433,19 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                 <span className={`text-sm font-bold ${low ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100"}`}>
                                   {formatStock(item.currentStock)}
                                 </span>
-                                <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">{item.unit}</span>
+                                <span className="text-xs text-muted-foreground ms-1">{item.unit}</span>
                               </td>
 
                               {/* Threshold */}
                               <td className="px-3 py-3 align-middle whitespace-nowrap hidden sm:table-cell">
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                <span className="text-xs text-muted-foreground">
                                   {item.lowStockThreshold > 0 ? formatStock(item.lowStockThreshold) : "—"}
                                 </span>
                               </td>
 
                               {/* Inline +/- */}
                               <td className="px-3 py-3 align-middle">
-                                <div className="flex items-center gap-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
+                                <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -548,7 +548,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "الاسم" : "Name"}
               </label>
               <Input
@@ -560,7 +560,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-semibold text-foreground mb-2">
                   {isRtl ? "الفئة" : "Category"}
                 </label>
                 <Select
@@ -589,7 +589,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-semibold text-foreground mb-2">
                   {isRtl ? "الوحدة" : "Unit"}
                 </label>
                 <Input
@@ -602,7 +602,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-semibold text-foreground mb-2">
                   {isRtl ? "المخزون الحالي" : "Current stock"}
                 </label>
                 <Input
@@ -613,7 +613,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-semibold text-foreground mb-2">
                   {isRtl ? "حد التنبيه" : "Low-stock threshold"}
                 </label>
                 <Input
@@ -622,7 +622,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                   value={itemForm.lowStockThreshold}
                   onChange={(e) => setItemForm({ ...itemForm, lowStockThreshold: parseFloat(e.target.value) || 0 })}
                 />
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {isRtl ? "0 يعني عدم التنبيه" : "0 means never warn"}
                 </p>
               </div>
@@ -630,8 +630,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
 
             {/* Paper link — only relevant for paper items */}
             {itemForm.category === "paper" && (
-              <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <div className="pt-2 border-t border-border">
+                <label className="block text-sm font-semibold text-foreground mb-2">
                   {isRtl ? "ربط بنوع ورق (اختياري)" : "Link to paper type (optional)"}
                 </label>
                 <Select
@@ -650,7 +650,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {isRtl
                     ? "عند تفعيل الخصم التلقائي، سيتم خصم (الصفحات × النسخ) من هذا العنصر عند تحديد الطلب كمطبوع."
                     : "With auto-deduct on, pages × copies is subtracted from this item when a job is marked printed."}
@@ -682,7 +682,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "الكمية المضافة" : "Quantity to add"}
               </label>
               <Input
@@ -695,7 +695,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "ملاحظة (اختياري)" : "Note (optional)"}
               </label>
               <Input
@@ -725,11 +725,11 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
           </DialogHeader>
           <div className="max-h-80 overflow-y-auto">
             {historyLoading ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
+              <p className="text-sm text-muted-foreground py-4 text-center">
                 {isRtl ? "جارٍ التحميل..." : "Loading..."}
               </p>
             ) : history.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
+              <p className="text-sm text-muted-foreground py-4 text-center">
                 {isRtl ? "لا توجد تعديلات بعد" : "No adjustments yet"}
               </p>
             ) : (
@@ -741,20 +741,20 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${reasonClasses(adj.reason)}`}>
                           {reasonLabel(adj.reason)}
                         </span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           {/* SQLite stores "YYYY-MM-DD HH:MM:SS" in UTC — normalise to ISO before parsing. */}
                           {new Date(adj.createdAt.replace(" ", "T") + "Z").toLocaleString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}
                         </span>
                       </div>
                       {adj.note && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{adj.note}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{adj.note}</p>
                       )}
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="text-end shrink-0">
                       <span className={`text-sm font-bold ${adj.amount < 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                         {adj.amount > 0 ? "+" : ""}{formatStock(adj.amount)}
                       </span>
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                      <p className="text-[10px] text-muted-foreground">
                         → {formatStock(adj.stockAfter)}
                       </p>
                     </div>

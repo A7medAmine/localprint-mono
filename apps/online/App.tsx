@@ -18,7 +18,7 @@ import { useAuth } from "./hooks/useAuth";
 import { isCustomerAuthConfigured } from "./services/supabaseClient";
 
 const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
-  <div className="max-w-md mx-auto mt-16 text-center text-gray-500 dark:text-gray-400">
+  <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
     <p className="text-lg font-semibold">
       {isRtl ? "لم يتم تحديد متجر" : "No shop specified"}
     </p>
@@ -118,7 +118,7 @@ const App: React.FC = () => {
                 )}
               </div>
               <div className="flex flex-col justify-center min-w-0">
-                <span dir="auto" className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100 truncate max-w-[150px] sm:max-w-[300px]">
+                <span dir="auto" className="text-xl font-bold tracking-tight text-foreground truncate max-w-[150px] sm:max-w-[300px]">
                   {settings.shopName || TRANSLATIONS.appTitle[lang]}
                 </span>
               </div>
@@ -138,7 +138,7 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className="p-2 rounded-xl text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-all active:scale-95"
+            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-all active:scale-95"
             aria-label={lang === "ar" ? "الوضع الليلي" : "Dark mode"}
           >
             {darkMode ? (

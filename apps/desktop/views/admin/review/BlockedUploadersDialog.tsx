@@ -31,7 +31,7 @@ interface BlockedUploadersDialogProps {
 
 const kindLabel = (kind: BlockKind, isRtl: boolean) => {
   switch (kind) {
-    case "ip": return isRtl ? "IP" : "IP";
+    case "ip": return "IP";
     case "fingerprint": return isRtl ? "جهاز" : "Device";
     case "phone": return isRtl ? "هاتف" : "Phone";
     case "user": return isRtl ? "حساب" : "Account";
@@ -117,7 +117,7 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
 
         <div className="flex items-end gap-2">
           <div className="w-32 shrink-0">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-semibold text-muted-foreground mb-1">
               {isRtl ? "النوع" : "Type"}
             </label>
             <Select value={newKind} onValueChange={(v) => setNewKind(v as BlockKind)}>
@@ -131,7 +131,7 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
             </Select>
           </div>
           <div className="flex-1 min-w-0">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-semibold text-muted-foreground mb-1">
               {newKind === "phone" ? (isRtl ? "رقم الهاتف" : "Phone number") : (isRtl ? "عنوان IP" : "IP address")}
             </label>
             <Input
@@ -149,13 +149,13 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
 
         <div className="max-h-72 overflow-y-auto -mx-1 px-1">
           {loading ? (
-            <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               {isRtl ? "جارٍ التحميل..." : "Loading..."}
             </p>
           ) : error ? (
             <p className="py-6 text-center text-sm text-red-600 dark:text-red-400">{error}</p>
           ) : blocks.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            <p className="py-6 text-center text-sm text-muted-foreground">
               {isRtl ? "لا يوجد أحد محظور." : "Nobody is blocked."}
             </p>
           ) : (
@@ -164,15 +164,15 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
                 <li key={block.id} className="py-2.5 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                         {kindLabel(block.kind, isRtl)}
                       </span>
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" dir="ltr">
+                      <span className="text-sm font-medium text-foreground truncate" dir="ltr">
                         {/* A fingerprint is a 64-char hash — show a readable stub. */}
                         {block.kind === "fingerprint" ? `${block.value.slice(0, 12)}…` : block.value}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
                       {[block.label, block.reason].filter(Boolean).join(" — ") ||
                         new Date(block.createdAt).toLocaleDateString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}
                     </div>

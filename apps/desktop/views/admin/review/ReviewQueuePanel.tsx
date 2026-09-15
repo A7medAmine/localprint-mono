@@ -71,13 +71,16 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
   const [acceptingReviewId, setAcceptingReviewId] = useState<string | null>(null);
   // Group key currently being bulk-accepted, or "__all__" for the whole queue.
   const [bulkAcceptingKey, setBulkAcceptingKey] = useState<string | null>(null);
+  // Batch awaiting the "reject all" confirmation, and the one being rejected.
+  const [rejectAllTarget, setRejectAllTarget] = useState<{ key: string; label: string; jobs: PrintJob[] } | null>(null);
+  const [bulkRejectingKey, setBulkRejectingKey] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   // Sender being blocked, and the blocklist manager.
   const [blockJob, setBlockJob] = useState<PrintJob | null>(null);
   const [blocklistOpen, setBlocklistOpen] = useState(false);
 
   const groups = useMemo(() => groupBySender(reviewJobs), [reviewJobs]);
-  const busy = acceptingReviewId !== null || bulkAcceptingKey !== null;
+  const busy = acceptingReviewId !== null || bulkAcceptingKey !== null || bulkRejectingKey !== null;
 
   const handleAcceptReview = async (job: PrintJob) => {
     setAcceptingReviewId(job.id);
@@ -134,6 +137,49 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
     }
   };
 
+  /**
+   * Reject a batch after the confirmation modal. Sequential for the same reason
+   * accepts are, and deliberately reason-less: bulk rejects are a cleanup
+   * action, so the cloud gets the generic "other" reason with no note.
+   */
+  const handleRejectMany = async () => {
+    const target = rejectAllTarget;
+    if (!target || target.jobs.length === 0) return;
+    setBulkRejectingKey(target.key);
+    setRejectAllTarget(null);
+    let rejected = 0;
+    const failed: string[] = [];
+    try {
+      for (const job of target.jobs) {
+        try {
+          await storageService.rejectReviewJob(job.id, "other");
+          rejected++;
+        } catch (err) {
+          failed.push(job.fileName);
+        }
+      }
+      if (failed.length === 0) {
+        toast({
+          title: isRtl
+            ? `تم رفض ${rejected} طلب`
+            : `Rejected ${rejected} job${rejected === 1 ? "" : "s"}`,
+          variant: "success",
+        });
+      } else {
+        toast({
+          title: isRtl
+            ? `تم رفض ${rejected}، وفشل ${failed.length}`
+            : `Rejected ${rejected}, ${failed.length} failed`,
+          description: failed.slice(0, 3).join(", "),
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setBulkRejectingKey(null);
+      onRefresh();
+    }
+  };
+
   /** Pull the cloud queue now instead of waiting for the next poll tick. */
   const handleCheckForOrders = async () => {
     setChecking(true);
@@ -180,10 +226,10 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+            <h2 className="text-lg font-bold text-foreground">
               {isRtl ? "مراجعة الطلبات" : "Job Review"}
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-muted-foreground">
               {isRtl
                 ? "طلبات وصلت من رابط الرفع الإلكتروني وتنتظر قبولك أو رفضك."
                 : "Orders that came in from the online upload link, awaiting your decision."}
@@ -195,7 +241,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
             </Button>
             <Button variant="outline" size="sm" onClick={handleCheckForOrders} disabled={checking}>
               <svg
-                className={`w-4 h-4 ${isRtl ? "ml-1.5" : "mr-1.5"} ${checking ? "animate-spin" : ""}`}
+                className={`w-4 h-4 ${"me-1.5"} ${checking ? "animate-spin" : ""}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -220,11 +266,32 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                       : `Accept all (${reviewJobs.length})`)}
               </Button>
             )}
+            {reviewJobs.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  setRejectAllTarget({
+                    key: "__all__",
+                    label: isRtl ? "كل الطلبات" : "the whole queue",
+                    jobs: reviewJobs,
+                  })
+                }
+                className="text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                {bulkRejectingKey === "__all__"
+                  ? (isRtl ? "جارٍ الرفض..." : "Rejecting...")
+                  : (isRtl
+                      ? `رفض الكل (${reviewJobs.length})`
+                      : `Reject all (${reviewJobs.length})`)}
+              </Button>
+            )}
           </div>
         </div>
 
         {reviewJobs.length === 0 ? (
-          <div className="px-6 py-14 sm:py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-14 sm:py-16 bg-card rounded-xl border border-border overflow-hidden">
             <div className="max-w-sm mx-auto flex flex-col items-center text-center">
               <div className="relative w-36 h-36 sm:w-44 sm:h-44 mb-5">
                 <div className="absolute inset-0 bg-gradient-to-br from-amber-100 via-emerald-100 to-transparent dark:from-amber-500/10 dark:via-emerald-500/10 dark:to-transparent rounded-full blur-2xl" />
@@ -252,10 +319,10 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                   </g>
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="text-lg font-semibold text-foreground">
                 {isRtl ? "لا شيء للمراجعة" : "Inbox zero"}
               </h3>
-              <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
                 {isRtl
                   ? "لا توجد طلبات بانتظار المراجعة. أحسنت — كل شيء تحت السيطرة."
                   : "No jobs awaiting review. Nice work — you're all caught up."}
@@ -273,14 +340,15 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                 <div key={group.key} className="space-y-2">
                   <div className="flex items-center justify-between gap-3 px-1">
                     <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{label}</span>
+                      <span className="font-semibold text-sm text-foreground truncate">{label}</span>
                       {group.customerName && group.phoneNumber && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400" dir="ltr">{group.phoneNumber}</span>
+                        <span className="text-xs text-muted-foreground" dir="ltr">{group.phoneNumber}</span>
                       )}
-                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         {isRtl ? `${group.jobs.length} ملف` : `${group.jobs.length} file${group.jobs.length === 1 ? "" : "s"}`}
                       </span>
                     </div>
+                    <div className="flex items-center gap-2 shrink-0">
                     <Button
                       variant="outline"
                       size="sm"
@@ -292,6 +360,18 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                         ? (isRtl ? "جارٍ القبول..." : "Accepting...")
                         : (isRtl ? `قبول الكل (${group.jobs.length})` : `Accept all (${group.jobs.length})`)}
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => setRejectAllTarget({ key: group.key, label, jobs: group.jobs })}
+                      className="shrink-0 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      {bulkRejectingKey === group.key
+                        ? (isRtl ? "جارٍ الرفض..." : "Rejecting...")
+                        : (isRtl ? `رفض الكل (${group.jobs.length})` : `Reject all (${group.jobs.length})`)}
+                    </Button>
+                    </div>
                   </div>
                   <div className="grid gap-3">
                     {group.jobs.map((job) => {
@@ -310,22 +390,22 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                               </div>
                               <div className="min-w-0">
-                                <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{job.fileName}</p>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <p className="font-semibold text-foreground truncate">{job.fileName}</p>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground mt-1">
                                   <span>{new Date(job.uploadDate).toLocaleString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}</span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                                     {job.printPreferences?.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
                                   </span>
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                                     {job.printPreferences?.copies || 1}x
                                   </span>
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 capitalize">
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
                                     {job.printPreferences?.paperType || "normal"}
                                   </span>
                                   {job.notes && (
-                                    <span className="text-[11px] text-gray-400 dark:text-gray-500 italic truncate max-w-[200px]">"{job.notes}"</span>
+                                    <span className="text-[11px] text-muted-foreground italic truncate max-w-[200px]">"{job.notes}"</span>
                                   )}
                                 </div>
                               </div>
@@ -389,6 +469,35 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
         onClose={() => setBlocklistOpen(false)}
       />
 
+      {/* Reject-all confirmation — no reason input, just a yes/no gate. */}
+      <Dialog open={rejectAllTarget !== null} onOpenChange={(open) => { if (!open) setRejectAllTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isRtl
+                ? `رفض ${rejectAllTarget?.jobs.length ?? 0} طلب؟`
+                : `Reject ${rejectAllTarget?.jobs.length ?? 0} job${rejectAllTarget?.jobs.length === 1 ? "" : "s"}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {isRtl
+                ? `سيتم رفض كل ملفات ${rejectAllTarget?.label ?? ""} وحذفها. لا يمكن التراجع عن هذا الإجراء.`
+                : `All files from ${rejectAllTarget?.label ?? ""} will be rejected and deleted. This cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectAllTarget(null)}>
+              {isRtl ? "إلغاء" : "Cancel"}
+            </Button>
+            <Button
+              onClick={handleRejectMany}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRtl ? "رفض الكل" : "Reject all"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Reject Review Job Dialog */}
       <Dialog open={rejectDialogJob !== null} onOpenChange={(open) => { if (!open) setRejectDialogJob(null); }}>
         <DialogContent className="sm:max-w-md">
@@ -402,7 +511,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "السبب" : "Reason"}
               </label>
               <Select value={rejectReason} onValueChange={setRejectReason}>
@@ -418,7 +527,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
               </Select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 {isRtl ? "ملاحظة (اختياري)" : "Note (optional)"}
               </label>
               <Textarea

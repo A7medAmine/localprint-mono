@@ -97,7 +97,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           )}
         </div>
         {!collapsed && (
-          <span dir="auto" className="text-base font-bold tracking-tight text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
+          <span dir="auto" className="text-base font-bold tracking-tight text-foreground truncate flex-1 min-w-0">
             {shopName}
           </span>
         )}
@@ -106,7 +106,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {!collapsed && (
           <button
             onClick={() => setCollapsed(true)}
-            className="hidden md:inline-flex p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+            className="hidden md:inline-flex p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
             aria-label={isRtl ? "طي" : "Collapse"}
           >
             <svg className="w-4 h-4 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,7 +118,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* Close drawer — mobile only */}
         <button
           onClick={() => setMobileOpen(false)}
-          className="md:hidden ml-auto p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+          className="md:hidden ms-auto p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Close"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -131,7 +131,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}
-          className="hidden md:flex mx-auto mb-2 p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+          className="hidden md:flex mx-auto mb-2 p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
           aria-label={isRtl ? "توسيع" : "Expand"}
         >
           <svg className="w-4 h-4 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,7 +144,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* STUDIO */}
         {!collapsed && (
           <div className="px-4 pt-2 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               {isRtl ? "الاستوديو" : "STUDIO"}
             </span>
           </div>
@@ -177,7 +177,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* TOOLS */}
         {!collapsed && (
           <div className="px-4 pt-3 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               {isRtl ? "أدوات" : "TOOLS"}
             </span>
           </div>
@@ -185,7 +185,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         <nav className={collapsed ? "px-2 py-2 space-y-1" : "px-3 py-2 space-y-0.5"}>
           <button
             onClick={() => navigate("/admin/dashboard")}
-            className={`w-full flex items-center gap-3 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors ${
+            className={`w-full flex items-center gap-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors ${
               collapsed ? "px-2.5 py-2.5 justify-center" : "px-3.5 py-2.5"
             }`}
             title={collapsed ? (isRtl ? "لوحة التحكم" : "Dashboard") : undefined}
@@ -202,14 +202,14 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           <div className="px-3 mt-4">
             <div className="bg-white/60 dark:bg-white/[0.06] rounded-xl p-3.5 border border-gray-200 dark:border-white/10">
               <div className="flex items-start gap-2.5 mb-2.5">
-                <svg className="w-4 h-4 mt-0.5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0 9 9 0 0112.728 0zM12 8v4m0 4h.01" />
                 </svg>
                 <div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">
+                  <p className="text-xs font-medium text-foreground leading-tight">
                     {isRtl ? "تحتاج مساعدة؟" : "Need help?"}
                   </p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
                     {isRtl ? "فريقنا جاهز للمساعدة" : "Our team is here to help"}
                   </p>
                 </div>
@@ -224,13 +224,13 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
 
       {/* Bottom toggles */}
       <div
-        className={`shrink-0 border-t border-gray-200 dark:border-gray-800 px-3 py-3 flex items-center gap-2 ${
+        className={`shrink-0 border-t border-border px-3 py-3 flex items-center gap-2 ${
           collapsed ? "flex-col" : ""
         }`}
       >
         <button
           onClick={onToggleDarkMode}
-          className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+          className="p-2 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
           aria-label={
             themeMode === "light"
               ? isRtl ? "الوضع الفاتح" : "Light mode"
@@ -263,13 +263,13 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {collapsed ? (
           <button
             onClick={() => onToggleLang(lang === "en" ? "ar" : "en")}
-            className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
+            className="p-2 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
             title={lang === "en" ? "عربي" : "English"}
           >
             <span className="text-xs font-bold">{lang === "en" ? "ع" : "EN"}</span>
           </button>
         ) : (
-          <div className="ml-auto rtl:ml-0 rtl:mr-auto">
+          <div className="ms-auto">
             <LanguageToggle currentLang={lang} onToggle={onToggleLang} />
           </div>
         )}
@@ -278,10 +278,10 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
   );
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950 text-gray-900 dark:text-gray-100 ${isRtl ? "font-['IBMPlexArabic']" : ""}`}>
+    <div className={`flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950 text-foreground ${isRtl ? "font-['IBMPlexArabic']" : ""}`}>
       {/* Desktop sidebar (inline) */}
       <aside
-        className={`hidden md:flex flex-col bg-gray-50 dark:bg-[#111] border-gray-200 dark:border-gray-800 transition-[width] duration-200 shrink-0 ${
+        className={`hidden md:flex flex-col bg-gray-50 dark:bg-[#111] border-border transition-[width] duration-200 shrink-0 ${
           isRtl ? "border-l" : "border-r"
         } ${collapsed ? "w-[64px]" : "w-[240px]"}`}
       >
@@ -297,7 +297,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
       )}
       <aside
         className={`md:hidden fixed top-0 bottom-0 z-50 w-72 max-w-[85vw] flex flex-col bg-gray-50 dark:bg-[#111] shadow-xl transition-transform duration-200 ${
-          isRtl ? "right-0 border-l border-gray-200 dark:border-gray-800" : "left-0 border-r border-gray-200 dark:border-gray-800"
+          isRtl ? "right-0 border-l border-border" : "left-0 border-r border-border"
         } ${
           mobileOpen
             ? "translate-x-0"
@@ -312,25 +312,25 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Mobile top bar */}
-        <header className="md:hidden flex items-center justify-between gap-3 h-14 px-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0">
+        <header className="md:hidden flex items-center justify-between gap-3 h-14 px-3 bg-card border-b border-border shrink-0">
           <button
             onClick={() => setMobileOpen(true)}
-            className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
+            className="p-2 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06]"
             aria-label="Menu"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+          <span className="text-sm font-semibold text-foreground truncate">
             {t(tab === "cards" ? "cardsTab" : tab === "photos" ? "photosTab" : "pdfTab")}
           </span>
           <div className="w-9" />
         </header>
 
         {/* Scrollable content */}
-        <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
-          <div className={`p-3 sm:p-4 lg:p-6 ${isRtl ? "text-right" : ""}`} dir={isRtl ? "rtl" : "ltr"}>
+        <main className="flex-1 overflow-y-auto bg-card">
+          <div className={`p-3 sm:p-4 lg:p-6 ${""}`} dir={isRtl ? "rtl" : "ltr"}>
             <Suspense
               fallback={
                 <div className="flex items-center justify-center py-16" role="status" aria-live="polite">

@@ -903,7 +903,7 @@ const PDFJobManager: React.FC = () => {
             <DialogTitle>{t("studioNewJobTitle")}</DialogTitle>
             <DialogDescription>{t("studioNewJobDesc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2 max-h-[65vh] overflow-y-auto pr-1">
+          <div className="space-y-3 py-2 max-h-[65vh] overflow-y-auto pe-1">
             <JobTargetPicker
               targets={targets}
               isRtl={isRtl}

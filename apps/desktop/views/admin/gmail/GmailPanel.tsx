@@ -25,17 +25,9 @@ import {
   AlertDialogTitle,
 } from "../../../components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
+import { Icon, fileTypeIcon } from "../../../components/ui/icon";
 import { useAdmin } from "../AdminContext";
 import { openAdminEventSource } from "../../../utils/adminEvents";
-
-const getFileTypeIcon = (mimeType: string) => {
-  if (mimeType.includes("pdf")) return "📄";
-  if (mimeType.includes("image")) return "🖼️";
-  if (mimeType.includes("word") || mimeType.includes("document")) return "📝";
-  if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) return "📊";
-  if (mimeType.includes("powerpoint") || mimeType.includes("presentation")) return "📽️";
-  return "📎";
-};
 
 const formatFileSize = (bytes: number) => {
   if (!bytes || bytes === 0) return "";
@@ -387,7 +379,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full ${gmailConnected ? "bg-green-500 dark:bg-green-400" : "bg-gray-300 dark:bg-gray-500"}`} />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                <span className="text-sm font-medium text-foreground">
                   {gmailConnected
                     ? isRtl ? `متصل: ${gmailEmail}` : `Connected: ${gmailEmail}`
                     : isRtl ? "غير متصل" : "Not connected"}
@@ -398,7 +390,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   </span>
                 )}
                 {gmailConnected && gmailLastPolledAt && (
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     {isRtl ? "آخر فحص" : "Last checked"}: {formatRelativeTime(gmailLastPolledAt, lang)}
                   </span>
                 )}
@@ -406,7 +398,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
               <div className="flex items-center gap-2">
                 {!gmailConnected ? (
                   <Button size="sm" onClick={handleGmailConnect}>
-                    <svg className="w-4 h-4 mr-1.5" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-4 h-4 me-1.5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M22.288 5.292A1.2 1.2 0 0021.6 4.8H2.4a1.2 1.2 0 00-.688.492l10.288 7.712 10.288-7.712zM21.6 7.2l-9.6 7.2L2.4 7.2v9.6a1.2 1.2 0 001.2 1.2h16.8a1.2 1.2 0 001.2-1.2V7.2z" />
                     </svg>
                     {isRtl ? "الاتصال بـ Gmail" : "Connect Gmail"}
@@ -414,13 +406,13 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                 ) : (
                   <>
                     <Button size="sm" variant="outline" onClick={handleGmailPoll} disabled={gmailPolling}>
-                      <svg className={`w-4 h-4 mr-1.5 ${gmailPolling ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`w-4 h-4 me-1.5 ${gmailPolling ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
                       {gmailPolling ? (isRtl ? "جارٍ الفحص..." : "Checking...") : isRtl ? "فحص البريد الآن" : "Check Mail Now"}
                     </Button>
                     <Button size="sm" variant="destructive" onClick={handleGmailDisconnect}>
-                      <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
                       {isRtl ? "قطع الاتصال" : "Disconnect"}
@@ -437,13 +429,13 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
             )}
 
             {/* Poll Interval */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div className="p-4 bg-muted/40 rounded-xl border border-border">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <h4 className="text-sm font-semibold text-foreground">
                     {isRtl ? "فترة الفحص التلقائي" : "Auto-check Interval"}
                   </h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {isRtl ? "عدد الثواني بين كل فحص للبريد" : "Seconds between each email check"}
                   </p>
                 </div>
@@ -456,7 +448,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                     onChange={(e) => setGmailPollInterval(parseInt(e.target.value) || 60)}
                     className="w-20 h-8 text-sm text-center"
                   />
-                  <span className="text-xs text-gray-400 dark:text-gray-500">{isRtl ? "ثانية" : "sec"}</span>
+                  <span className="text-xs text-muted-foreground">{isRtl ? "ثانية" : "sec"}</span>
                   <Button
                     size="sm"
                     variant="outline"
@@ -476,14 +468,14 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
             </div>
 
             {/* Auto-reply Template */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div className="p-4 bg-muted/40 rounded-xl border border-border">
               <div className="flex items-center justify-between mb-2 gap-3">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <h4 className="text-sm font-semibold text-foreground">
                   {isRtl ? "قالب الرد التلقائي" : "Auto-reply Template"}
                 </h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
-                  <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <span className="text-[10px] text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden">
                     {(["en", "ar"] as const).map((l) => (
                       <button
                         key={l}
@@ -492,14 +484,14 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                         className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
                           gmailReplyTemplateLang === l
                             ? "bg-indigo-600 text-white"
-                            : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            : "bg-card text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-700"
                         }`}
                       >
                         {l === "en" ? "EN" : "ع"}
                       </button>
                     ))}
                   </div>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                  <span className="text-[10px] text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -530,7 +522,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   </button>
                 ))}
               </div>
-              <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} dir={gmailReplyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
+              <textarea ref={gmailReplyRef} value={gmailReplyTemplate} onChange={(e) => setGmailReplyTemplate(e.target.value)} rows={4} dir={gmailReplyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-border rounded-lg p-2 resize-none bg-card text-foreground" placeholder={isRtl ? "اكتب قالب الرد هنا..." : "Write your reply template here..."} />
               <div className="flex justify-end mt-2">
                 <Button size="sm" variant="outline" onClick={handleSaveReplyTemplate}>
                   {isRtl ? "حفظ القالب" : "Save Template"}
@@ -539,14 +531,14 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
             </div>
 
             {/* Ready Notification Template — sent when a gmail-sourced job flips to READY */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div className="p-4 bg-muted/40 rounded-xl border border-border">
               <div className="flex items-center justify-between mb-1 gap-3">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <h4 className="text-sm font-semibold text-foreground">
                   {isRtl ? "قالب إشعار الجاهزية" : "Ready Notification Template"}
                 </h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">{isRtl ? "لغة القيم" : "Values language"}</span>
-                  <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <span className="text-[10px] text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden">
                     {(["en", "ar"] as const).map((l) => (
                       <button
                         key={l}
@@ -555,17 +547,17 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                         className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
                           gmailReadyTemplateLang === l
                             ? "bg-emerald-600 text-white"
-                            : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            : "bg-card text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-700"
                         }`}
                       >
                         {l === "en" ? "EN" : "ع"}
                       </button>
                     ))}
                   </div>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                  <span className="text-[10px] text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
                 </div>
               </div>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-2">
+              <p className="text-[11px] text-muted-foreground mb-2">
                 {isRtl
                   ? "يُرسَل تلقائيًا عند تحديد الطلب كـ«جاهز». يُرسَل مرة واحدة لكل طلب."
                   : "Sent automatically when a job's status becomes READY. Fires once per job."}
@@ -594,7 +586,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   </button>
                 ))}
               </div>
-              <textarea ref={gmailReadyRef} value={gmailReadyTemplate} onChange={(e) => setGmailReadyTemplate(e.target.value)} rows={4} dir={gmailReadyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg p-2 resize-none bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder={isRtl ? "اترك فارغًا لاستخدام القالب الافتراضي" : "Leave empty to use the built-in default"} />
+              <textarea ref={gmailReadyRef} value={gmailReadyTemplate} onChange={(e) => setGmailReadyTemplate(e.target.value)} rows={4} dir={gmailReadyTemplateLang === "ar" ? "rtl" : "ltr"} className="w-full text-sm border border-border rounded-lg p-2 resize-none bg-card text-foreground" placeholder={isRtl ? "اترك فارغًا لاستخدام القالب الافتراضي" : "Leave empty to use the built-in default"} />
               <div className="flex justify-end mt-2">
                 <Button size="sm" variant="outline" onClick={handleSaveReadyTemplate}>
                   {isRtl ? "حفظ القالب" : "Save Template"}
@@ -604,31 +596,31 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
 
             {gmailConnected && gmailPending.length > 0 && (
               <>
-                <hr className="border-gray-200 dark:border-gray-700" />
-                <div className="border border-gray-100 dark:border-gray-800 rounded-xl max-h-[600px] overflow-y-auto">
+                <hr className="border-border" />
+                <div className="border border-border rounded-xl max-h-[600px] overflow-y-auto">
                   {/* Filter bar */}
-                  <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                  <div className="sticky top-0 z-10 bg-card border-b border-border p-3 space-y-2">
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                      <h4 className="font-semibold text-foreground flex items-center gap-2">
                         {isRtl ? "رسائل بريد إلكتروني جديدة" : "New Emails"}
-                        <button type="button" onClick={handleGmailPoll} disabled={gmailPolling} className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50" title={isRtl ? "تحديث" : "Refresh"}>
+                        <button type="button" onClick={handleGmailPoll} disabled={gmailPolling} className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" title={isRtl ? "تحديث" : "Refresh"}>
                           <svg className={`w-4 h-4 ${gmailPolling ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
                       </h4>
-                      <span className="text-xs text-gray-400 dark:text-gray-500">{gmailFilteredPending.length} {isRtl ? "نتيجة" : "result(s)"}</span>
+                      <span className="text-xs text-muted-foreground">{gmailFilteredPending.length} {isRtl ? "نتيجة" : "result(s)"}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Input value={gmailFilterText} onChange={(e) => setGmailFilterText(e.target.value)} placeholder={isRtl ? "بحث بالمرسل أو الموضوع..." : "Search sender or subject..."} className="h-8 text-sm min-w-[180px] flex-1" />
                       <div className="flex items-center gap-1">
                         {(["all", "today", "week"] as const).map((d) => (
-                          <button key={d} type="button" onClick={() => setGmailFilterDate(d)} className={`px-2 py-1 text-xs rounded-lg ${gmailFilterDate === d ? "bg-gray-900 dark:bg-gray-950 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
+                          <button key={d} type="button" onClick={() => setGmailFilterDate(d)} className={`px-2 py-1 text-xs rounded-lg ${gmailFilterDate === d ? "bg-gray-900 dark:bg-gray-950 text-white" : "bg-muted text-muted-foreground hover:bg-muted"}`}>
                             {d === "all" ? (isRtl ? "الكل" : "All") : d === "today" ? (isRtl ? "اليوم" : "Today") : isRtl ? "7 أيام" : "7 days"}
                           </button>
                         ))}
                       </div>
                       <div className="flex items-center gap-1">
                         {(["all", "pdf", "images", "other"] as const).map((tp) => (
-                          <button key={tp} type="button" onClick={() => setGmailFilterType(tp)} className={`px-2 py-1 text-xs rounded-lg ${gmailFilterType === tp ? "bg-gray-900 dark:bg-gray-950 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"}`}>
+                          <button key={tp} type="button" onClick={() => setGmailFilterType(tp)} className={`px-2 py-1 text-xs rounded-lg ${gmailFilterType === tp ? "bg-gray-900 dark:bg-gray-950 text-white" : "bg-muted text-muted-foreground hover:bg-muted"}`}>
                             {tp === "all" ? (isRtl ? "الكل" : "All") : tp === "pdf" ? "PDF" : tp === "images" ? (isRtl ? "صور" : "Images") : isRtl ? "أخرى" : "Other"}
                           </button>
                         ))}
@@ -646,20 +638,20 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
-                          <th className="p-3 text-left">
-                            <input type="checkbox" checked={gmailFilteredPending.length > 0 && gmailFilteredPending.every((e) => gmailSelectedIds.has(e.id))} onChange={toggleGmailFilteredSelectAll} className="rounded border-gray-300 dark:border-gray-600" />
+                        <tr className="bg-muted/40 border-b border-border">
+                          <th className="p-3 text-start">
+                            <input type="checkbox" checked={gmailFilteredPending.length > 0 && gmailFilteredPending.every((e) => gmailSelectedIds.has(e.id))} onChange={toggleGmailFilteredSelectAll} className="rounded border-border" />
                           </th>
-                          <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-300 dark:text-gray-500">{isRtl ? "من" : "From"}</th>
-                          <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-300 dark:text-gray-500">{isRtl ? "الموضوع" : "Subject"}</th>
-                          <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-300 dark:text-gray-500">{isRtl ? "المرفقات" : "Attachments"}</th>
-                          <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-300 dark:text-gray-500">{isRtl ? "التاريخ" : "Date"}</th>
+                          <th className="p-3 text-start font-semibold text-muted-foreground dark:text-gray-500">{isRtl ? "من" : "From"}</th>
+                          <th className="p-3 text-start font-semibold text-muted-foreground dark:text-gray-500">{isRtl ? "الموضوع" : "Subject"}</th>
+                          <th className="p-3 text-start font-semibold text-muted-foreground dark:text-gray-500">{isRtl ? "المرفقات" : "Attachments"}</th>
+                          <th className="p-3 text-start font-semibold text-muted-foreground dark:text-gray-500">{isRtl ? "التاريخ" : "Date"}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {gmailFilteredPending.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-6 text-center text-gray-400 dark:text-gray-500 text-sm">
+                            <td colSpan={5} className="p-6 text-center text-muted-foreground text-sm">
                               {isRtl ? "لا توجد رسائل مطابقة" : "No matching emails found"}
                             </td>
                           </tr>
@@ -667,29 +659,29 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                           gmailFilteredPending.map((email) => (
                             <tr key={email.id} onClick={() => toggleGmailSelection(email.id)} className={`cursor-pointer border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 ${gmailSelectedIds.has(email.id) ? "bg-blue-50 dark:bg-blue-900/20" : ""}`}>
                               <td className="p-3">
-                                <input type="checkbox" checked={gmailSelectedIds.has(email.id)} onChange={(e) => { e.stopPropagation(); toggleGmailSelection(email.id); }} className="rounded border-gray-300 dark:border-gray-600" />
+                                <input type="checkbox" checked={gmailSelectedIds.has(email.id)} onChange={(e) => { e.stopPropagation(); toggleGmailSelection(email.id); }} className="rounded border-border" />
                               </td>
                               <td className="p-3">
-                                <div className="font-medium text-gray-900 dark:text-gray-100">{email.email_from}</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">{email.email_address}</div>
+                                <div className="font-medium text-foreground">{email.email_from}</div>
+                                <div className="text-xs text-muted-foreground">{email.email_address}</div>
                               </td>
-                              <td className="p-3 text-gray-700 dark:text-gray-200 max-w-xs truncate">{email.subject}</td>
+                              <td className="p-3 text-foreground max-w-xs truncate">{email.subject}</td>
                               <td className="p-3">
                                 {email.attachment_meta && email.attachment_meta.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {email.attachment_meta.map((att: any, i: number) => (
-                                      <span key={i} className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:text-gray-500 rounded text-xs flex items-center gap-1" title={`${att.filename} (${formatFileSize(att.size)})`}>
-                                        <span>{getFileTypeIcon(att.mimeType)}</span>
+                                      <span key={i} className="px-2 py-0.5 bg-muted text-muted-foreground dark:text-gray-500 rounded text-xs flex items-center gap-1" title={`${att.filename} (${formatFileSize(att.size)})`}>
+                                        <Icon name={fileTypeIcon(att.mimeType)} className="h-3.5 w-3.5" />
                                         <span className="max-w-[80px] truncate">{att.filename}</span>
-                                        {att.size > 0 && <span className="text-gray-400 dark:text-gray-500">({formatFileSize(att.size)})</span>}
+                                        {att.size > 0 && <span className="text-muted-foreground">({formatFileSize(att.size)})</span>}
                                       </span>
                                     ))}
                                   </div>
                                 ) : (
-                                  <span className="text-gray-400 dark:text-gray-500 text-xs">{isRtl ? "لا يوجد" : "None"}</span>
+                                  <span className="text-muted-foreground text-xs">{isRtl ? "لا يوجد" : "None"}</span>
                                 )}
                               </td>
-                              <td className="p-3 text-gray-500 dark:text-gray-400 text-xs">{email.fetched_at ? new Date(email.fetched_at).toLocaleString() : ""}</td>
+                              <td className="p-3 text-muted-foreground text-xs">{email.fetched_at ? new Date(email.fetched_at).toLocaleString() : ""}</td>
                             </tr>
                           ))
                         )}
@@ -711,33 +703,33 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
             </DialogHeader>
             <div className="space-y-4">
               {gmailSelectedEmails.map((email) => (
-                <div key={email.id} className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-                  <div className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{email.subject || "(no subject)"}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">{email.email_from} &lt;{email.email_address}&gt;</div>
+                <div key={email.id} className="border border-border rounded-xl p-4">
+                  <div className="font-semibold text-foreground mb-1">{email.subject || "(no subject)"}</div>
+                  <div className="text-xs text-muted-foreground mb-3">{email.email_from} &lt;{email.email_address}&gt;</div>
                   {(email.attachment_meta || []).length === 0 ? (
-                    <div className="text-sm text-gray-400 dark:text-gray-500 italic">{isRtl ? "لا توجد مرفقات" : "No attachments"}</div>
+                    <div className="text-sm text-muted-foreground italic">{isRtl ? "لا توجد مرفقات" : "No attachments"}</div>
                   ) : (
                     <div className="space-y-2">
                       {email.attachment_meta.map((att: any, i: number) => {
                         const key = `${email.id}_${i}`;
                         const ov = gmailReviewOverrides[key] || { copies: 1, colorMode: "color", paperType: "normal" };
                         return (
-                          <div key={i} className="flex flex-wrap items-center gap-3 p-2 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200 min-w-[120px] truncate">{att.filename}</span>
+                          <div key={i} className="flex flex-wrap items-center gap-3 p-2 bg-muted/40 rounded-lg">
+                            <span className="text-sm font-medium text-foreground min-w-[120px] truncate">{att.filename}</span>
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-gray-500 dark:text-gray-400">{isRtl ? "نسخ" : "Copies"}</label>
+                              <label className="text-xs text-muted-foreground">{isRtl ? "نسخ" : "Copies"}</label>
                               <Input type="number" min={1} max={99} value={ov.copies} onChange={(e) => updateGmailOverride(key, "copies", parseInt(e.target.value) || 1)} className="w-16 h-8 text-sm" />
                             </div>
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-gray-500 dark:text-gray-400">{isRtl ? "الألوان" : "Color"}</label>
-                              <select value={ov.colorMode} onChange={(e) => updateGmailOverride(key, "colorMode", e.target.value)} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 h-8 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                              <label className="text-xs text-muted-foreground">{isRtl ? "الألوان" : "Color"}</label>
+                              <select value={ov.colorMode} onChange={(e) => updateGmailOverride(key, "colorMode", e.target.value)} className="text-sm border border-border rounded-lg px-2 py-1 h-8 bg-card text-foreground">
                                 <option value="color">{isRtl ? "ملون" : "Color"}</option>
                                 <option value="blackWhite">{isRtl ? "أبيض وأسود" : "B&W"}</option>
                               </select>
                             </div>
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-gray-500 dark:text-gray-400">{isRtl ? "الورق" : "Paper"}</label>
-                              <select value={ov.paperType} onChange={(e) => updateGmailOverride(key, "paperType", e.target.value)} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 h-8 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                              <label className="text-xs text-muted-foreground">{isRtl ? "الورق" : "Paper"}</label>
+                              <select value={ov.paperType} onChange={(e) => updateGmailOverride(key, "paperType", e.target.value)} className="text-sm border border-border rounded-lg px-2 py-1 h-8 bg-card text-foreground">
                                 {paperTypes.map((pt) => (
                                   <option key={pt.id} value={pt.id}>{isRtl ? pt.nameAr || pt.name : pt.name}</option>
                                 ))}

@@ -445,7 +445,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     !eq(printerDefaults, currentSettings.printerDefaults || {});
 
   const renderSaveBar = (dirty: boolean, section: string, onSave: () => void) => (
-    <div className="flex items-center justify-end gap-3 pt-3 mt-1 border-t border-gray-100 dark:border-gray-800">
+    <div className="flex items-center justify-end gap-3 pt-3 mt-1 border-t border-border">
       {dirty && (
         <span className="text-xs text-amber-600 dark:text-amber-400">
           {isRtl ? "تغييرات غير محفوظة" : "Unsaved changes"}
@@ -479,10 +479,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
           <div className="max-w-5xl mx-auto">
             {/* Page Header */}
             <div className="mb-8">
-              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">
+              <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
                 {isRtl ? "إعدادات المحل" : "Shop Settings"}
               </h2>
-              <p className="text-gray-600 dark:text-gray-300 mt-1 text-sm sm:text-base">
+              <p className="text-muted-foreground mt-1 text-sm sm:text-base">
                 {isRtl
                   ? "إدارة إعدادات المحل والتسعير"
                   : "Manage your shop configuration and pricing"}
@@ -513,7 +513,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md">
+                    <p className="text-xs text-muted-foreground max-w-md">
                       {isRtl
                         ? "يمكنك اختيار رابط الشبكة المحلية أو رابط الموقع الإلكتروني قبل الطباعة."
                         : "Pick the local-network link or the online website link before printing."}
@@ -545,33 +545,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopName")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopName")}</label>
                     <Input value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder={isRtl ? "اسم المحل" : "Print Shop Name"} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopLogo")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopLogo")}</label>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                       {logoUrl ? (
-                        <div className="w-20 h-20 rounded-xl border-2 border-white dark:border-gray-700 shadow-md dark:shadow-gray-800/50 overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0">
+                        <div className="w-20 h-20 rounded-xl border-2 border-white dark:border-gray-700 shadow-md dark:shadow-gray-800/50 overflow-hidden bg-muted flex-shrink-0">
                           <img src={logoUrl} alt="Logo Preview" className="w-full h-full object-cover" />
                         </div>
                       ) : (
-                        <div className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="w-20 h-20 rounded-xl border-2 border-dashed border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                         </div>
                       )}
                       <div className="flex-1 w-full">
-                        <Input type="file" accept="image/*" onChange={handleLogoUpload} className="file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-600 dark:file:text-indigo-400 file:hover:bg-indigo-100 dark:file:hover:bg-indigo-900/50 file:cursor-pointer cursor-pointer" />
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{isRtl ? "PNG, JPG أو GIF (الحد الأقصى 2MB)" : "PNG, JPG or GIF (max 2MB)"}</p>
+                        <Input type="file" accept="image/*" onChange={handleLogoUpload} className="file:me-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-600 dark:file:text-indigo-400 file:hover:bg-indigo-100 dark:file:hover:bg-indigo-900/50 file:cursor-pointer cursor-pointer" />
+                        <p className="text-xs text-muted-foreground mt-2">{isRtl ? "PNG, JPG أو GIF (الحد الأقصى 2MB)" : "PNG, JPG or GIF (max 2MB)"}</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Phone Numbers */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopPhone")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopPhone")}</label>
                     <div className="space-y-2">
                       {phoneNumbers.map((num, idx) => (
                         <div key={idx} className="flex items-center gap-2">
@@ -582,7 +582,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         </div>
                       ))}
                       <Button variant="outline" size="sm" onClick={() => setPhoneNumbers([...phoneNumbers, ""])}>
-                        <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                        <svg className="w-3.5 h-3.5 me-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
                         {t("addPhone")}
                       </Button>
                     </div>
@@ -590,33 +590,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
                   {/* Email */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopEmail")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopEmail")}</label>
                     <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isRtl ? "البريد الإلكتروني" : "shop@example.com"} />
                   </div>
 
                   {/* Address */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopAddress")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopAddress")}</label>
                     <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={isRtl ? "عنوان المحل" : "123 Main St, City"} />
                   </div>
 
                   {/* Working Hours */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopWorkingHours")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopWorkingHours")}</label>
                     <Input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} placeholder={isRtl ? "ساعات العمل" : "Sat-Thu 9:00-18:00"} />
                   </div>
 
                   {/* Return Policy */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{t("shopReturnPolicy")}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopReturnPolicy")}</label>
                     <textarea value={returnPolicy} onChange={(e) => setReturnPolicy(e.target.value)} rows={3} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y" placeholder={isRtl ? "سياسة الإرجاع" : "Return policy details..."} />
                   </div>
 
                   {/* Currency */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{isRtl ? "العملة" : "Currency"}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "العملة" : "Currency"}</label>
                     <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder={isRtl ? "مثال: DZD" : "e.g. DZD"} />
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{isRtl ? "تظهر بجانب الأسعار في جميع أنحاء التطبيق." : "Shown next to prices across the app."}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{isRtl ? "تظهر بجانب الأسعار في جميع أنحاء التطبيق." : "Shown next to prices across the app."}</p>
                   </div>
 
                   {renderSaveBar(shopDirty, "shop", saveShopInfo)}
@@ -640,7 +640,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    <label className="text-sm font-semibold text-foreground">
                       {isRtl ? "أنواع الورق وأسعارها" : "Paper Types & Pricing"}
                     </label>
                     <Button size="sm" onClick={() => { setShowAddPaperTypeForm(true); setEditingPaperTypeId(null); }}>
@@ -652,16 +652,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   <div className="overflow-x-auto rounded-xl">
                     <table className="w-full text-sm min-w-[400px]">
                       <thead>
-                        <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800">
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 ${isRtl ? "text-right" : "text-left"}`}>{isRtl ? "نوع الورق" : "Paper Type"}</th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 ${isRtl ? "text-right" : "text-left"}`}>{isRtl ? "ملون" : "Color"}</th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400 ${isRtl ? "text-right" : "text-left"}`}>{isRtl ? "أبيض/أسود" : "B&W"}</th>
+                        <tr className="bg-muted/40 border-b border-border">
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "نوع الورق" : "Paper Type"}</th>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "ملون" : "Color"}</th>
+                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "أبيض/أسود" : "B&W"}</th>
                           <th className="px-3 py-2.5 w-16"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {paperTypes.map((pt, idx) => (
-                          <tr key={pt.id} className={idx < paperTypes.length - 1 ? "border-b border-gray-100 dark:border-gray-800" : ""}>
+                          <tr key={pt.id} className={idx < paperTypes.length - 1 ? "border-b border-border" : ""}>
                             {editingPaperTypeId === pt.id && editingPaperTypeForm ? (
                               <>
                                 <td className="px-3 py-2">
@@ -684,16 +684,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                             ) : (
                               <>
                                 <td className="px-3 py-3">
-                                  <div className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{isRtl ? pt.nameAr : pt.name}</div>
-                                  <div className="text-xs text-gray-400 dark:text-gray-500">{isRtl ? pt.name : pt.nameAr}</div>
+                                  <div className="font-semibold text-foreground text-sm">{isRtl ? pt.nameAr : pt.name}</div>
+                                  <div className="text-xs text-muted-foreground">{isRtl ? pt.name : pt.nameAr}</div>
                                 </td>
                                 <td className="px-3 py-3">
                                   <span className="font-semibold text-indigo-700 dark:text-indigo-400">{pt.colorPerPage}</span>
-                                  <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">DZD</span>
+                                  <span className="text-xs text-muted-foreground ms-1">DZD</span>
                                 </td>
                                 <td className="px-3 py-3">
-                                  <span className="font-semibold text-gray-700 dark:text-gray-200">{pt.blackWhitePerPage}</span>
-                                  <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">DZD</span>
+                                  <span className="font-semibold text-foreground">{pt.blackWhitePerPage}</span>
+                                  <span className="text-xs text-muted-foreground ms-1">DZD</span>
                                 </td>
                                 <td className="px-3 py-3">
                                   <div className="flex gap-1">
@@ -723,7 +723,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       </DialogHeader>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5">{isRtl ? "الاسم (EN)" : "Name (EN)"}</label>
+                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (EN)" : "Name (EN)"}</label>
                           <Input
                             value={newPaperTypeForm.name}
                             onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, name: e.target.value })}
@@ -731,7 +731,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5">{isRtl ? "الاسم (AR)" : "Name (AR)"}</label>
+                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (AR)" : "Name (AR)"}</label>
                           <Input
                             value={newPaperTypeForm.nameAr}
                             onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, nameAr: e.target.value })}
@@ -739,7 +739,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5">{isRtl ? "سعر ملون (DZD)" : "Color (DZD)"}</label>
+                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر ملون (DZD)" : "Color (DZD)"}</label>
                           <Input
                             type="number"
                             min="0"
@@ -749,7 +749,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1.5">{isRtl ? "سعر أبيض/أسود (DZD)" : "B&W (DZD)"}</label>
+                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر أبيض/أسود (DZD)" : "B&W (DZD)"}</label>
                           <Input
                             type="number"
                             min="0"
@@ -790,27 +790,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <form onSubmit={handleChangePassword} className="p-5 sm:p-6 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{isRtl ? "كلمة المرور الحالية" : "Current Password"}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "كلمة المرور الحالية" : "Current Password"}</label>
                     <div className="relative">
-                      <Input type={showPasswords.current ? "text" : "password"} value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} placeholder="••••••••" required className="pr-10" />
+                      <Input type={showPasswords.current ? "text" : "password"} value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} placeholder="••••••••" required className="pe-10" />
                       <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, current: !p.current }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
                         {showPasswords.current ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
                       </Button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{isRtl ? "كلمة المرور الجديدة" : "New Password"}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "كلمة المرور الجديدة" : "New Password"}</label>
                     <div className="relative">
-                      <Input type={showPasswords.newPass ? "text" : "password"} value={passwordForm.newPass} onChange={(e) => setPasswordForm({ ...passwordForm, newPass: e.target.value })} placeholder="••••••••" required className="pr-10" />
+                      <Input type={showPasswords.newPass ? "text" : "password"} value={passwordForm.newPass} onChange={(e) => setPasswordForm({ ...passwordForm, newPass: e.target.value })} placeholder="••••••••" required className="pe-10" />
                       <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, newPass: !p.newPass }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
                         {showPasswords.newPass ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
                       </Button>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">{isRtl ? "تأكيد كلمة المرور" : "Confirm Password"}</label>
+                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "تأكيد كلمة المرور" : "Confirm Password"}</label>
                     <div className="relative">
-                      <Input type={showPasswords.confirm ? "text" : "password"} value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} placeholder="••••••••" required className="pr-10" />
+                      <Input type={showPasswords.confirm ? "text" : "password"} value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} placeholder="••••••••" required className="pe-10" />
                       <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, confirm: !p.confirm }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
                         {showPasswords.confirm ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
                       </Button>
@@ -847,7 +847,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
               <CardContent>
                 {discountRules.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <div className="text-center py-8 text-muted-foreground">
                     <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -863,8 +863,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         key={rule.id}
                         className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
                           rule.is_active
-                            ? "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-                            : "bg-gray-50 dark:bg-gray-900 border-gray-100 dark:border-gray-800 opacity-60"
+                            ? "bg-card border-border"
+                            : "bg-muted/40 border-border opacity-60"
                         }`}
                       >
                         <div className="flex items-center gap-4">
@@ -876,7 +876,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                               rule.is_active ? "bg-purple-600 dark:bg-purple-500" : "bg-gray-300 dark:bg-gray-600"
                             }`}
                           >
-                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white dark:bg-gray-800 shadow-md dark:shadow-gray-800/50 transition-all duration-300 ${
+                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-card shadow-md dark:shadow-gray-800/50 transition-all duration-300 ${
                               isRtl
                                 ? (rule.is_active ? "right-[1.625rem]" : "right-0.5")
                                 : (rule.is_active ? "left-[1.625rem]" : "left-0.5")
@@ -885,14 +885,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold text-gray-900 dark:text-gray-100">{rule.name}</span>
+                              <span className="font-semibold text-foreground">{rule.name}</span>
                               {rule.priority > 0 && (
                                 <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded-full font-medium">
                                   P{rule.priority}
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                            <p className="text-sm text-muted-foreground mt-0.5">
                               {rule.discount_type === "percent"
                                 ? `${rule.discount_value}% ${isRtl ? "خصم" : "off"}`
                                 : `${rule.discount_value} DZD ${isRtl ? "خصم" : "off"}`}
@@ -941,48 +941,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                  <label className="block text-sm font-semibold text-foreground mb-2">
                     {isRtl ? "رابط المتجر السحابي" : "Store link"}
                   </label>
                   <Input value={cloudSyncUrl} onChange={(e) => { setCloudSyncUrl(e.target.value); setCloudTestResult(null); }} placeholder="https://print.example.com/s/your-store" />
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {isRtl
                       ? "الصق الرابط كما زوّدك به المشرف؛ يُستخرج معرّف المتجر منه تلقائيًا."
                       : "Paste the link exactly as your platform admin gave it — the store slug is extracted automatically."}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                  <label className="block text-sm font-semibold text-foreground mb-2">
                     {isRtl ? "معرّف المتجر (slug)" : "Store slug"}
                   </label>
                   <Input value={cloudShopSlug} onChange={(e) => setCloudShopSlug(e.target.value)} placeholder="your-store" />
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {isRtl
                       ? "يُملأ تلقائيًا من الرابط أعلاه أو بعد أول مزامنة. يُستخدم لبناء رابط الرفع: /s/<slug>/upload"
                       : "Filled automatically from the link above, or after the first sync. Used to build the upload link: /s/<slug>/upload"}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                  <label className="block text-sm font-semibold text-foreground mb-2">
                     {isRtl ? "رمز API" : "API Token"}
                   </label>
                   <Input type="password" value={shopApiToken} onChange={(e) => { setShopApiToken(e.target.value); setCloudTestResult(null); }} placeholder={isRtl ? "64 حرفًا سداسيًا" : "64-char hex token"} />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+                  <label className="block text-sm font-semibold text-foreground mb-2">
                     {isRtl ? "فترة التحديث (مللي ثانية)" : "Poll Interval (ms)"}
                   </label>
                   <Input type="number" min="15000" step="1000" value={cloudSyncPollInterval} onChange={(e) => setCloudSyncPollInterval(e.target.value)} />
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {isRtl ? "الحد الأدنى 15000 (15 ثانية)" : "Minimum 15000 (15 seconds)"}
                   </p>
                 </div>
-                <div className="flex items-start justify-between gap-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-start justify-between gap-4 pt-2 border-t border-border">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    <label className="block text-sm font-semibold text-foreground">
                       {isRtl ? "قبول طلبات السحابة تلقائيًا" : "Auto-accept cloud orders"}
                     </label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-md">
+                    <p className="text-xs text-muted-foreground mt-1 max-w-md">
                       {isRtl
                         ? "عند التعطيل، ستظهر الطلبات الواردة من الرابط الإلكتروني في قسم \"مراجعة الطلبات\" لقبولها أو رفضها يدويًا قبل إضافتها إلى قائمة الطباعة."
                         : "When off, orders from the online upload link land in \"Job Review\" for you to accept or reject before they're added to the print queue."}
@@ -994,7 +994,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     className="shrink-0"
                   />
                 </div>
-                <div className="pt-3 border-t border-gray-100 dark:border-gray-800 space-y-2">
+                <div className="pt-3 border-t border-border space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
@@ -1039,7 +1039,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       {cloudTestResult.text}
                     </p>
                   )}
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     {isRtl
                       ? "الاختبار يقرأ إعدادات المتجر من السحابة فقط؛ لا يغيّر أي بيانات."
                       : "The test only reads this shop's settings from the cloud — it changes nothing."}
@@ -1067,10 +1067,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <CardContent>
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                    <label className="block text-sm font-semibold text-foreground">
                       {isRtl ? "خصم المخزون تلقائيًا" : "Auto-deduct stock"}
                     </label>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-xl">
+                    <p className="text-xs text-muted-foreground mt-1 max-w-xl">
                       {isRtl
                         ? "عند التفعيل، وبمجرد تحديد أي طلب كـ\"تمت الطباعة\"، يتم خصم (عدد الصفحات × عدد النسخ) تلقائيًا من عنصر المخزون المرتبط بنوع الورق المستخدم. إذا لم يكن هناك عنصر مرتبط بذلك النوع، فلن يحدث أي شيء. الحبر والمستلزمات الأخرى تُعدَّل يدويًا دائمًا."
                         : "When on, marking any job as printed subtracts pages × copies from the inventory item linked to that job's paper type. If no item is linked to that paper type, nothing happens. Ink/toner and other supplies are always adjusted manually."}
@@ -1097,7 +1097,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             <Card className="lg:col-span-2 border-0">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                     </svg>
@@ -1118,7 +1118,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               </CardHeader>
               <CardContent>
                 {!isElectron() ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-muted-foreground">
                     {isRtl
                       ? "الطباعة الأصلية متاحة فقط داخل تطبيق سطح المكتب."
                       : "Native printing is only available inside the desktop app."}
@@ -1126,7 +1126,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 ) : printersError ? (
                   <p className="text-sm text-red-600 dark:text-red-400">{printersError}</p>
                 ) : printers.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-muted-foreground">
                     {printersLoading
                       ? (isRtl ? "جارٍ اكتشاف الطابعات..." : "Detecting printers…")
                       : (isRtl ? "لم يتم العثور على طابعات مثبتة." : "No installed printers were found.")}
@@ -1152,17 +1152,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                             "rounded-xl border p-4",
                             isDefault
                               ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20"
-                              : "border-gray-200 dark:border-gray-700",
+                              : "border-border",
                           )}
                         >
                           <div className="flex items-start justify-between gap-3 flex-wrap">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-gray-900 dark:text-gray-100">
+                                <span className="font-medium text-foreground">
                                   {p.displayName || p.name}
                                 </span>
                                 {p.isDefault && (
-                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                                     {isRtl ? "افتراضي النظام" : "System default"}
                                   </span>
                                 )}
@@ -1173,7 +1173,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                                 )}
                               </div>
                               {p.description && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{p.description}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>
                               )}
                             </div>
                             <Button
@@ -1213,15 +1213,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                               />
                             </div>
                             <div className="flex flex-col justify-between gap-2">
-                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                                 <Label className="text-xs cursor-pointer">{isRtl ? "ألوان" : "Color"}</Label>
                                 <Switch checked={d.color} onCheckedChange={(c) => patchDefaults({ color: c })} />
                               </div>
-                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                                 <Label className="text-xs cursor-pointer">{isRtl ? "ترتيب" : "Collate"}</Label>
                                 <Switch checked={d.collate} onCheckedChange={(c) => patchDefaults({ collate: c })} />
                               </div>
-                              <div className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                                 <Label className="text-xs cursor-pointer">{isRtl ? "أفقي" : "Landscape"}</Label>
                                 <Switch checked={d.landscape} onCheckedChange={(c) => patchDefaults({ landscape: c })} />
                               </div>
@@ -1230,7 +1230,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         </div>
                       );
                     })}
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs text-muted-foreground">
                       {isRtl
                         ? "تُستخدم هذه الإعدادات كنقطة بداية للطباعة السريعة ولمربع حوار خيارات الطباعة."
                         : "These defaults are the starting point for Quick Print and pre-fill the Options print dialog."}
@@ -1245,7 +1245,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             <Card className="lg:col-span-2 border-0">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:text-gray-500 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground dark:text-gray-500 flex items-center justify-center flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
                     </svg>
@@ -1284,7 +1284,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 <div className="space-y-4">
                   <Input type="file" accept=".sqlite,.db" onChange={(e) => setRestoreFile(e.target.files?.[0] || null)} />
                   {restoreFile && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{restoreFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{restoreFile.name}</p>
                   )}
                 </div>
                 <DialogFooter>
@@ -1301,32 +1301,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
             {/* Quick Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-8">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
+                <div className="text-xs text-muted-foreground mb-1">
                   {isRtl ? "الملفات المعلقة" : "Pending Files"}
                 </div>
                 <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">
                   {jobStats.pending}
                 </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
+                <div className="text-xs text-muted-foreground mb-1">
                   {isRtl ? "جاهز للاستلام" : "Ready Files"}
                 </div>
                 <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {jobStats.ready}
                 </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
+                <div className="text-xs text-muted-foreground mb-1">
                   {isRtl ? "الملفات المطبوعة" : "Printed Files"}
                 </div>
                 <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
                   {jobStats.printed}
                 </div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
+                <div className="text-xs text-muted-foreground mb-1">
                   {isRtl ? "إجمالي العملاء" : "Total Customers"}
                 </div>
                 <div className="text-xl sm:text-2xl font-bold text-indigo-600 dark:text-indigo-400">
@@ -1371,7 +1371,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     <div className="space-y-5">
       {/* Rule Name */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {isRtl ? "اسم القاعدة" : "Rule Name"} *
         </label>
         <Input
@@ -1383,7 +1383,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Discount Type */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {isRtl ? "نوع الخصم" : "Discount Type"}
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -1406,7 +1406,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Discount Value */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {ruleFormData.discount_type === "percent"
             ? (isRtl ? "نسبة الخصم" : "Discount Percentage")
             : (isRtl ? "مبلغ الخصم" : "Discount Amount")}
@@ -1419,9 +1419,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             value={ruleFormData.discount_value || ""}
             onChange={(e) => setRuleFormData({ ...ruleFormData, discount_value: parseFloat(e.target.value) })}
             placeholder={ruleFormData.discount_type === "percent" ? (isRtl ? "مثال: 10" : "e.g. 10") : (isRtl ? "مثال: 50" : "e.g. 50")}
-            className={isRtl ? "pl-16 pr-4" : "pr-16 pl-4"}
+            className={"pe-16 ps-4"}
           />
-          <span className={`absolute ${isRtl ? "left-4" : "right-4"} top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-semibold pointer-events-none`}>
+          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
             {ruleFormData.discount_type === "percent" ? "%" : "DZD"}
           </span>
         </div>
@@ -1429,7 +1429,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Condition Type */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {isRtl ? "الشرط" : "Condition"}
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -1452,7 +1452,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Threshold */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {ruleFormData.condition_type === "pages"
             ? (isRtl ? "الحد الأدنى للصفحات" : "Minimum Pages")
             : (isRtl ? "الحد الأدنى للمبلغ" : "Minimum Amount")}
@@ -1463,9 +1463,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             min="1"
             value={ruleFormData.threshold || ""}
             onChange={(e) => setRuleFormData({ ...ruleFormData, threshold: parseInt(e.target.value) })}
-            className={isRtl ? "pl-20 pr-4" : "pr-20 pl-4"}
+            className={"pe-20 ps-4"}
           />
-          <span className={`absolute ${isRtl ? "left-4" : "right-4"} top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-semibold pointer-events-none`}>
+          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
             {ruleFormData.condition_type === "pages"
               ? (isRtl ? "صفحة" : "pages")
               : "DZD"}
@@ -1475,7 +1475,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Max Cap (Optional) */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {isRtl ? "الحد الأقصى للخصم (اختياري)" : "Max Discount Cap (Optional)"}
         </label>
         <div className="relative">
@@ -1486,9 +1486,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             value={ruleFormData.max_discount_cap || ""}
             onChange={(e) => setRuleFormData({ ...ruleFormData, max_discount_cap: e.target.value ? parseFloat(e.target.value) : null })}
             placeholder={isRtl ? "بدون حد أقصى" : "No cap"}
-            className={isRtl ? "pl-16 pr-4" : "pr-16 pl-4"}
+            className={"pe-16 ps-4"}
           />
-          <span className={`absolute ${isRtl ? "left-4" : "right-4"} top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-semibold pointer-events-none`}>
+          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
             DZD
           </span>
         </div>
@@ -1496,7 +1496,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
 
       {/* Priority */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+        <label className="block text-sm font-semibold text-foreground mb-2">
           {isRtl ? "الأولوية" : "Priority"}
         </label>
         <Input
@@ -1505,7 +1505,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
           value={ruleFormData.priority || 0}
           onChange={(e) => setRuleFormData({ ...ruleFormData, priority: parseInt(e.target.value) || 0 })}
         />
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+        <p className="text-xs text-muted-foreground mt-1">
           {isRtl ? "أرقام أعلى = أولوية أعلى" : "Higher numbers = higher priority"}
         </p>
       </div>

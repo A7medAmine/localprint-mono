@@ -201,7 +201,7 @@ function applyClarity(data: ImageData, w: number, h: number, strength: number): 
   return data;
 }
 
-const RANGE_SLIDER_CLASS = "w-full h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full appearance-none cursor-pointer accent-indigo-600";
+const RANGE_SLIDER_CLASS = "w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-indigo-600";
 
 const ImageEditor: React.FC<ImageEditorProps> = ({
   imageBlob,
@@ -817,7 +817,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     step?: number,
   ) => (
     <div>
-      <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+      <div className="flex justify-between text-xs text-muted-foreground mb-1">
         <span>{label}</span>
         <span className="font-mono font-bold">{filters[key]}{unit}</span>
       </div>
@@ -835,48 +835,48 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-0">
-      <div className="bg-white dark:bg-gray-900 w-full h-full max-w-[98vw] max-h-[98vh] overflow-hidden flex flex-col shadow-2xl dark:shadow-gray-900/80 relative rounded-none md:rounded-2xl">
+      <div className="bg-card w-full h-full max-w-[98vw] max-h-[98vh] overflow-hidden flex flex-col shadow-2xl dark:shadow-gray-900/80 relative rounded-none md:rounded-2xl">
         {/* Header */}
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/80 flex items-center justify-between gap-2 shrink-0">
+        <div className="px-3 py-2 border-b border-border bg-gray-50/50 dark:bg-gray-800/80 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-sm hidden sm:block">{t("edit")}</h3>
-            <div className="flex bg-white dark:bg-gray-800 rounded-lg p-0.5 shadow-sm border border-gray-200 dark:border-gray-600">
+            <div className="flex bg-card rounded-lg p-0.5 shadow-sm border border-border">
               <button onClick={() => setMode("edit")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "edit" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("edit")}</button>
               <button onClick={() => setMode("crop")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "crop" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("normalCrop")}</button>
               <button onClick={() => setMode("perspective")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "perspective" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("perspectiveCut")}</button>
             </div>
-            <div className="flex bg-white dark:bg-gray-800 rounded-lg p-0.5 shadow-sm border border-gray-200 dark:border-gray-600">
-              <button onClick={() => applyTransform(-90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("rotateLeft")}>
+            <div className="flex bg-card rounded-lg p-0.5 shadow-sm border border-border">
+              <button onClick={() => applyTransform(-90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotateLeft")}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
               </button>
-              <button onClick={() => applyTransform(90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("rotate90")}>
+              <button onClick={() => applyTransform(90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotate90")}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
               </button>
-              <button onClick={() => applyTransform(0, true, false)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("flipH")}>
+              <button onClick={() => applyTransform(0, true, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipH")}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v18"></path><path d="M3 9a2 2 0 0 1 2-2h7v10H5a2 2 0 0 1-2-2V9z" fill="currentColor" stroke="none"></path><path d="M21 9a2 2 0 0 0-2-2h-7v10h7a2 2 0 0 0 2-2V9z"></path></svg>
               </button>
-              <button onClick={() => applyTransform(0, false, true)} disabled={isProcessing} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={t("flipV")}>
+              <button onClick={() => applyTransform(0, false, true)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipV")}>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12h18"></path><path d="M9 3a2 2 0 0 0-2 2v7h10V5a2 2 0 0 0-2-2H9z" fill="currentColor" stroke="none"></path><path d="M9 21a2 2 0 0 1-2-2v-7h10v7a2 2 0 0 1-2 2H9z"></path></svg>
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-white dark:bg-gray-800 rounded-lg p-0.5 shadow-sm border border-gray-200 dark:border-gray-600">
-            <button onClick={undo} disabled={undoStack.length === 0 || isProcessing} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={`${t("undo")} (Ctrl+Z)`}>
+          <div className="flex items-center gap-1.5 bg-card rounded-lg p-0.5 shadow-sm border border-border">
+            <button onClick={undo} disabled={undoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("undo")} (Ctrl+Z)`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"></path></svg>
             </button>
-            <button onClick={redo} disabled={redoStack.length === 0 || isProcessing} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 disabled:opacity-40" title={`${t("redo")} (Ctrl+Y)`}>
+            <button onClick={redo} disabled={redoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("redo")} (Ctrl+Y)`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"></path></svg>
             </button>
-            <div className="w-px h-3 bg-gray-200 dark:bg-gray-600 mx-0.5" />
-            <button onClick={() => setZoom((prev) => Math.max(0.5, prev - 0.25))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400" title="Zoom Out">
+            <div className="w-px h-3 bg-muted mx-0.5" />
+            <button onClick={() => setZoom((prev) => Math.max(0.5, prev - 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom Out">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4"></path></svg>
             </button>
-            <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom((prev) => Math.min(5, prev + 0.25))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400" title="Zoom In">
+            <span className="text-[11px] font-bold text-muted-foreground min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((prev) => Math.min(5, prev + 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom In">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
             </button>
-            <div className="w-px h-3 bg-gray-200 dark:bg-gray-600 mx-0.5" />
+            <div className="w-px h-3 bg-muted mx-0.5" />
             <button onClick={() => setZoom(1)} className="px-1.5 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">{isRtl ? "إعادة" : "Reset"}</button>
           </div>
         </div>
@@ -888,17 +888,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
               <canvas
                 ref={canvasRef}
                 onMouseDown={handleMouseDown}
-                className="cursor-crosshair bg-white dark:bg-gray-800"
+                className="cursor-crosshair bg-card"
                 style={{ maxWidth: "none" }}
               />
             </div>
           </div>
 
           {/* Right sidebar */}
-          <div className="w-64 border-l border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/60 flex flex-col overflow-y-auto shrink-0">
-            <div className="p-3 border-b border-gray-100 dark:border-gray-700">
+          <div className="w-64 border-l border-border bg-gray-50/30 dark:bg-gray-900/60 flex flex-col overflow-y-auto shrink-0">
+            <div className="p-3 border-b border-border">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">{isRtl ? "التأثيرات" : "Effects"}</h4>
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">{isRtl ? "التأثيرات" : "Effects"}</h4>
                 <button onClick={resetFilters} className="text-[10px] text-indigo-600 font-bold hover:underline">{isRtl ? "إعادة تعيين" : "Reset"}</button>
               </div>
               <div className="space-y-2.5">
@@ -912,13 +912,13 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
             </div>
 
             {/* Presets */}
-            <div className="p-3 border-b border-gray-100 dark:border-gray-700">
-              <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">{isRtl ? "الإعدادات المحفوظة" : "Presets"}</h4>
+            <div className="p-3 border-b border-border">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">{isRtl ? "الإعدادات المحفوظة" : "Presets"}</h4>
               {presets.length > 0 ? (
                 <div className="space-y-1 mb-3">
                   {presets.map((p, i) => (
                     <div key={i} className="flex items-center gap-1">
-                      <button onClick={() => applyPreset(p)} className="flex-1 text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 dark:hover:text-indigo-400 transition border border-transparent hover:border-indigo-200 dark:hover:border-indigo-700 truncate">{p.name}</button>
+                      <button onClick={() => applyPreset(p)} className="flex-1 text-start px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 dark:hover:text-indigo-400 transition border border-transparent hover:border-indigo-200 dark:hover:border-indigo-700 truncate">{p.name}</button>
                       <button onClick={() => deletePreset(i)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition" title={isRtl ? "حذف" : "Delete"}>
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                       </button>
@@ -926,7 +926,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
                   ))}
                 </div>
               ) : (
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-3">{isRtl ? "لا توجد إعدادات محفوظة" : "No saved presets"}</p>
+                <p className="text-[11px] text-muted-foreground mb-3">{isRtl ? "لا توجد إعدادات محفوظة" : "No saved presets"}</p>
               )}
               <div className="flex items-center gap-1">
                 <input
@@ -954,7 +954,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19h16"></path></svg>
                 {t("saveAndClose")}
               </button>
-              <button onClick={onCancel} className="w-full py-2 text-gray-600 dark:text-gray-400 font-bold hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition text-sm">{t("cancel")}</button>
+              <button onClick={onCancel} className="w-full py-2 text-muted-foreground font-bold hover:bg-muted rounded-xl transition text-sm">{t("cancel")}</button>
             </div>
           </div>
         </div>
