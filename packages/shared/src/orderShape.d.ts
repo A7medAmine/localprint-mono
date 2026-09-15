@@ -20,7 +20,9 @@ export type OrderField =
   | 'source'
   | 'totalPrice'
   | 'shopSyncStatus'
-  | 'rejectionReason';
+  | 'rejectionReason'
+  | 'uploaderIp'
+  | 'uploaderFingerprint';
 
 export const ORDER_FIELDS: OrderField[];
 
@@ -51,6 +53,8 @@ export interface OrderApiShape {
   totalPrice?: number;
   shopSyncStatus?: string;
   rejectionReason?: string;
+  uploaderIp?: string;
+  uploaderFingerprint?: string;
 }
 
 export function makeOrderMappers(columnMap: OrderColumnMap): {

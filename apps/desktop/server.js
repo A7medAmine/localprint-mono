@@ -1220,6 +1220,83 @@ app.get("/api/settings/admin", requireAdmin, (req, res) => {
   res.status(200).json(settings);
 });
 
+// Probe the cloud with the given (or saved) URL + token so the operator can
+// verify credentials BEFORE saving them. The pasted link is parsed the same
+// way a save would parse it, so a storefront link tests exactly as it stores.
+app.post("/api/cloud/test", requireAdmin, async (req, res) => {
+  try {
+    const overrides = {};
+    if (req.body?.cloudSyncUrl !== undefined) {
+      overrides.url = parseCloudLink(req.body.cloudSyncUrl).baseUrl;
+    }
+    if (req.body?.shopApiToken !== undefined) {
+      overrides.token = req.body.shopApiToken;
+    }
+    const { testConnection } = await import('./services/cloudSync.js');
+    res.status(200).json(await testConnection(overrides));
+  } catch (err) {
+    console.error("❌ Cloud connection test failed:", err);
+    res.status(500).json({ ok: false, stage: 'server', message: err.message });
+  }
+});
+
+// Run one cloud poll on demand ("Check for orders" in the Job Review panel).
+// The interval poller keeps running; this just pulls the same cycle forward so
+// the operator does not have to wait out the poll interval.
+app.post("/api/cloud/poll", requireAdmin, async (req, res) => {
+  try {
+    const { pollNow, isEnabled } = await import('./services/cloudSync.js');
+    if (!isEnabled()) {
+      return res.status(400).json({ success: false, error: "Cloud sync is not configured" });
+    }
+    const imported = await pollNow();
+    res.status(200).json({ success: true, imported });
+  } catch (err) {
+    console.error("❌ Manual cloud poll failed:", err);
+    res.status(502).json({ success: false, error: err.message || "Cloud poll failed" });
+  }
+});
+
+// ── Upload blocklist ─────────────────────────────────────────────────────
+// Thin proxies onto the cloud's shop-token blocklist API. The list lives on
+// the cloud because that is where uploads are refused; the desktop app is only
+// the operator's window onto it, so nothing is cached locally.
+
+app.get("/api/cloud/blocks", requireAdmin, async (req, res) => {
+  try {
+    const { listBlockedUploaders } = await import('./services/cloudSync.js');
+    res.status(200).json(await listBlockedUploaders());
+  } catch (err) {
+    console.error("\u274c Failed to list blocked uploaders:", err);
+    res.status(502).json({ success: false, error: err.message || "Failed to list blocked uploaders" });
+  }
+});
+
+app.post("/api/cloud/blocks", requireAdmin, async (req, res) => {
+  const { kind, value, reason, label } = req.body || {};
+  if (!kind || !String(value || '').trim()) {
+    return res.status(400).json({ success: false, error: "kind and value are required" });
+  }
+  try {
+    const { blockUploader } = await import('./services/cloudSync.js');
+    res.status(200).json(await blockUploader({ kind, value, reason, label }));
+  } catch (err) {
+    console.error("\u274c Failed to block uploader:", err);
+    res.status(502).json({ success: false, error: err.message || "Failed to block uploader" });
+  }
+});
+
+app.delete("/api/cloud/blocks/:id", requireAdmin, async (req, res) => {
+  try {
+    const { unblockUploader } = await import('./services/cloudSync.js');
+    await unblockUploader(req.params.id);
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("\u274c Failed to unblock uploader:", err);
+    res.status(502).json({ success: false, error: err.message || "Failed to unblock uploader" });
+  }
+});
+
 // Update settings (shop info only; paper types use dedicated endpoints)
 app.post("/api/settings", requireAdmin, (req, res) => {
   try {

@@ -90,6 +90,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const [cloudSyncPollInterval, setCloudSyncPollInterval] = useState(currentSettings.cloudSyncPollInterval || "30000");
   const [autoAcceptCloudJobs, setAutoAcceptCloudJobs] = useState(currentSettings.autoAcceptCloudJobs !== false);
   const [autoDeductStock, setAutoDeductStock] = useState(currentSettings.autoDeductStock === true);
+  // "draft" tests the fields as typed, "saved" tests what the server has stored.
+  const [cloudTesting, setCloudTesting] = useState<null | "draft" | "saved">(null);
+  const [cloudTestResult, setCloudTestResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printersLoading, setPrintersLoading] = useState(false);
   const [printersError, setPrintersError] = useState<string | null>(null);
@@ -371,6 +374,51 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy });
   const saveCloudSync = () =>
     persistSection("cloud", { cloudSyncUrl, cloudShopSlug, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
+  // Round-trip the cloud with either the typed-but-unsaved credentials or the
+  // stored ones, so a wrong link/token is caught before it silently breaks
+  // order polling. "saved" sends no overrides — the server uses the DB values.
+  const runCloudTest = async (mode: "draft" | "saved") => {
+    setCloudTesting(mode);
+    setCloudTestResult(null);
+    try {
+      const result = await storageService.testCloudConnection(
+        mode === "draft" ? { cloudSyncUrl, shopApiToken } : {},
+      );
+      if (result.ok) {
+        const who = result.shopName || result.shopSlug;
+        const text = isRtl
+          ? `الاتصال ناجح${who ? ` — ${who}` : ""}`
+          : `Connected${who ? ` — ${who}` : ""}`;
+        setCloudTestResult({ ok: true, text });
+        toast({ title: text, variant: "success" });
+        // The cloud owns the slug; adopt it so the QR poster links stay right.
+        if (result.shopSlug && result.shopSlug !== cloudShopSlug) setCloudShopSlug(result.shopSlug);
+      } else {
+        const reasons: Record<string, { en: string; ar: string }> = {
+          missing_url: { en: "Enter the store link first.", ar: "أدخل رابط المتجر أولًا." },
+          missing_token: { en: "Enter the API token first.", ar: "أدخل رمز API أولًا." },
+          timeout: { en: "The server did not answer in 10 seconds.", ar: "لم يستجب الخادم خلال 10 ثوانٍ." },
+          unreachable: { en: "Could not reach that address — check the store link.", ar: "تعذّر الوصول إلى العنوان — تحقق من رابط المتجر." },
+          bad_token: { en: "The API token was rejected.", ar: "تم رفض رمز API." },
+          shop_deactivated: { en: "This shop is deactivated on the cloud.", ar: "هذا المتجر معطّل على السحابة." },
+          bad_response: { en: "The address answered, but not like a LocalPrint cloud.", ar: "استجاب العنوان لكن ليس كخادم LocalPrint." },
+        };
+        const known = result.error ? reasons[result.error] : undefined;
+        const text = known
+          ? (isRtl ? known.ar : known.en)
+          : result.message || (isRtl ? `فشل الاتصال (${result.status || "?"})` : `Connection failed (${result.status || "?"})`);
+        setCloudTestResult({ ok: false, text });
+        toast({ title: isRtl ? "فشل الاتصال" : "Connection failed", description: text, variant: "destructive" });
+      }
+    } catch (err: any) {
+      const text = err?.message || (isRtl ? "فشل الاتصال" : "Connection failed");
+      setCloudTestResult({ ok: false, text });
+      toast({ title: isRtl ? "فشل الاتصال" : "Connection failed", description: text, variant: "destructive" });
+    } finally {
+      setCloudTesting(null);
+    }
+  };
+
   const saveInventory = () => persistSection("inventory", { autoDeductStock });
   const savePrinters = () => persistSection("printers", { defaultPrinterName, printerDefaults });
 
@@ -896,7 +944,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     {isRtl ? "رابط المتجر السحابي" : "Store link"}
                   </label>
-                  <Input value={cloudSyncUrl} onChange={(e) => setCloudSyncUrl(e.target.value)} placeholder="https://print.example.com/s/your-store" />
+                  <Input value={cloudSyncUrl} onChange={(e) => { setCloudSyncUrl(e.target.value); setCloudTestResult(null); }} placeholder="https://print.example.com/s/your-store" />
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                     {isRtl
                       ? "الصق الرابط كما زوّدك به المشرف؛ يُستخرج معرّف المتجر منه تلقائيًا."
@@ -918,7 +966,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
                     {isRtl ? "رمز API" : "API Token"}
                   </label>
-                  <Input type="password" value={shopApiToken} onChange={(e) => setShopApiToken(e.target.value)} placeholder={isRtl ? "64 حرفًا سداسيًا" : "64-char hex token"} />
+                  <Input type="password" value={shopApiToken} onChange={(e) => { setShopApiToken(e.target.value); setCloudTestResult(null); }} placeholder={isRtl ? "64 حرفًا سداسيًا" : "64-char hex token"} />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
@@ -945,6 +993,57 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     onCheckedChange={(checked) => setAutoAcceptCloudJobs(checked)}
                     className="shrink-0"
                   />
+                </div>
+                <div className="pt-3 border-t border-gray-100 dark:border-gray-800 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={cloudTesting !== null}
+                      onClick={() => runCloudTest("draft")}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {cloudTesting === "draft"
+                        ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
+                        : (isRtl ? "اختبار هذه القيم" : "Test these values")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={cloudTesting !== null}
+                      onClick={() => runCloudTest("saved")}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {cloudTesting === "saved"
+                        ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
+                        : (isRtl ? "اختبار الاتصال المحفوظ" : "Test saved connection")}
+                    </Button>
+                  </div>
+                  {cloudTestResult && (
+                    <p
+                      className={cn(
+                        "text-xs",
+                        cloudTestResult.ok
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-red-600 dark:text-red-400",
+                      )}
+                    >
+                      {cloudTestResult.text}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {isRtl
+                      ? "الاختبار يقرأ إعدادات المتجر من السحابة فقط؛ لا يغيّر أي بيانات."
+                      : "The test only reads this shop's settings from the cloud — it changes nothing."}
+                  </p>
                 </div>
                 {renderSaveBar(cloudDirty, "cloud", saveCloudSync)}
               </CardContent>

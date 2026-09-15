@@ -499,4 +499,129 @@ export const deleteDiscountRule = async (shopId, id) => {
   return id;
 };
 
+/**
+ * Blocked Uploaders
+ *
+ * Per-shop upload blocklist (see migration 002). Four identifier kinds — ip,
+ * fingerprint, phone, user — each stored as one row, so an operator can block
+ * a device without blocking a shared IP, or vice versa.
+ */
+export const BLOCK_KINDS = ['ip', 'fingerprint', 'phone', 'user'];
+
+/**
+ * Phones are compared digits-only so "0555 00 00 00", "+213555000000" and
+ * "0555000000" can't be used to walk around a block by re-typing spaces.
+ * A leading + is preserved as nothing (country code digits are kept), which
+ * means a local and an international spelling of the same number still differ —
+ * blocking both spellings is the operator's call.
+ */
+export const normalizeBlockValue = (kind, value) => {
+  const raw = String(value ?? '').trim();
+  if (kind === 'phone') return raw.replace(/\D/g, '');
+  if (kind === 'ip') return raw.toLowerCase();
+  return raw;
+};
+
+/** sha256 of the browser's persisted device id — what we store and compare. */
+export const hashFingerprint = (deviceId) => {
+  const raw = String(deviceId || '').trim();
+  if (!raw) return null;
+  return createHash('sha256').update(raw).digest('hex');
+};
+
+export const listBlockedUploaders = async (shopId) => {
+  const { data, error } = await supabase
+    .from('blocked_uploaders')
+    .select('*')
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    value: row.value,
+    reason: row.reason || '',
+    label: row.label || '',
+    createdAt: row.created_at,
+  }));
+};
+
+/**
+ * Block one identifier. Re-blocking an existing value updates its reason/label
+ * in place rather than erroring on the unique index, so the operator's second
+ * attempt (with a better note) does what they expect.
+ */
+export const addBlockedUploader = async (shopId, { kind, value, reason = '', label = '' }) => {
+  if (!BLOCK_KINDS.includes(kind)) throw new Error(`Unknown block kind: ${kind}`);
+  const normalized = normalizeBlockValue(kind, value);
+  if (!normalized) throw new Error('Block value is required');
+
+  const row = {
+    id: randomUUID(),
+    shop_id: shopId,
+    kind,
+    value: normalized,
+    reason: String(reason || '').slice(0, 500),
+    label: String(label || '').slice(0, 200),
+  };
+  const { data, error } = await supabase
+    .from('blocked_uploaders')
+    .upsert(row, { onConflict: 'shop_id,kind,value', ignoreDuplicates: false })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    kind: data.kind,
+    value: data.value,
+    reason: data.reason || '',
+    label: data.label || '',
+    createdAt: data.created_at,
+  };
+};
+
+export const removeBlockedUploader = async (shopId, id) => {
+  const { error } = await supabase
+    .from('blocked_uploaders')
+    .delete()
+    .eq('shop_id', shopId)
+    .eq('id', id);
+  if (error) throw error;
+  return id;
+};
+
+/**
+ * Return the first block matching any identifier of this uploader, or null.
+ *
+ * One query per call, filtered by shop and by the handful of values in play —
+ * the upload path runs this on every request, so it must not grow with the
+ * size of the blocklist.
+ */
+export const findUploaderBlock = async (shopId, { ip, fingerprint, phone, userId } = {}) => {
+  const candidates = [];
+  if (ip) candidates.push(['ip', normalizeBlockValue('ip', ip)]);
+  if (fingerprint) candidates.push(['fingerprint', fingerprint]);
+  if (phone) candidates.push(['phone', normalizeBlockValue('phone', phone)]);
+  if (userId) candidates.push(['user', String(userId)]);
+
+  const values = candidates.map(([, v]) => v).filter(Boolean);
+  if (values.length === 0) return null;
+
+  const { data, error } = await supabase
+    .from('blocked_uploaders')
+    .select('*')
+    .eq('shop_id', shopId)
+    .in('value', values);
+  if (error) throw error;
+
+  // `in('value', ...)` can't express the (kind, value) pairing, so the kind is
+  // matched here — otherwise a blocked phone number would also block an IP
+  // that happened to be spelled the same way.
+  const hit = (data || []).find((row) =>
+    candidates.some(([kind, value]) => row.kind === kind && row.value === value),
+  );
+  if (!hit) return null;
+  return { id: hit.id, kind: hit.kind, value: hit.value, reason: hit.reason || '' };
+};
+
 export { supabase as default };

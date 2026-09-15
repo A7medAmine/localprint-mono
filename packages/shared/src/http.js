@@ -7,7 +7,22 @@
 // Each returned middleware keeps its own in-memory hit map and a GC interval
 // that prunes IPs with no fresh hits. The per-request .filter() is what enforces
 // the window; the interval only reclaims memory.
-export function makeRateLimiter({ windowMs, max, message }) {
+// Which address identifies the client. Behind Cloudflare, Express's own req.ip
+// can resolve to a CF edge address when more than one proxy hop is in front
+// (CF -> nginx -> app), which buckets EVERY customer into one shared budget and
+// hands out spurious 429s. CF-Connecting-IP is the real client and Cloudflare
+// overwrites any client-supplied copy — but only when the request actually came
+// through CF, so trusting it is opt-in via TRUST_CF_CONNECTING_IP=1 (set it
+// only if the origin is not reachable except through Cloudflare).
+export function clientIp(req) {
+  if (process.env.TRUST_CF_CONNECTING_IP === "1") {
+    const cf = req.headers?.["cf-connecting-ip"];
+    if (typeof cf === "string" && cf.trim()) return cf.trim();
+  }
+  return req.ip || req.socket?.remoteAddress || "unknown";
+}
+
+export function makeRateLimiter({ windowMs, max, message, keyGenerator = clientIp }) {
   const hits = new Map();
   setInterval(() => {
     const now = Date.now();
@@ -18,11 +33,18 @@ export function makeRateLimiter({ windowMs, max, message }) {
     }
   }, Math.max(windowMs, 60_000));
   return (req, res, next) => {
-    const ip = req.ip || req.socket?.remoteAddress || "unknown";
+    const ip = keyGenerator(req);
     const now = Date.now();
     const ts = (hits.get(ip) || []).filter((t) => now - t < windowMs);
     if (ts.length >= max) {
-      return res.status(429).json({ error: message || "Too many requests. Try again later." });
+      // Tell the client exactly how long the oldest hit still blocks it, so a
+      // retry can be scheduled instead of guessed.
+      const retryAfter = Math.max(1, Math.ceil((windowMs - (now - ts[0])) / 1000));
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json({
+        error: message || "Too many requests. Try again later.",
+        retryAfter,
+      });
     }
     ts.push(now);
     hits.set(ip, ts);
@@ -40,11 +62,14 @@ export function makeRateLimiter({ windowMs, max, message }) {
 // URLs on some paths). Without these, the preview + Studio thumbnails load
 // metadata but silently fail at page.render() inside Electron, where this CSP is
 // enforced (Vite dev bypasses it, which is why the browser dev flow looks fine).
-export function buildContentSecurityPolicy({ connectSrc = ["'self'", "blob:"] } = {}) {
+export function buildContentSecurityPolicy({
+  connectSrc = ["'self'", "blob:"],
+  scriptSrc = [],
+} = {}) {
   return (
     [
       "default-src 'self'",
-      "script-src 'self' 'wasm-unsafe-eval' blob:",
+      ["script-src 'self' 'wasm-unsafe-eval' blob:", ...scriptSrc].join(" "),
       "worker-src 'self' blob:",
       "img-src 'self' data: blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -57,8 +82,11 @@ export function buildContentSecurityPolicy({ connectSrc = ["'self'", "blob:"] } 
 
 // Express middleware setting the app-wide security headers. X-XSS-Protection is
 // deprecated / harmful and omitted deliberately; the CSP is the real defence.
-export function securityHeaders({ connectSrc, hsts = false } = {}) {
-  const csp = buildContentSecurityPolicy(connectSrc ? { connectSrc } : {});
+export function securityHeaders({ connectSrc, scriptSrc, hsts = false } = {}) {
+  const csp = buildContentSecurityPolicy({
+    ...(connectSrc ? { connectSrc } : {}),
+    ...(scriptSrc ? { scriptSrc } : {}),
+  });
   return (req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");

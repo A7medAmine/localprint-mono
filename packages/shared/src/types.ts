@@ -29,6 +29,13 @@ export interface PrintJob {
   fileBlob?: Blob;
   serverFileName?: string;
   source?: string;
+  /**
+   * Anti-abuse identifiers the online app captured when the customer uploaded,
+   * carried down by cloud sync. Present only on cloud-sourced jobs; the Admin
+   * panel uses them for "block this uploader".
+   */
+  uploaderIp?: string | null;
+  uploaderFingerprint?: string | null;
   paymentStatus?: PaymentStatus;
   paymentAmount?: number;
   paymentDate?: string;
@@ -37,6 +44,18 @@ export interface PrintJob {
     copies: number;
     paperType?: string;
   };
+}
+
+/** One row of a shop's upload blocklist (online `blocked_uploaders`). */
+export interface BlockedUploader {
+  id: string;
+  kind: "ip" | "fingerprint" | "phone" | "user";
+  value: string;
+  /** Operator's note. */
+  reason: string;
+  /** Who this was, at block time — kept readable after the order is gone. */
+  label: string;
+  createdAt: string;
 }
 
 export interface PaperType {

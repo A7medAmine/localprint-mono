@@ -38,6 +38,8 @@ export const ORDER_FIELDS = [
   'totalPrice',
   'shopSyncStatus',
   'rejectionReason',
+  'uploaderIp',
+  'uploaderFingerprint',
 ];
 
 // camelCase field -> online Postgres column (lowercase, a few snake_case).
@@ -65,6 +67,10 @@ export const ONLINE_ORDER_COLUMNS = {
   totalPrice: 'total_price',
   shopSyncStatus: 'shopsyncstatus',
   rejectionReason: 'rejection_reason',
+  // Captured at upload time so a shop can block the sender of an order it
+  // already received. Projected away on every customer-facing endpoint.
+  uploaderIp: 'uploader_ip',
+  uploaderFingerprint: 'uploader_fingerprint',
 };
 
 // camelCase field -> desktop SQLite column. Columns are already camelCase, so

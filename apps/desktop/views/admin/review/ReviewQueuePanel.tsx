@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { PrintJob } from "../../../types";
 import { storageService } from "../../../services/storageService";
 import { toast } from "../../../components/ui/use-toast";
@@ -21,6 +21,8 @@ import {
 } from "../../../components/ui/select";
 import { Card, CardContent } from "../../../components/ui/card";
 import { useAdmin } from "../AdminContext";
+import BlockUploaderDialog from "./BlockUploaderDialog";
+import BlockedUploadersDialog from "./BlockedUploadersDialog";
 
 interface ReviewQueuePanelProps {
   reviewJobs: PrintJob[];
@@ -28,6 +30,36 @@ interface ReviewQueuePanelProps {
   onRefresh: () => void;
   onPreview: (job: PrintJob) => void;
 }
+
+interface SenderGroup {
+  key: string;
+  customerName: string;
+  phoneNumber: string;
+  jobs: PrintJob[];
+}
+
+/**
+ * Group the review queue by who sent it. Mirrors the job list's grouping key
+ * (name + phone) so the same customer reads the same way in both panels;
+ * uploads with neither name nor phone fall back to a per-minute bucket so one
+ * anonymous batch still lands in a single group.
+ */
+const groupBySender = (jobs: PrintJob[]): SenderGroup[] => {
+  const byKey = new Map<string, SenderGroup>();
+  for (const job of jobs) {
+    const name = job.customerName?.trim() || "";
+    const phone = job.phoneNumber?.trim() || "";
+    let key = `${name}-${phone}`;
+    if (!name && !phone) key = `anon-${new Date(job.uploadDate).toISOString().slice(0, 16)}`;
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, customerName: name, phoneNumber: phone, jobs: [] };
+      byKey.set(key, group);
+    }
+    group.jobs.push(job);
+  }
+  return [...byKey.values()];
+};
 
 const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefresh, onPreview }) => {
   const { isRtl } = useAdmin();
@@ -37,6 +69,15 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
   const [rejectNote, setRejectNote] = useState("");
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [acceptingReviewId, setAcceptingReviewId] = useState<string | null>(null);
+  // Group key currently being bulk-accepted, or "__all__" for the whole queue.
+  const [bulkAcceptingKey, setBulkAcceptingKey] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  // Sender being blocked, and the blocklist manager.
+  const [blockJob, setBlockJob] = useState<PrintJob | null>(null);
+  const [blocklistOpen, setBlocklistOpen] = useState(false);
+
+  const groups = useMemo(() => groupBySender(reviewJobs), [reviewJobs]);
+  const busy = acceptingReviewId !== null || bulkAcceptingKey !== null;
 
   const handleAcceptReview = async (job: PrintJob) => {
     setAcceptingReviewId(job.id);
@@ -48,6 +89,74 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
       toast({ title: isRtl ? "فشل قبول الطلب" : "Failed to accept job", variant: "destructive" });
     } finally {
       setAcceptingReviewId(null);
+    }
+  };
+
+  /**
+   * Accept a batch one job at a time. Sequential on purpose: each accept also
+   * acks the order on the cloud, so firing a whole group in parallel would
+   * burst that endpoint. One failure does not abort the rest — the summary
+   * toast reports how many made it through.
+   */
+  const handleAcceptMany = async (key: string, jobs: PrintJob[]) => {
+    if (jobs.length === 0) return;
+    setBulkAcceptingKey(key);
+    let accepted = 0;
+    const failed: string[] = [];
+    try {
+      for (const job of jobs) {
+        try {
+          await storageService.acceptReviewJob(job.id);
+          accepted++;
+        } catch (err) {
+          failed.push(job.fileName);
+        }
+      }
+      if (failed.length === 0) {
+        toast({
+          title: isRtl
+            ? `تم قبول ${accepted} طلب`
+            : `Accepted ${accepted} job${accepted === 1 ? "" : "s"}`,
+          variant: "success",
+        });
+      } else {
+        toast({
+          title: isRtl
+            ? `تم قبول ${accepted}، وفشل ${failed.length}`
+            : `Accepted ${accepted}, ${failed.length} failed`,
+          description: failed.slice(0, 3).join(", "),
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setBulkAcceptingKey(null);
+      onRefresh();
+    }
+  };
+
+  /** Pull the cloud queue now instead of waiting for the next poll tick. */
+  const handleCheckForOrders = async () => {
+    setChecking(true);
+    try {
+      const imported = await storageService.pollCloudOrders();
+      toast({
+        title:
+          imported > 0
+            ? (isRtl
+                ? `تم استيراد ${imported} طلب جديد`
+                : `Imported ${imported} new order${imported === 1 ? "" : "s"}`)
+            : (isRtl ? "لا توجد طلبات جديدة" : "No new orders"),
+        variant: "success",
+      });
+      onRefresh();
+    } catch (err: any) {
+      toast({
+        title: isRtl ? "فشل التحقق من الطلبات" : "Failed to check for orders",
+        description: err?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -69,15 +178,49 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
   return (
     <>
       <div className="max-w-5xl mx-auto space-y-4">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-            {isRtl ? "مراجعة الطلبات" : "Job Review"}
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {isRtl
-              ? "طلبات وصلت من رابط الرفع الإلكتروني وتنتظر قبولك أو رفضك."
-              : "Orders that came in from the online upload link, awaiting your decision."}
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+              {isRtl ? "مراجعة الطلبات" : "Job Review"}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {isRtl
+                ? "طلبات وصلت من رابط الرفع الإلكتروني وتنتظر قبولك أو رفضك."
+                : "Orders that came in from the online upload link, awaiting your decision."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setBlocklistOpen(true)}>
+              {isRtl ? "المحظورون" : "Blocked"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCheckForOrders} disabled={checking}>
+              <svg
+                className={`w-4 h-4 ${isRtl ? "ml-1.5" : "mr-1.5"} ${checking ? "animate-spin" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {checking
+                ? (isRtl ? "جارٍ التحقق..." : "Checking...")
+                : (isRtl ? "التحقق من الطلبات" : "Check for orders")}
+            </Button>
+            {reviewJobs.length > 0 && (
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => handleAcceptMany("__all__", reviewJobs)}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {bulkAcceptingKey === "__all__"
+                  ? (isRtl ? "جارٍ القبول..." : "Accepting...")
+                  : (isRtl
+                      ? `قبول الكل (${reviewJobs.length})`
+                      : `Accept all (${reviewJobs.length})`)}
+              </Button>
+            )}
+          </div>
         </div>
 
         {reviewJobs.length === 0 ? (
@@ -120,76 +263,131 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
             </div>
           </div>
         ) : (
-          <div className="grid gap-3">
-            {reviewJobs.map((job) => {
-              const isOffice =
-                job.fileType?.includes("word") ||
-                job.fileType?.includes("document") ||
-                job.fileType?.includes("excel") ||
-                job.fileType?.includes("spreadsheet") ||
-                job.fileType?.includes("presentation") ||
-                job.fileType?.includes("powerpoint");
+          <div className="space-y-4">
+            {groups.map((group) => {
+              const label =
+                group.customerName ||
+                group.phoneNumber ||
+                (isRtl ? "مرسل غير معروف" : "Unknown sender");
               return (
-                <Card key={job.id}>
-                  <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{job.fileName}</p>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {job.customerName && <span>{job.customerName}</span>}
-                          {job.phoneNumber && <span dir="ltr">{job.phoneNumber}</span>}
-                          <span>{new Date(job.uploadDate).toLocaleString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}</span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                            {job.printPreferences?.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
-                          </span>
-                          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
-                            {job.printPreferences?.copies || 1}x
-                          </span>
-                          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 capitalize">
-                            {job.printPreferences?.paperType || "normal"}
-                          </span>
-                          {job.notes && (
-                            <span className="text-[11px] text-gray-400 dark:text-gray-500 italic truncate max-w-[200px]">"{job.notes}"</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {!isOffice && (
-                        <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-9 h-9">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                        </Button>
+                <div key={group.key} className="space-y-2">
+                  <div className="flex items-center justify-between gap-3 px-1">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">{label}</span>
+                      {group.customerName && group.phoneNumber && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400" dir="ltr">{group.phoneNumber}</span>
                       )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={acceptingReviewId === job.id}
-                        onClick={() => handleAcceptReview(job)}
-                        className="text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/20"
-                      >
-                        {isRtl ? "قبول" : "Accept"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => { setRejectDialogJob(job); setRejectReason("bad_file"); setRejectNote(""); }}
-                        className="text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        {isRtl ? "رفض" : "Reject"}
-                      </Button>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {isRtl ? `${group.jobs.length} ملف` : `${group.jobs.length} file${group.jobs.length === 1 ? "" : "s"}`}
+                      </span>
                     </div>
-                  </CardContent>
-                </Card>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => handleAcceptMany(group.key, group.jobs)}
+                      className="shrink-0 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/20"
+                    >
+                      {bulkAcceptingKey === group.key
+                        ? (isRtl ? "جارٍ القبول..." : "Accepting...")
+                        : (isRtl ? `قبول الكل (${group.jobs.length})` : `Accept all (${group.jobs.length})`)}
+                    </Button>
+                  </div>
+                  <div className="grid gap-3">
+                    {group.jobs.map((job) => {
+                      const isOffice =
+                        job.fileType?.includes("word") ||
+                        job.fileType?.includes("document") ||
+                        job.fileType?.includes("excel") ||
+                        job.fileType?.includes("spreadsheet") ||
+                        job.fileType?.includes("presentation") ||
+                        job.fileType?.includes("powerpoint");
+                      return (
+                        <Card key={job.id}>
+                          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{job.fileName}</p>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  <span>{new Date(job.uploadDate).toLocaleString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                    {job.printPreferences?.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
+                                  </span>
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                                    {job.printPreferences?.copies || 1}x
+                                  </span>
+                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 capitalize">
+                                    {job.printPreferences?.paperType || "normal"}
+                                  </span>
+                                  {job.notes && (
+                                    <span className="text-[11px] text-gray-400 dark:text-gray-500 italic truncate max-w-[200px]">"{job.notes}"</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {!isOffice && (
+                                <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-9 h-9">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => handleAcceptReview(job)}
+                                className="text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/20"
+                              >
+                                {isRtl ? "قبول" : "Accept"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => { setRejectDialogJob(job); setRejectReason("bad_file"); setRejectNote(""); }}
+                                className="text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              >
+                                {isRtl ? "رفض" : "Reject"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => setBlockJob(job)}
+                                title={isRtl ? "حظر المرسل" : "Block uploader"}
+                                className="text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                              >
+                                {isRtl ? "حظر" : "Block"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
       </div>
+
+      <BlockUploaderDialog
+        job={blockJob}
+        isRtl={isRtl}
+        onClose={() => setBlockJob(null)}
+      />
+
+      <BlockedUploadersDialog
+        open={blocklistOpen}
+        isRtl={isRtl}
+        onClose={() => setBlocklistOpen(false)}
+      />
 
       {/* Reject Review Job Dialog */}
       <Dialog open={rejectDialogJob !== null} onOpenChange={(open) => { if (!open) setRejectDialogJob(null); }}>

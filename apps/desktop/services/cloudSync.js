@@ -7,7 +7,11 @@ import db, { getSettings, getPaperTypes, getDiscountRules, updateSetting } from 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+// Packaged builds run this file from inside app.asar (read-only) while the
+// real uploads live in the per-user data folder, so honour the same
+// PRINTSHOP_UPLOADS_DIR override server.js and db.js use. Without it every
+// downloaded cloud order failed to write and no order ever landed.
+const UPLOADS_DIR = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
 // Legacy rows can still hold a full storefront link (…/s/<slug>/upload); the
 // API lives at the platform root, so trim anything from /s/ onwards.
@@ -55,6 +59,63 @@ export function isEnabled() {
     return false;
   }
   return true;
+}
+
+// One-shot connectivity probe for the Settings → Cloud Sync "Test" buttons.
+// Deliberately NOT fetchWithRetry: the operator is waiting on a button, so a
+// bad URL must fail in seconds instead of burning four attempts with backoff.
+// Values can be passed in so the UI can test unsaved draft fields; anything
+// omitted falls back to what is stored.
+export async function testConnection(overrides = {}) {
+  const cfg = getConfig();
+  const url = apiBase(overrides.url !== undefined ? overrides.url : cfg.url);
+  const token = String(overrides.token !== undefined ? overrides.token : cfg.token || '').trim();
+
+  if (!url) return { ok: false, stage: 'config', error: 'missing_url' };
+  if (!token) return { ok: false, stage: 'config', error: 'missing_token' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let res;
+  try {
+    res = await fetch(`${url}/api/shop/settings`, {
+      headers: { ...baseHeaders, Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    log('warn', 'Connection test could not reach the cloud', { url, error: err.message });
+    return {
+      ok: false,
+      stage: 'network',
+      error: err.name === 'AbortError' ? 'timeout' : 'unreachable',
+      message: err.message,
+    };
+  }
+  clearTimeout(timer);
+
+  if (res.status === 401) return { ok: false, stage: 'auth', status: 401, error: 'bad_token' };
+  if (res.status === 403) return { ok: false, stage: 'auth', status: 403, error: 'shop_deactivated' };
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return { ok: false, stage: 'server', status: res.status, message: body.slice(0, 200) };
+  }
+
+  let body = {};
+  try {
+    body = await res.json();
+  } catch {
+    return { ok: false, stage: 'server', status: res.status, error: 'bad_response' };
+  }
+
+  log('info', 'Connection test succeeded', { url, shopSlug: body?.shopSlug });
+  return {
+    ok: true,
+    stage: 'ok',
+    status: res.status,
+    shopSlug: typeof body?.shopSlug === 'string' ? body.shopSlug : '',
+    shopName: typeof body?.shopName === 'string' ? body.shopName : '',
+  };
 }
 
 async function fetchWithRetry(url, options = {}, retries = 3, baseDelay = 1000) {
@@ -238,8 +299,8 @@ async function importOrder(order) {
       INSERT INTO jobs (
         id, cloudOrderId, customerName, phoneNumber, notes, fileName, fileType,
         fileSize, uploadDate, status, serverFileName, pageCount,
-        colorMode, copies, paperType, source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        colorMode, copies, paperType, source, uploaderIp, uploaderFingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       orderId,
       orderId,
@@ -257,6 +318,10 @@ async function importOrder(order) {
       copies,
       paperType,
       'cloud-sync',
+      // Anti-abuse identifiers the cloud captured at upload time; used only by
+      // the Admin panel's "block this uploader" action.
+      order.uploaderIp || null,
+      order.uploaderFingerprint || null,
     );
 
     log('info', `Imported order ${orderId} into local jobs`, { autoAccept });
@@ -289,7 +354,7 @@ async function importOrder(order) {
 }
 
 async function pollPending() {
-  if (!isEnabled()) return;
+  if (!isEnabled()) return 0;
   const cfg = getConfig();
 
   const res = await fetchWithRetry(`${cfg.url}/api/shop/pending`, {
@@ -297,7 +362,7 @@ async function pollPending() {
   });
   if (!res || !res.ok) {
     log('error', 'Failed to fetch pending orders', { status: res?.status });
-    return;
+    throw new Error(`Pending fetch failed with status ${res?.status || 'no response'}`);
   }
 
   let orders;
@@ -305,17 +370,44 @@ async function pollPending() {
     orders = await res.json();
   } catch {
     log('error', 'Invalid JSON from pending endpoint');
-    return;
+    throw new Error('Invalid JSON from pending endpoint');
   }
 
   if (!Array.isArray(orders) || orders.length === 0) {
-    return;
+    return 0;
   }
 
   log('info', `Fetched ${orders.length} pending order(s)`);
 
+  let imported = 0;
   for (const order of orders) {
-    await importOrder(order);
+    // One bad order (unwritable uploads dir, DB constraint, malformed row)
+    // must not abort the whole cycle — an uncaught throw here used to kill
+    // startCloudSync before it ever armed the poll timer, so cloud sync
+    // stayed dead until the app restarted.
+    try {
+      if (await importOrder(order)) imported++;
+    } catch (err) {
+      log('error', `Import failed for order ${order?.id}`, { error: err.message });
+    }
+  }
+  return imported;
+}
+
+/**
+ * Run one poll cycle on demand — the Job Review panel's "Check for orders"
+ * button. Shares the `isSyncing` guard with the interval timer so a manual
+ * check can never overlap a scheduled one (double-importing an order).
+ * Returns how many new orders were imported.
+ */
+export async function pollNow() {
+  if (!isEnabled()) throw new Error('Cloud sync is not configured');
+  if (isSyncing) return 0;
+  isSyncing = true;
+  try {
+    return await pollPending();
+  } finally {
+    isSyncing = false;
   }
 }
 
@@ -340,6 +432,41 @@ export async function updateCloudStatus(orderId, status) {
   return false;
 }
 
+/**
+ * Upload blocklist, proxied to the cloud's shop-token API.
+ *
+ * The list is the cloud's to own — enforcement happens there, on the public
+ * upload endpoint — so nothing is mirrored locally. Each call is a thin
+ * pass-through that surfaces the cloud's own error text to the operator.
+ */
+async function blocksRequest(method, pathSuffix = '', body) {
+  if (!isEnabled()) throw new Error('Cloud sync is not configured');
+  const cfg = getConfig();
+  const res = await fetchWithRetry(`${cfg.url}/api/shop/blocks${pathSuffix}`, {
+    method,
+    headers: { Authorization: `Bearer ${cfg.token}` },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!res || !res.ok) {
+    let detail = '';
+    try { detail = (await res.json())?.error || ''; } catch (_) {}
+    throw new Error(detail || `Blocklist request failed (${res?.status || 'no response'})`);
+  }
+  return res.json();
+}
+
+export async function listBlockedUploaders() {
+  return blocksRequest('GET');
+}
+
+export async function blockUploader({ kind, value, reason, label }) {
+  return blocksRequest('POST', '', { kind, value, reason, label });
+}
+
+export async function unblockUploader(id) {
+  return blocksRequest('DELETE', `/${encodeURIComponent(id)}`);
+}
+
 export async function startCloudSync() {
   if (!isEnabled()) {
     log('warn', 'Cloud sync disabled — configure Cloud Sync URL and API Token in Settings');
@@ -349,12 +476,22 @@ export async function startCloudSync() {
 
   log('info', `Starting cloud sync, polling every ${cfg.pollInterval}ms`);
 
-  const settingsOk = await syncSettings();
-  if (!settingsOk) {
-    log('warn', 'Initial settings sync failed — will retry on next poll');
+  try {
+    const settingsOk = await syncSettings();
+    if (!settingsOk) {
+      log('warn', 'Initial settings sync failed — will retry on next poll');
+    }
+  } catch (err) {
+    log('error', 'Initial settings sync threw', { error: err.message });
   }
 
-  await pollPending();
+  // Arm the timer even if the first poll blows up; a transient startup failure
+  // must not leave the app permanently offline from the cloud.
+  try {
+    await pollPending();
+  } catch (err) {
+    log('error', 'Initial poll failed', { error: err.message });
+  }
 
   syncTimer = setInterval(async () => {
     if (isSyncing) return;

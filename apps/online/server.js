@@ -32,6 +32,13 @@ import supabase, {
   getProfileCamel,
   upsertProfile,
   getCustomerOrders,
+  BLOCK_KINDS,
+  hashFingerprint,
+  normalizeBlockValue,
+  listBlockedUploaders,
+  addBlockedUploader,
+  removeBlockedUploader,
+  findUploaderBlock,
 } from './db.js';
 import { toApiOrder, fromApiOrder } from './utils/orderMapping.js';
 import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
@@ -167,6 +174,45 @@ async function resolveShopBySlug(req, res, next) {
   }
 }
 
+// ── Upload blocklist ─────────────────────────────────────────────────────
+// A shop operator can block an abusive uploader by IP, device fingerprint,
+// phone or signed-in account (see migration 002 / db.js block helpers).
+
+/** The visitor's stable per-browser id, hashed. Absent for non-browser callers. */
+const uploaderFingerprint = (req) => hashFingerprint(req.headers['x-device-id']);
+
+/**
+ * Refuse a blocked uploader BEFORE multer writes the file to disk.
+ *
+ * Runs on ip / fingerprint / user only — the phone number lives in the
+ * multipart body, which has not been parsed yet, so the upload handler
+ * re-checks it once the metadata is available.
+ *
+ * A blocklist lookup failure must not take uploads down, so an error here is
+ * logged and the request proceeds; the blocklist is an abuse control, not an
+ * authorization boundary.
+ */
+async function rejectBlockedUploader(req, res, next) {
+  try {
+    const block = await findUploaderBlock(req.shop.id, {
+      ip: req.ip,
+      fingerprint: uploaderFingerprint(req),
+      userId: req.userId || null,
+    });
+    if (block) {
+      console.warn(`\u26d4 Blocked upload to shop ${req.shop.id} (${block.kind})`);
+      return res.status(403).json({ success: false, error: BLOCKED_MESSAGE });
+    }
+  } catch (err) {
+    console.error('\u274c Blocklist check failed \u2014 allowing upload:', err.message);
+  }
+  next();
+}
+
+// Deliberately vague: telling someone which identifier is blocked tells them
+// exactly what to change to get around it.
+const BLOCKED_MESSAGE = "This store is not accepting uploads from you. Please contact the store.";
+
 // ── Optional customer auth — attaches req.userId if a valid Supabase JWT is
 // present, but never rejects the request. Guest requests (no/invalid token)
 // pass through untouched. ──
@@ -244,7 +290,16 @@ async function requireCustomerAuth(req, res, next) {
 // ── Rate limiters (in-memory, per-IP) ──
 // Factory shared with the desktop app (@localprint/shared/http). Each keeps
 // its own hit map + GC interval internally.
-const rateLimit = makeRateLimiter({ windowMs: 60_000, max: 5 });
+// The upload endpoint takes ONE file per request, so a customer sending a
+// 10-file batch legitimately makes 10 calls back-to-back. The old budget of 5
+// per minute rejected the 6th file of a normal order, which is what customers
+// hit as "Too many requests" mid-upload. Budget for a realistic batch instead,
+// over a window long enough to still cap abuse.
+const uploadRateLimit = makeRateLimiter({
+  windowMs: 60_000,
+  max: 40,
+  message: "Too many uploads from this connection. Wait a moment and try again.",
+});
 // PLATFORM_ADMIN_TOKEN is a single long-lived bearer with no lockout of its
 // own — throttle guesses against it.
 const adminRateLimit = makeRateLimiter({ windowMs: 60_000, max: 60 });
@@ -304,7 +359,7 @@ if (isDev) {
   app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", devOrigin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Device-Id");
     if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
   });
@@ -313,7 +368,16 @@ if (isDev) {
 // Static security headers + the pdf.js-compatible CSP. connect-src also allows
 // Supabase (customer auth + storage). Shared with the desktop app; see
 // @localprint/shared/http for the CSP rationale.
-app.use(securityHeaders({ connectSrc: ["'self'", "blob:", "https://*.supabase.co"], hsts: !isDev }));
+// Cloudflare injects its Web Analytics beacon (static.cloudflareinsights.com)
+// into proxied responses; without these two entries the browser console fills
+// with CSP violations for a script we did not add. The injected INLINE snippet
+// that loads it is still blocked by design — turn off Rocket Loader / Web
+// Analytics in the Cloudflare dashboard if you want that noise gone too.
+app.use(securityHeaders({
+  connectSrc: ["'self'", "blob:", "https://*.supabase.co", "https://static.cloudflareinsights.com"],
+  scriptSrc: ["https://static.cloudflareinsights.com"],
+  hsts: !isDev,
+}));
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(DIST_DIR) && !isDev) {
@@ -623,7 +687,7 @@ app.patch("/api/admin/shops/:id", requirePlatformAdmin, async (req, res) => {
 
 // Public upload endpoint (rate-limited). Lenient auth: a guest, or a signed-in
 // customer downgraded to guest if Supabase auth is briefly unavailable.
-app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustomerAuthLenient, upload.single("file"), async (req, res) => {
+app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optionalCustomerAuthLenient, rejectBlockedUploader, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: "No file uploaded" });
@@ -631,6 +695,21 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
 
     const metadata = JSON.parse(req.body.metadata || "{}");
     const filePath = path.join(UPLOADS_DIR, req.file.filename);
+
+    // Second half of the blocklist check: the phone number only exists once
+    // multer has parsed the multipart body, so it can't be caught by the
+    // pre-upload middleware. Drop the file we just wrote before refusing.
+    const blockedPhone = metadata.phoneNumber
+      ? await findUploaderBlock(req.shop.id, { phone: metadata.phoneNumber }).catch((err) => {
+          console.error('\u274c Blocklist phone check failed \u2014 allowing upload:', err.message);
+          return null;
+        })
+      : null;
+    if (blockedPhone) {
+      try { fs.unlinkSync(filePath); } catch {}
+      console.warn(`\u26d4 Blocked upload to shop ${req.shop.id} (phone)`);
+      return res.status(403).json({ success: false, error: BLOCKED_MESSAGE });
+    }
 
     if (!validateMagicBytes(filePath, req.file.mimetype)) {
       fs.unlinkSync(filePath);
@@ -718,11 +797,19 @@ app.post("/api/s/:shopSlug/upload", rateLimit, resolveShopBySlug, optionalCustom
       auth_deferred: !!req.authDeferred,
     };
 
+    // Recorded so the shop can block this sender later straight from the
+    // order. Mapped fields, but never shown to a customer — every
+    // customer-facing endpoint projects its columns explicitly.
+    newOrder.uploader_ip = req.ip || null;
+    newOrder.uploader_fingerprint = uploaderFingerprint(req);
+
     const { error } = await supabase.from('orders').insert(newOrder);
     if (error) throw error;
 
-    // Return camelCase to the client via the same mapper.
-    const responseOrder = toApiOrder(newOrder);
+    // Return camelCase to the client via the same mapper, minus the
+    // anti-abuse bookkeeping — the uploader has no business reading back what
+    // we fingerprinted them with.
+    const { uploaderIp, uploaderFingerprint: _fp, ...responseOrder } = toApiOrder(newOrder);
     res.status(200).json({ success: true, job: responseOrder, deleteToken });
   } catch (err) {
     // Clean up the orphaned temp file so a failed upload does not leak disk.
@@ -964,6 +1051,43 @@ app.get("/api/shop/pending", requireShopToken, async (req, res) => {
     return pending;
   });
   res.status(200).json(camelOrders);
+});
+
+// ── Blocklist management (desktop Admin panel, shop token) ───────────────
+
+app.get("/api/shop/blocks", requireShopToken, async (req, res) => {
+  try {
+    res.status(200).json(await listBlockedUploaders(req.shop.id));
+  } catch (err) {
+    console.error("\u274c Failed to list blocked uploaders:", err);
+    res.status(500).json({ error: "Failed to list blocked uploaders" });
+  }
+});
+
+app.post("/api/shop/blocks", requireShopToken, async (req, res) => {
+  const { kind, value, reason, label } = req.body || {};
+  if (!BLOCK_KINDS.includes(kind)) {
+    return res.status(400).json({ error: `kind must be one of: ${BLOCK_KINDS.join(", ")}` });
+  }
+  if (!normalizeBlockValue(kind, value)) {
+    return res.status(400).json({ error: "value is required" });
+  }
+  try {
+    res.status(200).json(await addBlockedUploader(req.shop.id, { kind, value, reason, label }));
+  } catch (err) {
+    console.error("\u274c Failed to block uploader:", err);
+    res.status(500).json({ error: "Failed to block uploader" });
+  }
+});
+
+app.delete("/api/shop/blocks/:id", requireShopToken, async (req, res) => {
+  try {
+    await removeBlockedUploader(req.shop.id, req.params.id);
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error("\u274c Failed to unblock uploader:", err);
+    res.status(500).json({ error: "Failed to unblock uploader" });
+  }
 });
 
 // Download file for a specific order

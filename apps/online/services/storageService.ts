@@ -35,6 +35,27 @@ class StorageService {
     }
   }
 
+  /**
+   * A stable per-browser id, sent with every upload as `X-Device-Id` and
+   * stored server-side only as a hash. It lets a shop block one abusive device
+   * without blocking a shared/NAT IP. Clearing site data resets it — this is an
+   * abuse speed bump, not an identity guarantee.
+   */
+  private deviceId(): string {
+    try {
+      let id = localStorage.getItem("lp_device_id");
+      if (!id) {
+        id = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        localStorage.setItem("lp_device_id", id);
+      }
+      return id;
+    } catch {
+      // Private mode / storage disabled: no stable id, so the server just
+      // falls back to the other identifiers.
+      return "";
+    }
+  }
+
   private myJobIdsKey(shopSlug: string): string {
     return `my_upload_ids_${shopSlug}`;
   }
@@ -57,7 +78,29 @@ class StorageService {
     localStorage.setItem(this.deleteTokensKey(shopSlug), JSON.stringify(map));
   }
 
+  /**
+   * Upload one file. A 429 is retried once after the server's Retry-After
+   * delay: a multi-file order sends one request per file, so a burst can
+   * legitimately brush the limit and a hard failure would lose that file.
+   */
   async saveJob(
+    shopSlug: string,
+    job: PrintJob,
+    file: File,
+    onProgress?: (p: number) => void,
+    accessToken?: string | null,
+  ): Promise<void> {
+    try {
+      await this.postJob(shopSlug, job, file, onProgress, accessToken);
+    } catch (err: any) {
+      const retryAfter = err?.retryAfterSeconds;
+      if (!retryAfter) throw err;
+      await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000));
+      await this.postJob(shopSlug, job, file, onProgress, accessToken);
+    }
+  }
+
+  private postJob(
     shopSlug: string,
     job: PrintJob,
     file: File,
@@ -72,6 +115,8 @@ class StorageService {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/s/${shopSlug}/upload`, true);
       xhr.setRequestHeader("Accept", "application/json");
+      const deviceId = this.deviceId();
+      if (deviceId) xhr.setRequestHeader("X-Device-Id", deviceId);
       if (accessToken) {
         xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
       }
@@ -103,13 +148,23 @@ class StorageService {
           // Surface the server's own reason instead of a bare status code —
           // the body carries { error, detail } for exactly this.
           let reason = "";
+          let retryAfterSeconds = 0;
           try {
             const body = JSON.parse(xhr.responseText);
             reason = [body.error, body.detail].filter(Boolean).join(" — ");
+            if (xhr.status === 429) {
+              const header = parseInt(xhr.getResponseHeader("Retry-After") || "", 10);
+              retryAfterSeconds = Number(body.retryAfter) || header || 5;
+            }
           } catch {
             /* non-JSON body: fall back to the status code alone */
+            if (xhr.status === 429) retryAfterSeconds = 5;
           }
-          reject(new Error(reason || `Upload failed with status ${xhr.status}`));
+          const error: Error & { retryAfterSeconds?: number } = new Error(
+            reason || `Upload failed with status ${xhr.status}`,
+          );
+          if (retryAfterSeconds) error.retryAfterSeconds = retryAfterSeconds;
+          reject(error);
         }
       };
 

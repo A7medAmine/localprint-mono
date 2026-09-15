@@ -287,6 +287,26 @@ class StorageService {
     });
   }
 
+  /** Probe the cloud with draft (unsaved) credentials — see POST /api/cloud/test. */
+  async testCloudConnection(payload: {
+    cloudSyncUrl?: string;
+    shopApiToken?: string;
+  }): Promise<{
+    ok: boolean;
+    stage: string;
+    status?: number;
+    error?: string;
+    message?: string;
+    shopSlug?: string;
+    shopName?: string;
+  }> {
+    return this.safeFetch("/api/cloud/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
   async deleteJob(id: string): Promise<void> {
     const deleteToken = this.getMyDeleteTokens()[id];
     await this.safeFetch(`/api/jobs/${id}`, {
@@ -306,6 +326,40 @@ class StorageService {
       method: "POST",
     });
     return data.job;
+  }
+
+  // ── Upload blocklist (proxied to the cloud by the desktop server) ──
+
+  async getBlockedUploaders(): Promise<import("../types").BlockedUploader[]> {
+    const data = await this.safeFetch("/api/cloud/blocks");
+    return Array.isArray(data) ? data : [];
+  }
+
+  async blockUploader(payload: {
+    kind: "ip" | "fingerprint" | "phone" | "user";
+    value: string;
+    reason?: string;
+    label?: string;
+  }): Promise<import("../types").BlockedUploader> {
+    return this.safeFetch("/api/cloud/blocks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async unblockUploader(id: string): Promise<void> {
+    await this.safeFetch(`/api/cloud/blocks/${id}`, { method: "DELETE" });
+  }
+
+  /**
+   * Pull the cloud's pending queue right now instead of waiting for the next
+   * poll tick — see POST /api/cloud/poll. Resolves with how many new orders
+   * landed locally.
+   */
+  async pollCloudOrders(): Promise<number> {
+    const data = await this.safeFetch("/api/cloud/poll", { method: "POST" });
+    return Number(data?.imported) || 0;
   }
 
   async rejectReviewJob(id: string, reason: string, note?: string): Promise<void> {
