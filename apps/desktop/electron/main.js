@@ -73,14 +73,25 @@ const DEV_URL = 'http://localhost:3000';
 process.env.PORT = String(SERVER_PORT);
 process.env.HOST = SERVER_BIND_HOST;
 
-// Load .env from the packaged app resources. server.js's own `import 'dotenv/config'`
-// resolves against process.cwd() (the install dir in a packaged build), which does
-// not contain .env — so Gmail OAuth credentials come out undefined and login fails.
-// Loading it here, before we import server.js, puts GOOGLE_CLIENT_ID / SECRET and
-// GMAIL_REDIRECT_URI into process.env in time for the server to pick them up.
+// Load .env.packaged from the packaged app resources. server.js's own
+// `import 'dotenv/config'` resolves against process.cwd() (the install dir in a
+// packaged build), which does not contain .env — so Gmail OAuth credentials come
+// out undefined and login fails. Loading it here, before we import server.js,
+// puts GOOGLE_CLIENT_ID / SECRET into process.env in time for the server.
+//
+// The file is written at build time by scripts/generate-packaged-env.js and holds
+// ONLY the two Google values — never TOKEN_ENCRYPTION_KEY, which is generated
+// per-install under userData below.
 // In dev this is a no-op since server.js already loads .env from cwd.
 if (app.isPackaged) {
-  dotenv.config({ path: path.join(app.getAppPath(), '.env') });
+  const packagedEnvPath = path.join(app.getAppPath(), '.env.packaged');
+  const loaded = dotenv.config({ path: packagedEnvPath });
+  // dotenv silently no-ops on a missing file. That is exactly how Gmail OAuth
+  // used to break in release builds with no visible cause — log it loudly so the
+  // next occurrence is one line in main-error.log instead of a guess.
+  if (loaded.error) {
+    console.error(`[startup] no .env.packaged at ${packagedEnvPath} — Gmail OAuth will not work.`);
+  }
   // The .env's GMAIL_REDIRECT_URI is set for the dev server (port 3000). The
   // packaged server binds SERVER_PORT — force the redirect URI to match, or
   // Google will send the browser to a port nothing is listening on. This URL

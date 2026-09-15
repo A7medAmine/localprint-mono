@@ -16,6 +16,7 @@ db.json
 
 # Secrets — never commit
 .env
+.env.packaged
 env
 *.local
 
