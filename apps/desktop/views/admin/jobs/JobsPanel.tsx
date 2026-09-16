@@ -32,7 +32,7 @@ import { StatusBadge, PaymentBadge } from "./JobBadges";
 import { makeJobCells } from "./JobCells";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import NewJobDialog from "../../../components/NewJobDialog";
-import { Icon } from "../../../components/ui/icon";
+import { Icon, type IconName } from "../../../components/ui/icon";
 
 interface JobsPanelProps {
   jobs: AdminJobsApi;
@@ -356,11 +356,11 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("download")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkStatusUpdate(PrintStatus.PRINTED)} title={t("markAsPrinted")} className="flex-col gap-1 h-auto text-inherit hover:text-green-400 dark:hover:text-green-300">
-                    <Icon name="check-circle" className="w-5 h-5" />
+                    <Icon name="check-all" className="w-5 h-5" />
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("printed")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkStatusUpdate(PrintStatus.READY)} title={t("markReady")} className="flex-col gap-1 h-auto text-inherit hover:text-blue-400 dark:hover:text-blue-300">
-                    <Icon name="check" className="w-5 h-5" />
+                    <Icon name="package" className="w-5 h-5" />
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("ready")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkPaymentStatus(PaymentStatus.PAID)} title={t("markPaid")} className="flex-col gap-1 h-auto text-inherit hover:text-green-400 dark:hover:text-green-300">
@@ -368,7 +368,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("paid")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkPaymentStatus(PaymentStatus.UNPAID)} title={t("markUnpaid")} className="flex-col gap-1 h-auto text-inherit hover:text-red-400 dark:hover:text-red-300">
-                    <Icon name="copy" className="w-5 h-5" />
+                    <Icon name="money-off" className="w-5 h-5" />
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("unpaid")}</span>
                   </Button>
                   {(() => {
@@ -383,13 +383,13 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                         sessionStorage.setItem("ps_card_back", back.id);
                         navigate("/admin/dashboard?tab=studio-cards");
                       }} title="Print as Card" className="flex-col gap-1 h-auto text-inherit hover:text-pink-400 dark:hover:text-pink-300">
-                        <Icon name="copy" className="w-5 h-5" />
+                        <Icon name="card" className="w-5 h-5" />
                         <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "بطاقة" : "Card"}</span>
                       </Button>
                     ) : null;
                   })()}
                   <Button variant="ghost" size="sm" onClick={sendSelectionToStudio} title={isRtl ? "إرسال إلى استوديو الطباعة" : "Send to Print Studio"} className="flex-col gap-1 h-auto text-inherit hover:text-indigo-400 dark:hover:text-indigo-300">
-                    <Icon name="copy" className="w-5 h-5" />
+                    <Icon name="wand" className="w-5 h-5" />
                     <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "استوديو" : "Studio"}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={handleBulkDelete} title={t("bulkDelete")} className="flex-col gap-1 h-auto text-inherit hover:text-red-400 dark:hover:text-red-300">
@@ -539,20 +539,23 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                 )}
                 <div className="flex items-center gap-1 ms-auto">
                   {([
-                    ["compact", isRtl ? "جدول" : "Compact"],
-                    ["cards", isRtl ? "بطاقات" : "Cards"],
-                  ] as ["compact" | "cards", string][]).map(([v, label]) => (
+                    ["compact", "layout-rows", isRtl ? "جدول" : "Compact"],
+                    ["cards", "layout-grid", isRtl ? "بطاقات" : "Cards"],
+                  ] as ["compact" | "cards", IconName, string][]).map(([v, icon, label]) => (
                     <button
                       key={v}
                       type="button"
                       onClick={() => setDensity(v)}
-                      className={`px-2.5 py-1 rounded-lg font-medium ${
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={density === v}
+                      className={`p-1.5 rounded-lg ${
                         density === v
                           ? "bg-slate-700 text-white dark:bg-slate-600"
                           : "bg-muted text-muted-foreground hover:bg-muted"
                       }`}
                     >
-                      {label}
+                      <Icon name={icon} className="w-4 h-4" />
                     </button>
                   ))}
                 </div>
