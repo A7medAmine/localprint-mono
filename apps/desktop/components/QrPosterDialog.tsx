@@ -323,7 +323,19 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
 
         <p className="text-xs text-muted-foreground break-all">
           <span className="font-medium">{isRtl ? "الرابط:" : "Link:"}</span>{" "}
-          {targetUrl || "…"}
+          {targetUrl ? (
+            <a
+              href={targetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 hover:text-indigo-700 dark:hover:text-indigo-300"
+              title={isRtl ? "فتح الرابط في المتصفح" : "Open link in browser"}
+            >
+              {targetUrl}
+            </a>
+          ) : (
+            "…"
+          )}
         </p>
       </DialogContent>
     </Dialog>
@@ -343,6 +355,27 @@ const escapeHtml = (s: string) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string),
   );
 
+const svgIcon = (path: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+
+/** Inline SVG — a printed page has no icon font and no component runtime. */
+const ICONS = {
+  phone: svgIcon(
+    '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  ),
+  mail: svgIcon('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>'),
+  pin: svgIcon(
+    '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
+  ),
+  clock: svgIcon('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
+  wifi: svgIcon(
+    '<path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M8.5 16.02a6 6 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>',
+  ),
+  globe: svgIcon(
+    '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  ),
+};
+
 const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps) => {
   const isRtl = lang === "ar";
   const shopName = shopSettings?.shopName || "Atba3li";
@@ -356,26 +389,31 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
   const dir = isRtl ? "rtl" : "ltr";
 
   const steps = [
-    { n: 1, en: "Open your phone camera", ar: "افتح كاميرا هاتفك" },
-    { n: 2, en: "Scan the QR code", ar: "امسح رمز الاستجابة" },
-    { n: 3, en: "Upload files & we print", ar: "ارفع الملفات وسنطبعها" },
+    { n: 1, en: "Open your phone camera", ar: "\u0627\u0641\u062a\u062d \u0643\u0627\u0645\u064a\u0631\u0627 \u0647\u0627\u062a\u0641\u0643" },
+    { n: 2, en: "Scan the QR code", ar: "\u0627\u0645\u0633\u062d \u0631\u0645\u0632 \u0627\u0644\u0627\u0633\u062a\u062c\u0627\u0628\u0629" },
+    { n: 3, en: "Upload files & we print", ar: "\u0627\u0631\u0641\u0639 \u0627\u0644\u0645\u0644\u0641\u0627\u062a \u0648\u0633\u0646\u0637\u0628\u0639\u0647\u0627" },
   ];
 
   const modeBadge =
     mode === "online"
-      ? t("Online — works anywhere", "عبر الإنترنت — يعمل من أي مكان")
-      : t("In-store Wi-Fi only", "شبكة المحل فقط");
-
-  const iconPhone = `<Icon name="phone" />`;
-  const iconMail = `<Icon name="mail" />`;
-  const iconPin = `<Icon name="map-pin" />`;
-  const iconClock = `<Icon name="clock" />`;
+      ? t("Online \u2014 works anywhere", "\u0639\u0628\u0631 \u0627\u0644\u0625\u0646\u062a\u0631\u0646\u062a \u2014 \u064a\u0639\u0645\u0644 \u0645\u0646 \u0623\u064a \u0645\u0643\u0627\u0646")
+      : t("In-store Wi-Fi only", "\u0634\u0628\u0643\u0629 \u0627\u0644\u0645\u062d\u0644 \u0641\u0642\u0637");
+  const modeIcon = mode === "online" ? ICONS.globe : ICONS.wifi;
 
   const footItem = (icon: string, text: string) =>
     `<div class="foot-item"><span class="foot-ico">${icon}</span><span>${text}</span></div>`;
 
+  const contacts = [
+    phones.length ? footItem(ICONS.phone, phones.map(escapeHtml).join("  &nbsp;\u00b7&nbsp;  ")) : "",
+    email ? footItem(ICONS.mail, escapeHtml(email)) : "",
+    address ? footItem(ICONS.pin, escapeHtml(address)) : "",
+    hours ? footItem(ICONS.clock, escapeHtml(hours)) : "",
+  ].filter(Boolean);
+
   return `
 <div class="poster" dir="${dir}">
+  <div class="accent-bar"></div>
+
   <header class="poster-head">
     ${
       logo
@@ -384,15 +422,18 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
     }
     <div class="head-text">
       <h1>${escapeHtml(shopName)}</h1>
-      <p class="tagline">${t("Print from your phone in seconds", "اطبع من هاتفك في ثوانٍ")}</p>
+      <p class="tagline">${t("Print from your phone in seconds", "\u0627\u0637\u0628\u0639 \u0645\u0646 \u0647\u0627\u062a\u0641\u0643 \u0641\u064a \u062b\u0648\u0627\u0646\u064d")}</p>
     </div>
+    <div class="mode-badge"><span class="mode-ico">${modeIcon}</span><span>${escapeHtml(modeBadge)}</span></div>
   </header>
 
-  <div class="mode-badge">${escapeHtml(modeBadge)}</div>
-
   <section class="qr-block">
-    <div class="qr-frame">${qrSvg}</div>
-    <p class="scan-cta">${t("Scan to upload", "امسح لبدء الرفع")}</p>
+    <p class="scan-cta">${t("Scan to upload", "\u0627\u0645\u0633\u062d \u0644\u0628\u062f\u0621 \u0627\u0644\u0631\u0641\u0639")}</p>
+    <div class="qr-card">
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+      <div class="qr-frame">${qrSvg}</div>
+    </div>
     <p class="qr-url">${escapeHtml(url)}</p>
   </section>
 
@@ -409,10 +450,8 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
   </section>
 
   <footer class="poster-foot">
-    ${phones.length ? footItem(iconPhone, phones.map(escapeHtml).join("  &nbsp;·&nbsp;  ")) : ""}
-    ${email ? footItem(iconMail, escapeHtml(email)) : ""}
-    ${address ? footItem(iconPin, escapeHtml(address)) : ""}
-    ${hours ? footItem(iconClock, escapeHtml(hours)) : ""}
+    ${contacts.length ? `<div class="foot-grid">${contacts.join("")}</div>` : ""}
+    <p class="foot-brand">${t("Powered by", "\u0645\u062f\u0639\u0648\u0645 \u0628\u0640")} Atba3li \u00b7 \u0623\u0637\u0628\u0639\u0644\u064a</p>
   </footer>
 </div>
   `;
@@ -421,28 +460,47 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
 const posterCss = `
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:#fff;font-family:'Segoe UI',Tahoma,'Helvetica Neue',Arial,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .poster{width:210mm;height:297mm;padding:18mm 16mm;background:#fff;display:flex;flex-direction:column}
-  .poster-head{display:flex;align-items:center;gap:8mm;padding-bottom:8mm;border-bottom:0.4mm solid #e2e8f0}
-  .logo{width:22mm;height:22mm;border-radius:3mm;overflow:hidden;background:#fff;border:0.4mm solid #e2e8f0;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .poster{width:210mm;height:297mm;padding:0 14mm 12mm;background:#fff;display:flex;flex-direction:column}
+
+  /* Full-bleed brand band across the top of the sheet. */
+  .accent-bar{height:6mm;margin:0 -14mm 10mm;background:linear-gradient(90deg,#4f46e5 0%,#6366f1 45%,#a5b4fc 100%)}
+
+  .poster-head{display:flex;align-items:center;gap:6mm;padding-bottom:6mm;border-bottom:0.4mm solid #e2e8f0}
+  .logo{width:22mm;height:22mm;border-radius:4mm;overflow:hidden;background:#fff;border:0.4mm solid #e2e8f0;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .logo img{width:100%;height:100%;object-fit:contain}
-  .logo-fallback{background:#0f172a;color:#fff;font-size:12mm;font-weight:700}
-  .head-text h1{font-size:10mm;line-height:1.1;font-weight:700;letter-spacing:-0.2mm}
-  .tagline{margin-top:1.5mm;font-size:4.2mm;color:#64748b;font-weight:400}
-  .mode-badge{margin-top:6mm;align-self:flex-start;background:#0f172a;color:#fff;padding:1.6mm 4mm;border-radius:1.5mm;font-size:3.4mm;font-weight:600;text-transform:uppercase;letter-spacing:0.4mm}
-  .qr-block{margin-top:8mm;text-align:center}
-  .qr-frame{display:inline-block;padding:4mm;background:#fff;border:0.6mm solid #0f172a;border-radius:2mm;line-height:0}
-  .qr-frame svg{width:105mm;height:105mm;display:block}
-  .qr-block .scan-cta,.qr-block .qr-url{display:block}
-  .scan-cta{margin-top:6mm;font-size:7mm;font-weight:700;color:#0f172a}
-  .qr-url{margin:2mm auto 0;font-size:3.4mm;color:#64748b;word-break:break-all;max-width:170mm;font-family:'Consolas','Menlo',monospace}
-  .steps{margin-top:9mm;display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}
-  .step{border:0.4mm solid #e2e8f0;border-radius:2mm;padding:5mm 3mm;text-align:center}
-  .step-n{width:9mm;height:9mm;margin:0 auto 2.5mm;border-radius:50%;background:#0f172a;color:#fff;font-size:5mm;font-weight:700;display:flex;align-items:center;justify-content:center}
-  .step-label{font-size:3.6mm;font-weight:600;color:#0f172a;line-height:1.3}
-  .poster-foot{margin-top:auto;padding-top:6mm;border-top:0.4mm solid #e2e8f0;display:grid;grid-template-columns:1fr 1fr;gap:3mm 8mm;font-size:3.6mm;color:#334155}
+  .logo-fallback{background:#4f46e5;color:#fff;font-size:12mm;font-weight:700}
+  .head-text{flex:1;min-width:0}
+  .head-text h1{font-size:11mm;line-height:1.05;font-weight:800;letter-spacing:-0.3mm}
+  .tagline{margin-top:1.5mm;font-size:4.4mm;color:#64748b;font-weight:500}
+  .mode-badge{display:flex;align-items:center;gap:2mm;flex-shrink:0;background:#eef2ff;color:#3730a3;padding:2mm 4mm;border-radius:10mm;font-size:3.4mm;font-weight:700;border:0.3mm solid #c7d2fe}
+  .mode-ico{display:inline-flex;width:4.2mm;height:4.2mm}
+  .mode-ico svg{width:100%;height:100%}
+
+  .qr-block{margin-top:10mm;text-align:center}
+  .scan-cta{font-size:9mm;font-weight:800;color:#0f172a;letter-spacing:-0.3mm}
+  .qr-card{position:relative;display:inline-block;margin-top:6mm;padding:9mm;background:#fff;border:0.5mm solid #e2e8f0;border-radius:6mm}
+  /* Viewfinder brackets — they read as "point your camera here". */
+  .corner{position:absolute;width:10mm;height:10mm;border:1mm solid #4f46e5}
+  .corner.tl{top:2.5mm;left:2.5mm;border-right:0;border-bottom:0;border-top-left-radius:4mm}
+  .corner.tr{top:2.5mm;right:2.5mm;border-left:0;border-bottom:0;border-top-right-radius:4mm}
+  .corner.bl{bottom:2.5mm;left:2.5mm;border-right:0;border-top:0;border-bottom-left-radius:4mm}
+  .corner.br{bottom:2.5mm;right:2.5mm;border-left:0;border-top:0;border-bottom-right-radius:4mm}
+  .qr-frame{line-height:0}
+  .qr-frame svg{width:98mm;height:98mm;display:block}
+  .qr-url{margin:5mm auto 0;padding:2mm 5mm;display:inline-block;background:#f8fafc;border:0.3mm solid #e2e8f0;border-radius:10mm;font-size:3.4mm;color:#475569;word-break:break-all;max-width:170mm;font-family:'Consolas','Menlo',monospace;direction:ltr}
+
+  .steps{margin-top:10mm;display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}
+  .step{border:0.4mm solid #e2e8f0;border-radius:3mm;padding:5mm 3mm;text-align:center;background:#f8fafc}
+  .step-n{width:10mm;height:10mm;margin:0 auto 3mm;border-radius:50%;background:#4f46e5;color:#fff;font-size:5.4mm;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .step-label{font-size:3.8mm;font-weight:600;color:#0f172a;line-height:1.35}
+
+  .poster-foot{margin-top:auto;padding-top:6mm;border-top:0.4mm solid #e2e8f0}
+  .foot-grid{display:grid;grid-template-columns:1fr 1fr;gap:3mm 8mm;font-size:3.8mm;color:#334155}
   .foot-item{display:flex;align-items:center;gap:2.5mm;font-weight:500}
-  .foot-ico{display:inline-flex;width:4.6mm;height:4.6mm;color:#0f172a;flex-shrink:0}
+  .foot-ico{display:inline-flex;width:4.6mm;height:4.6mm;color:#4f46e5;flex-shrink:0}
   .foot-ico svg{width:100%;height:100%}
+  .foot-brand{margin-top:5mm;text-align:center;font-size:3mm;color:#94a3b8;letter-spacing:0.3mm}
+
   [dir="rtl"] .poster{text-align:right}
   @page{size:A4 portrait;margin:0}
   @media print{.poster{box-shadow:none}}
