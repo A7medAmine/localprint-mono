@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Language } from "../types";
 import { TRANSLATIONS } from "../constants";
+import { Icon } from "./ui/icon";
 
 interface Point {
   x: number;
@@ -547,25 +548,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     setZoom((prev) => Math.max(0.5, Math.min(5, prev + delta)));
   };
 
-  function processPixels(
-    srcCanvas: HTMLCanvasElement,
-    srcCtx: CanvasRenderingContext2D,
-    filterStr: string,
-    srcW: number,
-    srcH: number,
-  ) {
-    srcCtx.filter = filterStr;
-    srcCtx.drawImage(image!, 0, 0, srcW, srcH);
-    const imgData = srcCtx.getImageData(0, 0, srcW, srcH);
-    if (filters.sharpness > 0) {
-      const s = filters.sharpness / 100;
-      applyConv3x3(imgData, srcW, srcH, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
-    }
-    if (filters.clarity > 0) {
-      applyClarity(imgData, srcW, srcH, filters.clarity / 100);
-    }
-    srcCtx.putImageData(imgData, 0, 0);
-  }
 
   const canvasToBlob = (canvas: HTMLCanvasElement) =>
     new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, imageBlob.type));
@@ -841,43 +823,43 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-sm hidden sm:block">{t("edit")}</h3>
             <div className="flex bg-card rounded-lg p-0.5 shadow-sm border border-border">
-              <button onClick={() => setMode("edit")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "edit" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("edit")}</button>
-              <button onClick={() => setMode("crop")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "crop" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("normalCrop")}</button>
-              <button onClick={() => setMode("perspective")} className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition ${mode === "perspective" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("perspectiveCut")}</button>
+              <button onClick={() => setMode("edit")} className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition ${mode === "edit" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("edit")}</button>
+              <button onClick={() => setMode("crop")} className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition ${mode === "crop" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("normalCrop")}</button>
+              <button onClick={() => setMode("perspective")} className={`px-2.5 py-1.5 rounded-md text-xs font-bold transition ${mode === "perspective" ? "bg-indigo-600 text-white" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{t("perspectiveCut")}</button>
             </div>
             <div className="flex bg-card rounded-lg p-0.5 shadow-sm border border-border">
-              <button onClick={() => applyTransform(-90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotateLeft")}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              <button onClick={() => applyTransform(-90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotateLeft")} aria-label={t("rotateLeft")}>
+                <Icon name="rotate-ccw" className="w-4 h-4" />
               </button>
-              <button onClick={() => applyTransform(90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotate90")}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              <button onClick={() => applyTransform(90, false, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("rotate90")} aria-label={t("rotate90")}>
+                <Icon name="rotate-cw" className="w-4 h-4" />
               </button>
-              <button onClick={() => applyTransform(0, true, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipH")}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v18"></path><path d="M3 9a2 2 0 0 1 2-2h7v10H5a2 2 0 0 1-2-2V9z" fill="currentColor" stroke="none"></path><path d="M21 9a2 2 0 0 0-2-2h-7v10h7a2 2 0 0 0 2-2V9z"></path></svg>
+              <button onClick={() => applyTransform(0, true, false)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipH")} aria-label={t("flipH")}>
+                <Icon name="flip" className="w-4 h-4" />
               </button>
-              <button onClick={() => applyTransform(0, false, true)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipV")}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12h18"></path><path d="M9 3a2 2 0 0 0-2 2v7h10V5a2 2 0 0 0-2-2H9z" fill="currentColor" stroke="none"></path><path d="M9 21a2 2 0 0 1-2-2v-7h10v7a2 2 0 0 1-2 2H9z"></path></svg>
+              <button onClick={() => applyTransform(0, false, true)} disabled={isProcessing} className="p-1.5 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={t("flipV")} aria-label={t("flipV")}>
+                <Icon name="flip-vertical" className="w-4 h-4" />
               </button>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 bg-card rounded-lg p-0.5 shadow-sm border border-border">
-            <button onClick={undo} disabled={undoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("undo")} (Ctrl+Z)`}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"></path></svg>
+            <button onClick={undo} disabled={undoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("undo")} (Ctrl+Z)`} aria-label={`${t("undo")} (Ctrl+Z)`}>
+              <Icon name="undo" className="w-4 h-4" />
             </button>
-            <button onClick={redo} disabled={redoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("redo")} (Ctrl+Y)`}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"></path></svg>
-            </button>
-            <div className="w-px h-3 bg-muted mx-0.5" />
-            <button onClick={() => setZoom((prev) => Math.max(0.5, prev - 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom Out">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4"></path></svg>
-            </button>
-            <span className="text-[11px] font-bold text-muted-foreground min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom((prev) => Math.min(5, prev + 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom In">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+            <button onClick={redo} disabled={redoStack.length === 0 || isProcessing} className="p-1 hover:bg-muted rounded text-muted-foreground disabled:opacity-40" title={`${t("redo")} (Ctrl+Y)`} aria-label={`${t("redo")} (Ctrl+Y)`}>
+              <Icon name="redo" className="w-4 h-4" />
             </button>
             <div className="w-px h-3 bg-muted mx-0.5" />
-            <button onClick={() => setZoom(1)} className="px-1.5 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">{isRtl ? "إعادة" : "Reset"}</button>
+            <button onClick={() => setZoom((prev) => Math.max(0.5, prev - 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom Out" aria-label="Zoom Out">
+              <Icon name="minus" className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-bold text-muted-foreground min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((prev) => Math.min(5, prev + 0.25))} className="p-1 hover:bg-muted rounded text-muted-foreground" title="Zoom In" aria-label="Zoom In">
+              <Icon name="plus" className="w-4 h-4" />
+            </button>
+            <div className="w-px h-3 bg-muted mx-0.5" />
+            <button onClick={() => setZoom(1)} className="px-1.5 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">{isRtl ? "إعادة" : "Reset"}</button>
           </div>
         </div>
 
@@ -899,7 +881,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
             <div className="p-3 border-b border-border">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">{isRtl ? "التأثيرات" : "Effects"}</h4>
-                <button onClick={resetFilters} className="text-[10px] text-indigo-600 font-bold hover:underline">{isRtl ? "إعادة تعيين" : "Reset"}</button>
+                <button onClick={resetFilters} className="text-xs text-indigo-600 font-bold hover:underline">{isRtl ? "إعادة تعيين" : "Reset"}</button>
               </div>
               <div className="space-y-2.5">
                 {slider(isRtl ? "سطوع" : "Brightness", "brightness", 0, 200, "%")}
@@ -919,14 +901,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
                   {presets.map((p, i) => (
                     <div key={i} className="flex items-center gap-1">
                       <button onClick={() => applyPreset(p)} className="flex-1 text-start px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 dark:hover:text-indigo-400 transition border border-transparent hover:border-indigo-200 dark:hover:border-indigo-700 truncate">{p.name}</button>
-                      <button onClick={() => deletePreset(i)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition" title={isRtl ? "حذف" : "Delete"}>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                      <button onClick={() => deletePreset(i)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition" title={isRtl ? "حذف" : "Delete"} aria-label={isRtl ? "حذف" : "Delete"}>
+                        <Icon name="x" className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-[11px] text-muted-foreground mb-3">{isRtl ? "لا توجد إعدادات محفوظة" : "No saved presets"}</p>
+                <p className="text-xs text-muted-foreground mb-3">{isRtl ? "لا توجد إعدادات محفوظة" : "No saved presets"}</p>
               )}
               <div className="flex items-center gap-1">
                 <input
@@ -937,21 +919,21 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
                   placeholder={isRtl ? "اسم الإعداد" : "Preset name"}
                   className="flex-1 min-w-0 text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
-                <button onClick={savePreset} disabled={!presetNameInput.trim()} className="px-2.5 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-lg hover:bg-indigo-700 transition disabled:opacity-40 shrink-0">{isRtl ? "حفظ" : "Save"}</button>
+                <button onClick={savePreset} disabled={!presetNameInput.trim()} className="px-2.5 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition disabled:opacity-40 shrink-0">{isRtl ? "حفظ" : "Save"}</button>
               </div>
             </div>
 
             <div className="p-3 mt-auto flex flex-col gap-2">
               <button onClick={() => saveChanges()} disabled={isProcessing} className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg text-sm flex items-center justify-center gap-2">
                 {isProcessing ? (
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <Icon name="spinner" className="animate-spin h-4 w-4 text-white" />
                 ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                  <Icon name="check" className="w-4 h-4" />
                 )}
                 {saveMsg || (isRtl ? "حفظ التغييرات" : "Save Changes")}
               </button>
               <button onClick={() => saveChanges(true)} disabled={isProcessing} className="w-full py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition shadow-lg text-sm flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 19h16"></path></svg>
+                <Icon name="check" className="w-4 h-4" />
                 {t("saveAndClose")}
               </button>
               <button onClick={onCancel} className="w-full py-2 text-muted-foreground font-bold hover:bg-muted rounded-xl transition text-sm">{t("cancel")}</button>

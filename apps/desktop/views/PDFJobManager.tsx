@@ -29,6 +29,9 @@ import { storageService } from "../services/storageService";
 import { toast } from "../components/ui/use-toast";
 import { isElectron, printData } from "../lib/electronPrint";
 import type { PrintJob, PrinterJobDefaults } from "../types";
+import { Icon } from "../components/ui/icon";
+import { readPref } from "@localprint/shared/lib/prefs";
+import { errorMessage } from "@localprint/shared";
 
 interface PageEntry {
   id: string;
@@ -63,29 +66,7 @@ function normRotation(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
-// Small stroked icons — matches the rest of the app's design language and
-// avoids emoji width/rendering inconsistencies across OSes.
-const Icon = ({ d, className }: { d: string; className?: string }) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={cn("w-4 h-4", className)}>
-    <path d={d} />
-  </svg>
-);
-const ICONS = {
-  upload: "M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2 M7 9l5-5 5 5 M12 4v12",
-  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M9 13h6 M9 17h6",
-  trash: "M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
-  rotateCW: "M21 12a9 9 0 1 1-3-6.7 M21 4v5h-5",
-  rotateCCW: "M3 12a9 9 0 1 0 3-6.7 M3 4v5h5",
-  flip: "M8 3v18 M16 3v18 M3 12h18",
-  printer: "M6 9V2h12v7 M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 14h12v8H6z",
-  download: "M12 3v12 M6 11l6 6 6-6 M4 21h16",
-  image: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M21 15l-5-5L4 20",
-  save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8",
-  plus: "M12 5v14 M5 12h14",
-  close: "M6 6l12 12 M6 18L18 6",
-  minus: "M5 12h14",
-  folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
-} as const;
+
 
 const PDFJobManager: React.FC = () => {
   const { t, lang } = useLanguage();
@@ -226,12 +207,12 @@ const PDFJobManager: React.FC = () => {
 
     (async () => {
       try {
-        const token = localStorage.getItem("ps_admin_token");
+        const token = readPref("adminToken");
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch("/api/jobs", { headers });
         const jobs = await res.json();
-        const job = Array.isArray(jobs) ? jobs.find((j: any) => j.id === targetJobId) : null;
+        const job = Array.isArray(jobs) ? jobs.find((j: PrintJob) => j.id === targetJobId) : null;
         if (!job?.id) {
           sessionStorage.removeItem(SESSION_KEY);
           return;
@@ -451,10 +432,10 @@ const PDFJobManager: React.FC = () => {
       } else if (result.ok) {
         toast({ title: isRtl ? "تم إرسال المهمة" : "Sent to printer", variant: "success" });
       }
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: isRtl ? "فشل الطباعة" : "Print failed",
-        description: err?.message,
+        description: errorMessage(err),
         variant: "destructive",
       });
     } finally {
@@ -492,8 +473,8 @@ const PDFJobManager: React.FC = () => {
           : t("studioJobCreated"),
         variant: "success",
       });
-    } catch (err: any) {
-      toast({ title: t("studioSaveFailed"), description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: t("studioSaveFailed"), description: errorMessage(err), variant: "destructive" });
     } finally {
       setAddJobUploading(false);
     }
@@ -513,8 +494,8 @@ const PDFJobManager: React.FC = () => {
         paperType: "normal",
       });
       toast({ title: t("studioJobSaved"), variant: "success" });
-    } catch (err: any) {
-      toast({ title: t("studioSaveFailed"), description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: t("studioSaveFailed"), description: errorMessage(err), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -554,9 +535,9 @@ const PDFJobManager: React.FC = () => {
             {!file ? (
               <>
                 <label className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-input bg-muted/30 py-6 px-4 cursor-pointer hover:border-primary/60 hover:bg-muted/50 transition-colors">
-                  <Icon d={ICONS.upload} className="w-7 h-7 text-muted-foreground mb-2" />
+                  <Icon name="upload" className="w-7 h-7 text-muted-foreground mb-2" />
                   <span className="text-sm font-medium text-foreground">{t("studioDropOrChoose")}</span>
-                  <span className="text-[11px] text-muted-foreground mt-1">PDF</span>
+                  <span className="text-xs text-muted-foreground mt-1">PDF</span>
                   <input
                     ref={fileRef}
                     type="file"
@@ -566,18 +547,18 @@ const PDFJobManager: React.FC = () => {
                   />
                 </label>
                 <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => setShowJobLoader(true)}>
-                  <Icon d={ICONS.folder} />
+                  <Icon name="folder" />
                   {t("loadFromPrintJobs")}
                 </Button>
               </>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-2.5">
-                  <Icon d={ICONS.file} className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                  <Icon name="file-doc" className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate" title={file.name}>{file.name}</div>
                     {sourceJob && (
-                      <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      <div className="text-xs text-muted-foreground truncate mt-0.5">
                         {t("studioFromJob")}: {sourceJob.customerName || (isRtl ? "بدون اسم" : "Unknown")}
                       </div>
                     )}
@@ -589,7 +570,7 @@ const PDFJobManager: React.FC = () => {
                     aria-label={t("remove")}
                     title={t("remove")}
                   >
-                    <Icon d={ICONS.close} />
+                    <Icon name="x" />
                   </button>
                 </div>
               </div>
@@ -612,7 +593,7 @@ const PDFJobManager: React.FC = () => {
                     {selectedPages.size === pages.length ? t("studioSelectNone") : t("studioSelectAll")}
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">{selectionSummary}</p>
+                <p className="text-xs text-muted-foreground mt-1">{selectionSummary}</p>
               </CardHeader>
               <CardContent className="p-4 pt-0 space-y-2">
                 <div className="grid grid-cols-3 gap-1.5">
@@ -624,8 +605,8 @@ const PDFJobManager: React.FC = () => {
                     onClick={() => rotatePages([...selectedPages], 90)}
                     title={t("studioRotate90CW")}
                   >
-                    <Icon d={ICONS.rotateCW} className="w-3.5 h-3.5" />
-                    <span className="text-[10px]">90°</span>
+                    <Icon name="rotate-cw" className="w-3.5 h-3.5" />
+                    <span className="text-xs">90°</span>
                   </Button>
                   <Button
                     variant="outline"
@@ -635,8 +616,8 @@ const PDFJobManager: React.FC = () => {
                     onClick={() => rotatePages([...selectedPages], -90)}
                     title={t("studioRotate90CCW")}
                   >
-                    <Icon d={ICONS.rotateCCW} className="w-3.5 h-3.5" />
-                    <span className="text-[10px]">-90°</span>
+                    <Icon name="rotate-ccw" className="w-3.5 h-3.5" />
+                    <span className="text-xs">-90°</span>
                   </Button>
                   <Button
                     variant="outline"
@@ -646,8 +627,8 @@ const PDFJobManager: React.FC = () => {
                     onClick={() => rotatePages([...selectedPages], 180)}
                     title={t("studioRotate180")}
                   >
-                    <Icon d={ICONS.flip} className="w-3.5 h-3.5" />
-                    <span className="text-[10px]">180°</span>
+                    <Icon name="flip" className="w-3.5 h-3.5" />
+                    <span className="text-xs">180°</span>
                   </Button>
                 </div>
                 <Button
@@ -657,7 +638,7 @@ const PDFJobManager: React.FC = () => {
                   disabled={selectedPages.size === 0}
                   onClick={() => deletePages([...selectedPages])}
                 >
-                  <Icon d={ICONS.trash} />
+                  <Icon name="trash" />
                   {t("studioDelete")}
                   {selectedPages.size > 0 && ` (${selectedPages.size})`}
                 </Button>
@@ -680,9 +661,10 @@ const PDFJobManager: React.FC = () => {
                       size="icon"
                       className="h-8 w-8 shrink-0"
                       disabled={copies <= 1}
+                      aria-label={isRtl ? "إنقاص عدد النسخ" : "Decrease copies"}
                       onClick={() => setCopies((c) => Math.max(1, c - 1))}
                     >
-                      <Icon d={ICONS.minus} />
+                      <Icon name="minus" />
                     </Button>
                     <Input
                       type="number"
@@ -698,9 +680,10 @@ const PDFJobManager: React.FC = () => {
                       size="icon"
                       className="h-8 w-8 shrink-0"
                       disabled={copies >= 999}
+                      aria-label={isRtl ? "زيادة عدد النسخ" : "Increase copies"}
                       onClick={() => setCopies((c) => Math.min(999, c + 1))}
                     >
-                      <Icon d={ICONS.plus} />
+                      <Icon name="plus" />
                     </Button>
                   </div>
                 </div>
@@ -762,26 +745,26 @@ const PDFJobManager: React.FC = () => {
               </CardHeader>
               <CardContent className="p-4 pt-0 space-y-2">
                 <Button className="w-full gap-2" size="sm" onClick={printDirectly} disabled={printing}>
-                  <Icon d={ICONS.printer} />
+                  <Icon name="print" />
                   {printing ? (isRtl ? "جارٍ الإرسال..." : "Sending...") : t("studioPrintDirect")}
                 </Button>
                 <Button className="w-full gap-2" size="sm" variant="outline" onClick={exportPDF} disabled={exporting}>
-                  <Icon d={ICONS.download} />
+                  <Icon name="download" />
                   {exporting ? t("exporting") : t("studioExportPDF")}
                 </Button>
                 <Button className="w-full gap-2" size="sm" variant="outline" onClick={exportAsImages} disabled={exporting}>
-                  <Icon d={ICONS.image} />
+                  <Icon name="file-image" />
                   {exporting ? t("exporting") : t("studioExportImages")}
                 </Button>
                 <div className="pt-1 space-y-2">
                   {sourceJob && (
                     <Button className="w-full gap-2" size="sm" variant="secondary" onClick={saveToSourceJob} disabled={saving}>
-                      <Icon d={ICONS.save} />
+                      <Icon name="save" />
                       {saving ? t("uploading") : t("studioSaveToJob")}
                     </Button>
                   )}
                   <Button className="w-full gap-2" size="sm" variant={sourceJob ? "outline" : "secondary"} onClick={openNewJobDialog}>
-                    <Icon d={ICONS.plus} />
+                    <Icon name="plus" />
                     {t("studioSaveAsNewJob")}
                   </Button>
                 </div>
@@ -801,7 +784,7 @@ const PDFJobManager: React.FC = () => {
                 {pages.length > 0 && <span className="text-muted-foreground font-normal ms-1">({pages.length})</span>}
               </CardTitle>
               {pages.length > 0 && (
-                <p className="text-[11px] text-muted-foreground mt-0.5">{totalSuffix}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{totalSuffix}</p>
               )}
             </div>
           </CardHeader>
@@ -809,7 +792,7 @@ const PDFJobManager: React.FC = () => {
             {pages.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-xl bg-muted/30 border border-dashed border-border py-16 px-6 text-center">
                 <div className="w-14 h-14 rounded-full bg-background border flex items-center justify-center mb-4">
-                  <Icon d={ICONS.file} className="w-6 h-6 text-muted-foreground" />
+                  <Icon name="file-doc" className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="text-sm font-medium text-foreground">{t("studioNoPdfYet")}</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm">{t("studioNoPdfHint")}</p>
@@ -819,11 +802,20 @@ const PDFJobManager: React.FC = () => {
                 {pages.map((entry, idx) => (
                   <div key={entry.id} className="group">
                     <div
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={selectedPages.has(entry.id)}
                       draggable
                       onDragStart={() => setDragId(entry.id)}
                       onDragOver={(e) => { e.preventDefault(); if (dragId && dragId !== entry.id) movePage(dragId, entry.id); }}
                       onDragEnd={() => setDragId(null)}
                       onClick={() => toggleSelect(entry.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleSelect(entry.id);
+                        }
+                      }}
                       className={cn(
                         "relative rounded-lg border bg-background overflow-hidden cursor-pointer transition-all",
                         "hover:border-primary/40 hover:shadow-sm",
@@ -841,23 +833,20 @@ const PDFJobManager: React.FC = () => {
                           />
                         ) : (
                           <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                            <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                            <span className="text-[10px]">{t("studioLoadingThumb")}</span>
+                            <Icon name="spinner" className="w-6 h-6 animate-spin" />
+                            <span className="text-xs">{t("studioLoadingThumb")}</span>
                           </div>
                         )}
                       </div>
 
                       {/* Page number */}
-                      <div className="absolute bottom-1.5 end-1.5 bg-background/90 backdrop-blur border text-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                      <div className="absolute bottom-1.5 end-1.5 bg-background/90 backdrop-blur border text-foreground text-xs font-semibold px-1.5 py-0.5 rounded">
                         {idx + 1}
                       </div>
 
                       {/* Rotation badge */}
                       {entry.rotation !== 0 && (
-                        <div className="absolute top-1.5 start-1.5 bg-primary text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                        <div className="absolute top-1.5 start-1.5 bg-primary text-primary-foreground text-xs font-semibold px-1.5 py-0.5 rounded">
                           {entry.rotation}°
                         </div>
                       )}
@@ -869,16 +858,16 @@ const PDFJobManager: React.FC = () => {
                           onClick={(e) => { e.stopPropagation(); rotatePages([entry.id], 90); }}
                           className="bg-background/90 backdrop-blur border hover:bg-background text-foreground rounded p-1 shadow-sm"
                           title={t("studioRotate90CW")}
-                        >
-                          <Icon d={ICONS.rotateCW} className="w-3 h-3" />
+                         aria-label={t("studioRotate90CW")}>
+                          <Icon name="rotate-cw" className="w-3 h-3" />
                         </button>
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); deletePages([entry.id]); }}
                           className="bg-background/90 backdrop-blur border hover:bg-destructive hover:text-destructive-foreground text-destructive rounded p-1 shadow-sm"
                           title={t("studioDelete")}
-                        >
-                          <Icon d={ICONS.close} className="w-3 h-3" />
+                         aria-label={t("studioDelete")}>
+                          <Icon name="x" className="w-3 h-3" />
                         </button>
                       </div>
                     </div>

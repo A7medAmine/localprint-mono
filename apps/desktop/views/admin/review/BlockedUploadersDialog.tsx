@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
+import { errorMessage } from "@localprint/shared";
 
 type BlockKind = BlockedUploader["kind"];
 
@@ -63,8 +64,8 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
       const data = await storageService.getBlockedUploaders();
       setBlocks(data);
       onCountChange?.(data.length);
-    } catch (err: any) {
-      setError(err?.message || (isRtl ? "تعذر تحميل القائمة" : "Could not load the blocklist"));
+    } catch (err) {
+      setError(errorMessage(err) || (isRtl ? "تعذر تحميل القائمة" : "Could not load the blocklist"));
     } finally {
       setLoading(false);
     }
@@ -83,8 +84,8 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
       setNewValue("");
       toast({ title: isRtl ? "تمت الإضافة" : "Blocked", variant: "success" });
       await load();
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الحظر" : "Block failed", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل الحظر" : "Block failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setAdding(false);
     }
@@ -96,8 +97,8 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
       await storageService.unblockUploader(block.id);
       toast({ title: isRtl ? "تم إلغاء الحظر" : "Unblocked", variant: "success" });
       await load();
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل إلغاء الحظر" : "Unblock failed", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل إلغاء الحظر" : "Unblock failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setRemovingId(null);
     }
@@ -164,7 +165,7 @@ const BlockedUploadersDialog: React.FC<BlockedUploadersDialogProps> = ({ open, i
                 <li key={block.id} className="py-2.5 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                         {kindLabel(block.kind, isRtl)}
                       </span>
                       <span className="text-sm font-medium text-foreground truncate" dir="ltr">

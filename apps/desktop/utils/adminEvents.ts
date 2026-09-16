@@ -1,3 +1,4 @@
+import { readPref } from "@localprint/shared/lib/prefs";
 /**
  * Open the admin SSE stream (`/api/events`).
  *
@@ -7,6 +8,6 @@
  * one place stops the three call sites from drifting.
  */
 export function openAdminEventSource(): EventSource {
-  const token = localStorage.getItem("ps_admin_token") || "";
+  const token = readPref("adminToken", "");
   return new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
 }

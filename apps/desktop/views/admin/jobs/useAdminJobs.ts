@@ -5,6 +5,7 @@ import { storageService } from "../../../services/storageService";
 import { isElectron, printFile, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
 import { toast } from "../../../components/ui/use-toast";
 import { openAdminEventSource } from "../../../utils/adminEvents";
+import { readPref } from "@localprint/shared/lib/prefs";
 
 export interface CustomerGroup {
   key: string;
@@ -151,7 +152,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
   // Locale for toast copy. Read from storage so a mid-session switch is honoured.
   const rtl =
-    typeof localStorage !== "undefined" && localStorage.getItem("ps_language") === "ar";
+    typeof localStorage !== "undefined" && readPref("language") === "ar";
 
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
   const printerDefaults: Record<string, PrinterJobDefaults> = currentSettings.printerDefaults || {};
@@ -262,14 +263,14 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         pendingCustomers.add(String(data?.customerName || "").trim());
         if (importFlushTimer) clearTimeout(importFlushTimer);
         importFlushTimer = setTimeout(flushImportToasts, 1500);
-      } catch {}
+      } catch { /* ignored */ }
       loadJobsRef.current({ soft: true });
     });
     es.addEventListener("job-deleted", (e) => {
       let id: string | undefined;
       try {
         id = JSON.parse((e as MessageEvent).data)?.id;
-      } catch {}
+      } catch { /* ignored */ }
       if (id) removeJobById(id);
       else loadJobsRef.current({ soft: true });
     });
@@ -594,7 +595,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
       setBulkDeleteConfirm(false);
       loadJobs();
       toast({ title: rtl ? `تم حذف ${ids.length} ملفات` : `${ids.length} files deleted successfully`, variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: rtl ? "فشل الحذف" : "Delete failed", variant: "destructive" });
     }
   };
@@ -607,7 +608,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
       loadJobs();
       if (status === PrintStatus.PRINTED) onLowStockRefresh();
       toast({ title: rtl ? `تم تحديث ${ids.length} ملفات` : `${ids.length} files updated`, variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: rtl ? "فشل التحديث" : "Update failed", variant: "destructive" });
     }
   };
@@ -666,7 +667,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     try {
       await storageService.updateStatus(jobId, newStatus);
       if (newStatus === PrintStatus.PRINTED) onLowStockRefresh();
-    } catch (err) {
+    } catch {
       if (previousStatus !== undefined) {
         const rollbackTo = previousStatus;
         setGroups((prev) =>
@@ -710,7 +711,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     try {
       await storageService.updatePaymentStatus(jobId, nextStatus, nextAmount);
       toast({ title: rtl ? "تم تحديث حالة الدفع" : "Payment status updated", variant: "success" });
-    } catch (err) {
+    } catch {
       if (previous) {
         const rollback = previous;
         setGroups((prev) =>
@@ -744,7 +745,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         })),
       );
       toast({ title: `${ids.length} ${rtl ? "تم تحديث الدفع" : "payment(s) updated"}`, variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: rtl ? "فشل" : "Failed", variant: "destructive" });
     }
   };

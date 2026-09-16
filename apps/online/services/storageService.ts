@@ -1,4 +1,5 @@
 import { PrintJob, ShopSettings, DiscountRule, AccountProfile, AccountOrder } from "../types";
+import { readPref, writePref } from "@localprint/shared/lib/prefs";
 
 class StorageService {
   private async safeFetch(url: string, options?: RequestInit) {
@@ -18,7 +19,7 @@ class StorageService {
 
       if (!response.ok) {
         let msg = `Server error: ${response.status}`;
-        try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch {}
+        try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch { /* ignored */ }
         throw new Error(msg);
       }
 
@@ -43,10 +44,10 @@ class StorageService {
    */
   private deviceId(): string {
     try {
-      let id = localStorage.getItem("lp_device_id");
+      let id = readPref("deviceId");
       if (!id) {
         id = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        localStorage.setItem("lp_device_id", id);
+        writePref("deviceId", id);
       }
       return id;
     } catch {
@@ -92,8 +93,9 @@ class StorageService {
   ): Promise<void> {
     try {
       await this.postJob(shopSlug, job, file, onProgress, accessToken);
-    } catch (err: any) {
-      const retryAfter = err?.retryAfterSeconds;
+    } catch (err) {
+      // The server asks for a wait via a typed field on the thrown error.
+      const retryAfter = (err as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
       if (!retryAfter) throw err;
       await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000));
       await this.postJob(shopSlug, job, file, onProgress, accessToken);
@@ -141,7 +143,7 @@ class StorageService {
               this.setMyDeleteToken(shopSlug, response.job.id, response.deleteToken);
             }
             resolve();
-          } catch (e) {
+          } catch {
             reject(new Error("Malformed response from server"));
           }
         } else {

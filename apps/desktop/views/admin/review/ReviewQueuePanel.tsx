@@ -23,6 +23,8 @@ import { Card, CardContent } from "../../../components/ui/card";
 import { useAdmin } from "../AdminContext";
 import BlockUploaderDialog from "./BlockUploaderDialog";
 import BlockedUploadersDialog from "./BlockedUploadersDialog";
+import { Icon } from "../../../components/ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface ReviewQueuePanelProps {
   reviewJobs: PrintJob[];
@@ -88,7 +90,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
       await storageService.acceptReviewJob(job.id);
       toast({ title: isRtl ? "تم قبول الطلب" : "Job accepted", variant: "success" });
       onRefresh();
-    } catch (err) {
+    } catch {
       toast({ title: isRtl ? "فشل قبول الطلب" : "Failed to accept job", variant: "destructive" });
     } finally {
       setAcceptingReviewId(null);
@@ -111,7 +113,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
         try {
           await storageService.acceptReviewJob(job.id);
           accepted++;
-        } catch (err) {
+        } catch {
           failed.push(job.fileName);
         }
       }
@@ -154,7 +156,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
         try {
           await storageService.rejectReviewJob(job.id, "other");
           rejected++;
-        } catch (err) {
+        } catch {
           failed.push(job.fileName);
         }
       }
@@ -195,10 +197,10 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
         variant: "success",
       });
       onRefresh();
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: isRtl ? "فشل التحقق من الطلبات" : "Failed to check for orders",
-        description: err?.message,
+        description: errorMessage(err),
         variant: "destructive",
       });
     } finally {
@@ -214,7 +216,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
       toast({ title: isRtl ? "تم رفض الطلب" : "Job rejected", variant: "success" });
       setRejectDialogJob(null);
       onRefresh();
-    } catch (err) {
+    } catch {
       toast({ title: isRtl ? "فشل رفض الطلب" : "Failed to reject job", variant: "destructive" });
     } finally {
       setRejectSubmitting(false);
@@ -240,14 +242,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
               {isRtl ? "المحظورون" : "Blocked"}
             </Button>
             <Button variant="outline" size="sm" onClick={handleCheckForOrders} disabled={checking}>
-              <svg
-                className={`w-4 h-4 ${"me-1.5"} ${checking ? "animate-spin" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
+              <Icon name="refresh" className={`w-4 h-4 me-1.5 ${checking ? "animate-spin" : ""}`} />
               {checking
                 ? (isRtl ? "جارٍ التحقق..." : "Checking...")
                 : (isRtl ? "التحقق من الطلبات" : "Check for orders")}
@@ -387,7 +382,7 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                           <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-start gap-3 min-w-0">
                               <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                <Icon name="file-doc" className="w-5 h-5" />
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-foreground truncate">{job.fileName}</p>
@@ -395,25 +390,25 @@ const ReviewQueuePanel: React.FC<ReviewQueuePanelProps> = ({ reviewJobs, onRefre
                                   <span>{new Date(job.uploadDate).toLocaleString(isRtl ? "ar-EG" : "en-US", { numberingSystem: "latn" })}</span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                                     {job.printPreferences?.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
                                   </span>
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                                     {job.printPreferences?.copies || 1}x
                                   </span>
-                                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
                                     {job.printPreferences?.paperType || "normal"}
                                   </span>
                                   {job.notes && (
-                                    <span className="text-[11px] text-muted-foreground italic truncate max-w-[200px]">"{job.notes}"</span>
+                                    <span className="text-xs text-muted-foreground italic truncate max-w-[200px]">"{job.notes}"</span>
                                   )}
                                 </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               {!isOffice && (
-                                <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-9 h-9">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-9 h-9" aria-label={isRtl ? "معاينة" : "Preview"}>
+                                  <Icon name="eye" className="w-4 h-4" />
                                 </Button>
                               )}
                               <Button

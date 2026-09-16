@@ -1,10 +1,13 @@
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 import globals from "globals";
 
-// Phase 4.0 baseline: intentionally LENIENT. Goal is signal, not a churn storm.
-// Unused vars warn (not error); hooks rules error. No formatting rules (editors
-// own that). Phase 4.6 promotes these toward error once the tree is deduped.
+// Unused code and empty blocks are errors: the tree is clean, and CI keeps it
+// that way. Accessibility rules cover the checks that a keyboard or screen
+// reader user actually feels (an icon-only button with no name, a click handler
+// on a div). `exhaustive-deps` stays a warning — the remaining hits are
+// deliberate one-shot effects that need judgement, not a mechanical fix.
 export default tseslint.config(
   {
     ignores: [
@@ -24,16 +27,35 @@ export default tseslint.config(
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },
-    plugins: { "react-hooks": reactHooks },
+    plugins: { "react-hooks": reactHooks, "jsx-a11y": jsxA11y },
     rules: {
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          // `const { secret, ...rest } = obj` is how a response is stripped of
+          // internal fields; the omitted name is the point, not a mistake.
+          ignoreRestSiblings: true,
+        },
+      ],
+      "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-empty-object-type": "off",
       // Electron preload/main + some CJS interop legitimately need require().
       "@typescript-eslint/no-require-imports": "off",
-      "no-empty": "warn",
+      "no-empty": ["error", { allowEmptyCatch: false }],
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      // Accessibility: the subset that catches real breakage rather than style.
+      "jsx-a11y/alt-text": "error",
+      "jsx-a11y/anchor-has-content": "error",
+      "jsx-a11y/aria-props": "error",
+      "jsx-a11y/aria-role": "error",
+      "jsx-a11y/label-has-associated-control": ["warn", { assert: "either", depth: 4 }],
+      "jsx-a11y/no-noninteractive-element-interactions": "warn",
+      "jsx-a11y/no-static-element-interactions": "warn",
+      "jsx-a11y/role-has-required-aria-props": "error",
     },
   },
 );

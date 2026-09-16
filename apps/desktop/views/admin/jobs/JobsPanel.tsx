@@ -1,13 +1,7 @@
 import React, { useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PrintJob, PrintStatus, PaymentStatus, PaperType, DiscountRule } from "../../../types";
-import {
-  calculatePrintPrice,
-  formatPrice,
-  calculateJobDiscount,
-  calculateCustomerTotalWithDiscounts,
-} from "../../../utils/pricingUtils";
-import { formatRelativeTime } from "../../../utils/timeUtils";
+import { formatPrice, calculateCustomerTotalWithDiscounts } from "../../../utils/pricingUtils";
 import ImageEditor from "../../../components/ImageEditor";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -30,30 +24,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../../../components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../components/ui/select";
 import { useAdmin } from "../AdminContext";
-import { isOfficeFile, AdminJobsApi } from "./useAdminJobs";
+import { AdminJobsApi } from "./useAdminJobs";
 import PrintOptionsDialog from "./PrintOptionsDialog";
+import { formatRelativeTime } from "../../../utils/timeUtils";
+import { StatusBadge, PaymentBadge } from "./JobBadges";
+import { makeJobCells } from "./JobCells";
+import { readPref, writePref } from "@localprint/shared/lib/prefs";
 import NewJobDialog from "../../../components/NewJobDialog";
-
-const formatSize = (bytes: number) => {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
-const getFileExtension = (filename: string | null | undefined) => {
-  if (!filename) return "";
-  return filename.split(".").pop()?.toUpperCase() || "";
-};
+import { Icon } from "../../../components/ui/icon";
 
 interface JobsPanelProps {
   jobs: AdminJobsApi;
@@ -84,16 +63,12 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
   // Density is a per-device preference, so it lives in localStorage (unlike the
   // shareable, URL-persisted filters).
   const [density, setDensity] = React.useState<"compact" | "cards">(() => {
-    try {
-      return localStorage.getItem("ps_jobs_density") === "cards" ? "cards" : "compact";
-    } catch {
-      return "compact";
-    }
+    return readPref("jobsDensity") === "cards" ? "cards" : "compact";
   });
   React.useEffect(() => {
     try {
-      localStorage.setItem("ps_jobs_density", density);
-    } catch {}
+      writePref("jobsDensity", density);
+    } catch { /* ignored */ }
   }, [density]);
 
   // Filters live in the URL so a refresh (or a shared link) keeps context.
@@ -190,13 +165,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     selectedJobIds,
     setSelectedJobIds,
     collapsedGroups,
-    expandedNotes,
-    editingCopiesJobId,
-    setEditingCopiesJobId,
-    editingCopiesValue,
-    setEditingCopiesValue,
-    savingPrefsJobId,
-    bulkPrinting,
     editingJob,
     setEditingJob,
     editingBlob,
@@ -215,26 +183,16 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     toggleGroup,
     toggleSelectJob,
     toggleSelectGroup,
-    toggleNoteExpand,
-    handleDownload,
-    handleQuickPrint,
-    handleOpenInApp,
     handleBulkPrint,
     handleBulkDownload,
     handleBulkDelete,
     confirmBulkDelete,
     handleBulkStatusUpdate,
     handleBulkPaymentStatus,
-    handleEdit,
     handleSaveEditedImage,
-    handleStatusChange,
     handlePaymentClick,
     handleSavePayment,
-    handleDelete,
     confirmSingleDelete,
-    handlePaperTypeChange,
-    handleToggleColorMode,
-    handleSaveCopies,
   } = jobs;
 
   const loadedJobCount = useMemo(
@@ -311,386 +269,19 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
 
-  const renderSourceBadge = (job: PrintJob) => {
-    if (job.source === "gmail") {
-      return (
-        <span className="text-[10px] font-semibold text-green-700 dark:text-green-100 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
-          Gmail
-        </span>
-      );
-    }
-    if (job.source === "admin") {
-      return (
-        <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-100 bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap shrink-0">
-          {t("adminBadge")}
-        </span>
-      );
-    }
-    return null;
-  };
+  // Per-job cells live in JobCells.tsx; both densities render the same ones.
+  const { renderFileInfo, renderSettingsControls, renderCost, renderActions, renderJobCard } =
+    makeJobCells({
+      jobs,
+      paperTypes,
+      discountRules,
+      onPreview,
+      currentSettings,
+      defaultPrinterName,
+      t,
+      isRtl,
+    });
 
-  // --- Per-job cell renderers -------------------------------------------------
-  // Shared by the compact table (wrapped in <td>) and the cards grid (wrapped in
-  // <div>) so both layouts stay in sync from a single source of truth.
-  const renderFileInfo = (job: PrintJob) => {
-    const ext = getFileExtension(job.fileName);
-    const officeFile = isOfficeFile(job.fileType);
-    return (
-      <>
-        <div className="flex items-center gap-3 w-full">
-          <span
-            className={`text-[10px] font-bold px-2 py-1 rounded-md border flex-shrink-0 ${
-              ext === "PDF"
-                ? "bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-100 border-red-100 dark:border-red-800"
-                : ext === "DOCX" || ext === "DOC"
-                  ? "bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-100 border-blue-100 dark:border-blue-800"
-                  : officeFile
-                    ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-100 border-green-200 dark:border-green-800"
-                    : "bg-indigo-50 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-100 border-indigo-100 dark:border-indigo-800"
-            }`}
-          >
-            {ext}
-          </span>
-          <div className="flex flex-col flex-1 min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span
-                className="text-sm font-semibold text-foreground truncate"
-                title={job.fileName}
-              >
-                {job.fileName}
-              </span>
-              {renderSourceBadge(job)}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {formatSize(job.fileSize)}
-            </span>
-          </div>
-        </div>
-        {job.notes && (
-          <div className="mt-2">
-            {expandedNotes.has(job.id) || !job.id.startsWith("gmail_") ? (
-              <div className="text-[11px] text-indigo-600 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 px-2 py-1 rounded-md inline-block font-medium max-w-xs break-words">
-                {job.notes}
-              </div>
-            ) : (
-              <>
-                <div className="text-[11px] text-indigo-600 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 px-2 py-1 rounded-md inline-block font-medium max-w-xs break-words">
-                  {job.notes.length > 120 ? job.notes.slice(0, 120) + "..." : job.notes}
-                </div>
-                {job.notes.length > 120 && (
-                  <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
-                    {isRtl ? "قراءة المزيد" : "Read more"}
-                  </button>
-                )}
-              </>
-            )}
-            {expandedNotes.has(job.id) && (
-              <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
-                {isRtl ? "طي" : "Less"}
-              </button>
-            )}
-          </div>
-        )}
-      </>
-    );
-  };
-
-  const renderSettingsControls = (job: PrintJob) =>
-    job.printPreferences && (
-      <div className="flex flex-col gap-1 w-max">
-        <div className="flex flex-wrap gap-1">
-          <Button
-            type="button"
-            title={isRtl ? "انقر للتبديل" : "Toggle mode"}
-            disabled={savingPrefsJobId === job.id}
-            onClick={() => handleToggleColorMode(job)}
-            variant={job.printPreferences.colorMode === "blackWhite" ? "secondary" : "default"}
-            size="sm"
-            className="text-xs h-7 px-2"
-          >
-            {savingPrefsJobId === job.id ? (
-              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-            ) : (
-              <>
-                <span className="text-[10px]">{job.printPreferences.colorMode === "blackWhite" ? "⚫" : "🎨"}</span>
-                {job.printPreferences.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
-              </>
-            )}
-          </Button>
-
-          {/* Copies Stepper */}
-          {editingCopiesJobId === job.id ? (
-            <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="w-6 h-6"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setEditingCopiesValue((v) => Math.max(1, v - 1))}
-              >−</Button>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                autoFocus
-                value={editingCopiesValue}
-                onChange={(e) => setEditingCopiesValue(parseInt(e.target.value) || 1)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveCopies(job, editingCopiesValue);
-                  if (e.key === "Escape") setEditingCopiesJobId(null);
-                }}
-                onBlur={() => handleSaveCopies(job, editingCopiesValue)}
-                className="w-10 text-center text-xs font-semibold h-7 px-0"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="w-6 h-6"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setEditingCopiesValue((v) => Math.min(100, v + 1))}
-              >+</Button>
-              <Button
-                type="button"
-                size="icon"
-                className="w-6 h-6 ms-1"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSaveCopies(job, editingCopiesValue)}
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-              </Button>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-xs h-7 px-2"
-              onClick={() => {
-                setEditingCopiesJobId(job.id);
-                setEditingCopiesValue(job.printPreferences?.copies || 1);
-              }}
-            >
-              ×{job.printPreferences?.copies || 1} {isRtl ? "نسخ" : "copies"}
-            </Button>
-          )}
-
-          {/* Paper Type Select */}
-          <Select
-            value={job.printPreferences?.paperType || "normal"}
-            onValueChange={(val) => handlePaperTypeChange(job, val)}
-          >
-            <SelectTrigger disabled={savingPrefsJobId === job.id} className="h-7 text-xs px-2 py-0 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900 text-amber-700 dark:text-amber-100 rounded-lg font-medium w-auto gap-1 focus:ring-amber-500 dark:focus:ring-amber-400">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {paperTypes.map(pt => (
-                <SelectItem key={pt.id} value={pt.id}>
-                  {isRtl ? pt.nameAr : pt.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-    );
-
-  const renderCost = (job: PrintJob) =>
-    (currentSettings.pricing || (currentSettings.paperTypes && currentSettings.paperTypes.length > 0)) ? (
-      (() => {
-        const isOffice = job.fileType?.includes("word") || job.fileType?.includes("document") || job.fileType?.includes("excel") || job.fileType?.includes("spreadsheet") || job.fileType?.includes("presentation") || job.fileType?.includes("powerpoint");
-        if (isOffice) return <span className="text-xs text-muted-foreground">-</span>;
-        const pageCount = jobPageCounts[job.id] || 1;
-        const priceCalc = calculatePrintPrice(job, currentSettings, pageCount);
-        const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, priceCalc.totalPages, discountRules);
-        const hasDiscount = discountResult.discountAmount > 0;
-
-        return (
-          <div className="flex flex-col gap-1">
-            <div className="flex flex-col">
-              {hasDiscount && (
-                <span className="text-xs text-muted-foreground line-through">
-                  {formatPrice(discountResult.originalAmount)}
-                </span>
-              )}
-              <span className={`text-sm font-black bg-green-100 dark:bg-[#173404] px-2.5 py-1 rounded-md border border-green-200 dark:border-green-800 shadow-sm dark:shadow-gray-900/50 w-max inline-block tracking-tight ${hasDiscount ? "text-green-700 dark:text-[#C0DD97]" : "text-green-700 dark:text-[#C0DD97]"}`}>
-                {formatPrice(discountResult.finalAmount)}
-              </span>
-              {hasDiscount && discountResult.rule && (
-                <span className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                  {isRtl ? "تم تطبيق خصم" : "Discount applied"}: {discountResult.rule.name}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-              <span>
-                {isRtl ? "الصفحات:" : "Pages:"}
-              </span>
-              <span className="font-bold text-indigo-700 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 border border-indigo-100 dark:border-indigo-800 px-2 py-0.5 rounded text-[11px]">
-                {pageCount}
-              </span>
-            </div>
-          </div>
-        );
-      })()
-    ) : (
-      <span className="text-xs text-muted-foreground">
-        -
-      </span>
-    );
-
-  const renderStatusBadge = (job: PrintJob) => (
-    <span
-      className={`px-3 py-1 text-[11px] font-bold rounded-full uppercase tracking-wide inline-block ${
-        job.status === PrintStatus.PRINTED
-          ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-100 border border-green-200 dark:border-green-800"
-          : job.status === PrintStatus.READY
-          ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-100 border border-blue-200 dark:border-blue-800"
-          : "bg-amber-100 dark:bg-[#412402] text-amber-700 dark:text-[#FAC775] border border-amber-200 dark:border-amber-800"
-      }`}
-    >
-      {job.status === PrintStatus.PRINTED
-        ? t("printed")
-        : job.status === PrintStatus.READY
-        ? t("ready")
-        : t("pending")}
-    </span>
-  );
-
-  const renderPaymentBadge = (job: PrintJob) => (
-    <span
-      className={`px-2 py-1 text-[11px] font-bold rounded-full inline-flex items-center gap-1 cursor-pointer hover:opacity-80 ${
-        job.paymentStatus === PaymentStatus.PAID
-          ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-100 border border-green-200 dark:border-green-800"
-          : job.paymentStatus === PaymentStatus.PARTIAL
-          ? "bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-100 border border-amber-200 dark:border-amber-800"
-          : "bg-red-100 dark:bg-[#501313] text-red-700 dark:text-[#F7C1C1] border border-red-200 dark:border-red-800"
-      }`}
-      onClick={() => handlePaymentClick(job)}
-      title={isRtl ? "انقر لتعديل الدفع" : "Click to edit payment"}
-    >
-      <span className="text-[10px]">
-        {job.paymentStatus === PaymentStatus.PAID ? "✓" : job.paymentStatus === PaymentStatus.PARTIAL ? "◐" : "✕"}
-      </span>
-      <span>
-        {job.paymentStatus === PaymentStatus.PAID
-          ? t("paid")
-          : job.paymentStatus === PaymentStatus.PARTIAL
-          ? t("partial")
-          : t("unpaid")}
-      </span>
-      {job.paymentAmount ? (
-        <span className="text-[10px] opacity-70 font-mono">{formatPrice(job.paymentAmount)}</span>
-      ) : null}
-    </span>
-  );
-
-  const renderActions = (job: PrintJob) => {
-    const officeFile = isOfficeFile(job.fileType);
-    return (
-      <div className="flex items-center gap-0.5 w-max">
-        {officeFile ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleOpenInApp(job)}
-            title={isRtl ? "فتح في التطبيق" : "Open in default app"}
-            className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleQuickPrint(job)}
-              title={isRtl ? `طباعة سريعة${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}` : `Quick Print${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}`}
-              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => jobs.setPrintOptionsJob(job)}
-              title={isRtl ? "خيارات الطباعة…" : "Print options…"}
-              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-            </Button>
-          </>
-        )}
-        <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-8 h-8">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => handleEdit(job)} title={t("edit")} className="text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-white/10 w-8 h-8">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-        </Button>
-        <Button variant="ghost" size="icon" onClick={() => handleDownload(job)} title={t("download")} className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-white/10 w-8 h-8">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-        </Button>
-        <span className="mx-1 w-px h-6 bg-gray-200 dark:bg-white/20 shrink-0" />
-        <span className="group/status relative" title={isRtl ? "تغيير الحالة" : "Change status"}>
-          <Select value={job.status} onValueChange={(val) => handleStatusChange(job.id, val as PrintStatus)}>
-            <SelectTrigger className={`h-8 w-8 border-0 p-0 ${job.status === PrintStatus.PRINTED ? "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-white/10" : job.status === PrintStatus.READY ? "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10" : "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-white/10"}`}>
-              <SelectValue>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={PrintStatus.PENDING}>
-                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500 dark:bg-yellow-400 inline-block"></span>{isRtl ? "قيد الانتظار" : "Pending"}</span>
-              </SelectItem>
-              <SelectItem value={PrintStatus.READY}>
-                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>{isRtl ? "جاهز" : "Ready"}</span>
-              </SelectItem>
-              <SelectItem value={PrintStatus.PRINTED}>
-                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>{isRtl ? "تمت الطباعة" : "Printed"}</span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </span>
-        <Button variant="ghost" size="icon" onClick={() => handleDelete(job.id)} title={t("delete")} className="text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-white/10 w-8 h-8">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-        </Button>
-      </div>
-    );
-  };
-
-  const renderJobCard = (job: PrintJob) => {
-    const isSelected = selectedJobIds.has(job.id);
-    return (
-      <div
-        key={job.id}
-        className={`rounded-2xl border p-3 transition-all duration-200 flex flex-col gap-3 ${
-          recentlyChanged.has(job.id)
-            ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"
-            : isSelected
-            ? "border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20"
-            : "border-gray-200 dark:border-white/10 bg-white dark:bg-gray-900"
-        }`}
-      >
-        <div className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            className="w-4 h-4 mt-1 rounded border-gray-300 dark:border-gray-600 text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 dark:focus:ring-indigo-400 cursor-pointer shrink-0"
-            checked={isSelected}
-            onChange={() => toggleSelectJob(job.id)}
-          />
-          <div className="flex-1 min-w-0">{renderFileInfo(job)}</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {renderStatusBadge(job)}
-          {renderPaymentBadge(job)}
-        </div>
-        {renderSettingsControls(job)}
-        <div>{renderCost(job)}</div>
-        <div className="pt-1 border-t border-gray-100 dark:border-white/10">{renderActions(job)}</div>
-      </div>
-    );
-  };
 
   return (
     <>
@@ -704,13 +295,11 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Manual job entry */}
             <div className="flex items-center justify-between mb-3">
               <Button onClick={() => setNewJobOpen(true)} size="sm" className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white">
-                <svg className="w-3.5 h-3.5 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                </svg>
+                <Icon name="plus" className="w-3.5 h-3.5 me-1.5" />
                 {t("newJob")}
               </Button>
               {!loading && groups.length > 0 && (
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {isRtl ? "اضغط Ctrl+N لطلب جديد" : "Ctrl+N for a new job"}
                 </span>
               )}
@@ -728,7 +317,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                   onClick={loadAllJobs}
                   size="sm"
                   variant="outline"
-                  className="h-7 px-3 text-xs shrink-0"
+                  className="h-8 px-3 text-xs shrink-0"
                 >
                   {isRtl ? "تحميل الكل" : "Load all"}
                 </Button>
@@ -759,28 +348,28 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
 
                 <div className="flex items-center gap-2 md:gap-4">
                   <Button variant="ghost" size="sm" onClick={handleBulkPrint} title={t("bulkPrint")} className="flex-col gap-1 h-auto text-inherit hover:text-indigo-400 dark:hover:text-indigo-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("print")}</span>
+                    <Icon name="print" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("print")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={handleBulkDownload} title={t("bulkDownload")} className="flex-col gap-1 h-auto text-inherit hover:text-indigo-400 dark:hover:text-indigo-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("download")}</span>
+                    <Icon name="download" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("download")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkStatusUpdate(PrintStatus.PRINTED)} title={t("markAsPrinted")} className="flex-col gap-1 h-auto text-inherit hover:text-green-400 dark:hover:text-green-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("printed")}</span>
+                    <Icon name="check-circle" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("printed")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkStatusUpdate(PrintStatus.READY)} title={t("markReady")} className="flex-col gap-1 h-auto text-inherit hover:text-blue-400 dark:hover:text-blue-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("ready")}</span>
+                    <Icon name="check" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("ready")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkPaymentStatus(PaymentStatus.PAID)} title={t("markPaid")} className="flex-col gap-1 h-auto text-inherit hover:text-green-400 dark:hover:text-green-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("paid")}</span>
+                    <Icon name="money" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("paid")}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => handleBulkPaymentStatus(PaymentStatus.UNPAID)} title={t("markUnpaid")} className="flex-col gap-1 h-auto text-inherit hover:text-red-400 dark:hover:text-red-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("unpaid")}</span>
+                    <Icon name="copy" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("unpaid")}</span>
                   </Button>
                   {(() => {
                     const allJobs = groups.flatMap(g => g.jobs);
@@ -794,23 +383,24 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                         sessionStorage.setItem("ps_card_back", back.id);
                         navigate("/admin/dashboard?tab=studio-cards");
                       }} title="Print as Card" className="flex-col gap-1 h-auto text-inherit hover:text-pink-400 dark:hover:text-pink-300">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                        <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "بطاقة" : "Card"}</span>
+                        <Icon name="copy" className="w-5 h-5" />
+                        <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "بطاقة" : "Card"}</span>
                       </Button>
                     ) : null;
                   })()}
                   <Button variant="ghost" size="sm" onClick={sendSelectionToStudio} title={isRtl ? "إرسال إلى استوديو الطباعة" : "Send to Print Studio"} className="flex-col gap-1 h-auto text-inherit hover:text-indigo-400 dark:hover:text-indigo-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "استوديو" : "Studio"}</span>
+                    <Icon name="copy" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{isRtl ? "استوديو" : "Studio"}</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={handleBulkDelete} title={t("bulkDelete")} className="flex-col gap-1 h-auto text-inherit hover:text-red-400 dark:hover:text-red-300">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    <span className="text-[10px] hidden sm:block uppercase tracking-wider font-bold">{t("delete")}</span>
+                    <Icon name="trash" className="w-5 h-5" />
+                    <span className="text-xs hidden sm:block uppercase tracking-wider font-bold">{t("delete")}</span>
                   </Button>
                 </div>
 
-                <Button variant="ghost" size="icon" onClick={() => setSelectedJobIds(new Set())} className="ms-4 text-white hover:bg-white dark:bg-gray-800/10">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <Button variant="ghost" size="icon" onClick={() => setSelectedJobIds(new Set())}
+                  aria-label={isRtl ? "إلغاء التحديد" : "Clear selection"} className="ms-4 text-white hover:bg-white dark:bg-gray-800/10">
+                  <Icon name="x" className="w-5 h-5" />
                 </Button>
               </div>
             )}
@@ -819,38 +409,38 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               <div className="grid grid-cols-4 gap-2 mb-3">
                 <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-yellow-100 dark:bg-yellow-900 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-yellow-600 dark:text-yellow-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <Icon name="clock" className="w-4 h-4 text-yellow-600 dark:text-yellow-100" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-yellow-600 dark:text-yellow-200 leading-none">{statusCounts.pending}</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "قيد الانتظار" : "Pending"}</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">{isRtl ? "قيد الانتظار" : "Pending"}</span>
                   </div>
                 </div>
                 <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+                    <Icon name="check" className="w-4 h-4 text-blue-600 dark:text-blue-100" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-blue-600 dark:text-blue-200 leading-none">{statusCounts.ready}</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "جاهز للاستلام" : "Ready"}</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">{isRtl ? "جاهز للاستلام" : "Ready"}</span>
                   </div>
                 </div>
                 <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-green-600 dark:text-green-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <Icon name="check-circle" className="w-4 h-4 text-green-600 dark:text-green-100" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-green-600 dark:text-green-200 leading-none">{statusCounts.printed}</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "تمت الطباعة" : "Printed"}</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">{isRtl ? "تمت الطباعة" : "Printed"}</span>
                   </div>
                 </div>
                 <div className="bg-card rounded-lg px-4 shadow-sm dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-600 flex items-center gap-3 min-h-[72px]">
                   <div className="w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <Icon name="users" className="w-4 h-4 text-indigo-600 dark:text-indigo-100" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-lg font-bold text-indigo-600 dark:text-indigo-200 leading-none">{groups.length}</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">{isRtl ? "إجمالي العملاء" : "Customers"}</span>
+                    <span className="text-xs text-muted-foreground mt-0.5">{isRtl ? "إجمالي العملاء" : "Customers"}</span>
                   </div>
                 </div>
               </div>
@@ -859,23 +449,24 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
             {/* Search Bar */}
             {!loading && groups.length > 0 && (
               <div className="relative my-3">
-                <div className={`absolute ${"start-3"} top-1/2 -translate-y-1/2 text-muted-foreground`}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <div className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  <Icon name="search" className="w-4 h-4" />
                 </div>
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={isRtl ? "ابحث بالاسم أو رقم الهاتف..." : "Search by name or phone..."}
-                  className={`${"ps-9 pe-4"}`}
+                  className="ps-9 pe-4"
                 />
                 {searchQuery && (
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setSearchQuery("")}
-                    className={`absolute ${"end-1"} top-1/2 -translate-y-1/2 h-7 w-7`}
+                    aria-label={isRtl ? "مسح البحث" : "Clear search"}
+                    className="absolute end-1 top-1/2 -translate-y-1/2 h-8 w-8"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    <Icon name="x" className="w-4 h-4" />
                   </Button>
                 )}
               </div>
@@ -946,7 +537,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                     {isRtl ? "مسح التصفية" : "Clear filters"}
                   </button>
                 )}
-                <div className={`flex items-center gap-1 ${"ms-auto"}`}>
+                <div className="flex items-center gap-1 ms-auto">
                   {([
                     ["compact", isRtl ? "جدول" : "Compact"],
                     ["cards", isRtl ? "بطاقات" : "Cards"],
@@ -1065,7 +656,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
               </div>
             ) : filteredGroups.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground bg-card rounded-xl border border-border">
-                <svg className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <Icon name="search" className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-500" />
                 <p>{isRtl ? "لا توجد نتائج" : "No results found"}</p>
               </div>
             ) : (
@@ -1119,19 +710,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                   : "bg-muted text-muted-foreground"
                               }`}
                             >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2"
-                                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                                ></path>
-                              </svg>
+                              <Icon name="user" className="w-4 h-4" />
                             </div>
                             <div className="truncate text-start">
                               <h3 className="text-sm font-bold text-foreground truncate">
@@ -1173,21 +752,9 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                             >
                               {group.jobs.length} {isRtl ? "ملف" : "files"}
                             </span>
-                            <svg
-                              className={`w-5 h-5 text-muted-foreground transition-transform ${
+                            <Icon name="chevron-down" className={`w-5 h-5 text-muted-foreground transition-transform ${
                                 isExpanded ? "rotate-180" : ""
-                              }`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M19 9l-7 7-7-7"
-                              ></path>
-                            </svg>
+                              }`} />
                           </div>
                         </button>
                       </div>
@@ -1210,27 +777,27 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                   />
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
+                                  className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                                 >
                                   {t("fileName")}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
+                                  className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                                 >
                                   {isRtl ? "الإعدادات" : "Settings"}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
+                                  className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                                 >
                                   {isRtl ? "التكلفة" : "Cost"}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
+                                  className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                                 >
                                   {t("status")}
                                 </th>
                                 <th
-                                  className={`px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}
+                                  className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
                                 >
                                   {t("payment")}
                                 </th>
@@ -1242,8 +809,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                             <tbody className="divide-y divide-gray-100 dark:divide-white/10">
                               {group.jobs.map((job) => {
                                 const isSelected = selectedJobIds.has(job.id);
-                                const ext = getFileExtension(job.fileName);
-                                const officeFile = isOfficeFile(job.fileType);
 
                                 return (
                                   <tr
@@ -1265,322 +830,26 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                       />
                                     </td>
                                     <td className="px-4 py-2 min-h-[80px]">
-                                      <div className="flex items-center gap-3 w-full">
-                                        <span
-                                          className={`text-[10px] font-bold px-2 py-1 rounded-md border flex-shrink-0 ${
-                                            ext === "PDF"
-                                              ? "bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-100 border-red-100 dark:border-red-800"
-                                              : ext === "DOCX" || ext === "DOC"
-                                                ? "bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-100 border-blue-100 dark:border-blue-800"
-                                                : officeFile
-                                                  ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-100 border-green-200 dark:border-green-800"
-                                                  : "bg-indigo-50 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-100 border-indigo-100 dark:border-indigo-800"
-                                          }`}
-                                        >
-                                          {ext}
-                                        </span>
-                                        <div className="flex flex-col flex-1 min-w-0">
-                                          <span className="flex items-center gap-1.5">
-                                            <span
-                                              className="text-sm font-semibold text-foreground truncate"
-                                              title={job.fileName}
-                                            >
-                                              {job.fileName}
-                                            </span>
-                                            {renderSourceBadge(job)}
-                                          </span>
-                                          <span className="text-xs text-muted-foreground">
-                                            {formatSize(job.fileSize)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      {job.notes && (
-                                        <div className="mt-2">
-                                          {expandedNotes.has(job.id) || !job.id.startsWith("gmail_") ? (
-                                            <div className="text-[11px] text-indigo-600 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 px-2 py-1 rounded-md inline-block font-medium max-w-xs break-words">
-                                              {job.notes}
-                                            </div>
-                                          ) : (
-                                            <>
-                                              <div className="text-[11px] text-indigo-600 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 px-2 py-1 rounded-md inline-block font-medium max-w-xs break-words">
-                                                {job.notes.length > 120 ? job.notes.slice(0, 120) + "..." : job.notes}
-                                              </div>
-                                              {job.notes.length > 120 && (
-                                                <button type="button" onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
-                                                  {isRtl ? "قراءة المزيد" : "Read more"}
-                                                </button>
-                                              )}
-                                            </>
-                                          )}
-                                          {expandedNotes.has(job.id) && (
-                                            <button onClick={() => toggleNoteExpand(job.id)} className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-400 dark:hover:text-indigo-300 ms-1 align-middle underline">
-                                              {isRtl ? "طي" : "Less"}
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
+                                      {renderFileInfo(job)}
                                     </td>
 
                                     {/* Settings Cell (Color & Copies) */}
                                     <td className="px-4 py-2 align-top">
-                                      {job.printPreferences && (
-                                        <div className="flex flex-col gap-1 w-max">
-                                          <div className="flex flex-wrap gap-1">
-                                            <Button
-                                              type="button"
-                                              title={isRtl ? "انقر للتبديل" : "Toggle mode"}
-                                              disabled={savingPrefsJobId === job.id}
-                                              onClick={() => handleToggleColorMode(job)}
-                                              variant={job.printPreferences.colorMode === "blackWhite" ? "secondary" : "default"}
-                                              size="sm"
-                                              className="text-xs h-7 px-2"
-                                            >
-                                              {savingPrefsJobId === job.id ? (
-                                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                              ) : (
-                                                <>
-                                                  <span className="text-[10px]">{job.printPreferences.colorMode === "blackWhite" ? "⚫" : "🎨"}</span>
-                                                  {job.printPreferences.colorMode === "blackWhite" ? (isRtl ? "أبيض وأسود" : "B&W") : (isRtl ? "ملون" : "Color")}
-                                                </>
-                                              )}
-                                            </Button>
-
-                                            {/* Copies Stepper */}
-                                            {editingCopiesJobId === job.id ? (
-                                              <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5 shadow-sm dark:shadow-gray-900/50 w-max">
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="w-6 h-6"
-                                                  onMouseDown={(e) => e.preventDefault()}
-                                                  onClick={() => setEditingCopiesValue((v) => Math.max(1, v - 1))}
-                                                >−</Button>
-                                                <Input
-                                                  type="number"
-                                                  min={1}
-                                                  max={100}
-                                                  autoFocus
-                                                  value={editingCopiesValue}
-                                                  onChange={(e) => setEditingCopiesValue(parseInt(e.target.value) || 1)}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === "Enter") handleSaveCopies(job, editingCopiesValue);
-                                                    if (e.key === "Escape") setEditingCopiesJobId(null);
-                                                  }}
-                                                  onBlur={() => handleSaveCopies(job, editingCopiesValue)}
-                                                  className="w-10 text-center text-xs font-semibold h-7 px-0"
-                                                />
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="w-6 h-6"
-                                                  onMouseDown={(e) => e.preventDefault()}
-                                                  onClick={() => setEditingCopiesValue((v) => Math.min(100, v + 1))}
-                                                >+</Button>
-                                                <Button
-                                                  type="button"
-                                                  size="icon"
-                                                  className="w-6 h-6 ms-1"
-                                                  onMouseDown={(e) => e.preventDefault()}
-                                                  onClick={() => handleSaveCopies(job, editingCopiesValue)}
-                                                >
-                                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                                                </Button>
-                                              </div>
-                                            ) : (
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="text-xs h-7 px-2"
-                                                onClick={() => {
-                                                  setEditingCopiesJobId(job.id);
-                                                  setEditingCopiesValue(job.printPreferences?.copies || 1);
-                                                }}
-                                              >
-                                                ×{job.printPreferences?.copies || 1} {isRtl ? "نسخ" : "copies"}
-                                              </Button>
-                                            )}
-
-                                            {/* Paper Type Select */}
-                                            <Select
-                                              value={job.printPreferences?.paperType || "normal"}
-                                              onValueChange={(val) => handlePaperTypeChange(job, val)}
-                                            >
-                                              <SelectTrigger disabled={savingPrefsJobId === job.id} className="h-7 text-xs px-2 py-0 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900 text-amber-700 dark:text-amber-100 rounded-lg font-medium w-auto gap-1 focus:ring-amber-500 dark:focus:ring-amber-400">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {paperTypes.map(pt => (
-                                                  <SelectItem key={pt.id} value={pt.id}>
-                                                    {isRtl ? pt.nameAr : pt.name}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        </div>
-                                      )}
+                                      {renderSettingsControls(job)}
                                     </td>
 
                                     {/* Cost Cell */}
                                     <td className="px-4 py-2 align-middle whitespace-nowrap">
-                                      {(currentSettings.pricing || (currentSettings.paperTypes && currentSettings.paperTypes.length > 0)) ? (
-                                        (() => {
-                                          const isOffice = job.fileType?.includes("word") || job.fileType?.includes("document") || job.fileType?.includes("excel") || job.fileType?.includes("spreadsheet") || job.fileType?.includes("presentation") || job.fileType?.includes("powerpoint");
-                                          if (isOffice) return <span className="text-xs text-muted-foreground">-</span>;
-                                          const pageCount = jobPageCounts[job.id] || 1;
-                                          const priceCalc = calculatePrintPrice(job, currentSettings, pageCount);
-                                          const discountResult = calculateJobDiscount(job, priceCalc.totalPrice, priceCalc.totalPages, discountRules);
-                                          const hasDiscount = discountResult.discountAmount > 0;
-
-                                          return (
-                                            <div className="flex flex-col gap-1">
-                                              <div className="flex flex-col">
-                                                {hasDiscount && (
-                                                  <span className="text-xs text-muted-foreground line-through">
-                                                    {formatPrice(discountResult.originalAmount)}
-                                                  </span>
-                                                )}
-                                                <span className={`text-sm font-black bg-green-100 dark:bg-[#173404] px-2.5 py-1 rounded-md border border-green-200 dark:border-green-800 shadow-sm dark:shadow-gray-900/50 w-max inline-block tracking-tight ${hasDiscount ? "text-green-700 dark:text-[#C0DD97]" : "text-green-700 dark:text-[#C0DD97]"}`}>
-                                                  {formatPrice(discountResult.finalAmount)}
-                                                </span>
-                                                {hasDiscount && discountResult.rule && (
-                                                  <span className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                                                    {isRtl ? "تم تطبيق خصم" : "Discount applied"}: {discountResult.rule.name}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                                                <span>
-                                                  {isRtl ? "الصفحات:" : "Pages:"}
-                                                </span>
-                                                <span className="font-bold text-indigo-700 dark:text-indigo-100 bg-indigo-50 dark:bg-indigo-900 border border-indigo-100 dark:border-indigo-800 px-2 py-0.5 rounded text-[11px]">
-                                                  {pageCount}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          );
-                                        })()
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">
-                                          -
-                                        </span>
-                                      )}
+                                      {renderCost(job)}
                                     </td>
                                     <td className="px-4 py-2 align-middle">
-                                      <span
-                                        className={`px-3 py-1 text-[11px] font-bold rounded-full uppercase tracking-wide inline-block ${
-                                          job.status === PrintStatus.PRINTED
-                                            ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-100 border border-green-200 dark:border-green-800"
-                                            : job.status === PrintStatus.READY
-                                            ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-100 border border-blue-200 dark:border-blue-800"
-                                            : "bg-amber-100 dark:bg-[#412402] text-amber-700 dark:text-[#FAC775] border border-amber-200 dark:border-amber-800"
-                                        }`}
-                                      >
-                                        {job.status === PrintStatus.PRINTED
-                                          ? t("printed")
-                                          : job.status === PrintStatus.READY
-                                          ? t("ready")
-                                          : t("pending")}
-                                      </span>
+                                      <StatusBadge job={job} />
                                     </td>
                                     <td className="px-4 py-2 align-middle">
-                                      <span
-                                        className={`px-2 py-1 text-[11px] font-bold rounded-full inline-flex items-center gap-1 cursor-pointer hover:opacity-80 ${
-                                          job.paymentStatus === PaymentStatus.PAID
-                                            ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-100 border border-green-200 dark:border-green-800"
-                                            : job.paymentStatus === PaymentStatus.PARTIAL
-                                            ? "bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-100 border border-amber-200 dark:border-amber-800"
-                                            : "bg-red-100 dark:bg-[#501313] text-red-700 dark:text-[#F7C1C1] border border-red-200 dark:border-red-800"
-                                        }`}
-                                        onClick={() => handlePaymentClick(job)}
-                                        title={isRtl ? "انقر لتعديل الدفع" : "Click to edit payment"}
-                                      >
-                                        <span className="text-[10px]">
-                                          {job.paymentStatus === PaymentStatus.PAID ? "✓" : job.paymentStatus === PaymentStatus.PARTIAL ? "◐" : "✕"}
-                                        </span>
-                                        <span>
-                                          {job.paymentStatus === PaymentStatus.PAID
-                                            ? t("paid")
-                                            : job.paymentStatus === PaymentStatus.PARTIAL
-                                            ? t("partial")
-                                            : t("unpaid")}
-                                        </span>
-                                        {job.paymentAmount ? (
-                                          <span className="text-[10px] opacity-70 font-mono">{formatPrice(job.paymentAmount)}</span>
-                                        ) : null}
-                                      </span>
+                                      <PaymentBadge job={job} onEdit={handlePaymentClick} />
                                     </td>
                                     <td className="px-4 py-2 align-middle">
-                                      <div className="flex items-center gap-0.5 w-max">
-                                        {officeFile ? (
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => handleOpenInApp(job)}
-                                            title={isRtl ? "فتح في التطبيق" : "Open in default app"}
-                                            className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-                                          >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                                          </Button>
-                                        ) : (
-                                          <>
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              onClick={() => handleQuickPrint(job)}
-                                              title={isRtl ? `طباعة سريعة${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}` : `Quick Print${defaultPrinterName ? ` — ${defaultPrinterName}` : ""}`}
-                                              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                                            </Button>
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              onClick={() => jobs.setPrintOptionsJob(job)}
-                                              title={isRtl ? "خيارات الطباعة…" : "Print options…"}
-                                              className="text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10 w-8 h-8"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-                                            </Button>
-                                          </>
-                                        )}
-                                        <Button variant="ghost" size="icon" onClick={() => onPreview(job)} title={isRtl ? "معاينة" : "Preview"} className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-white/10 w-8 h-8">
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => handleEdit(job)} title={t("edit")} className="text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-white/10 w-8 h-8">
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                        </Button>
-                                        <Button variant="ghost" size="icon" onClick={() => handleDownload(job)} title={t("download")} className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-white/10 w-8 h-8">
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                        </Button>
-                                        <span className="mx-1 w-px h-6 bg-gray-200 dark:bg-white/20 shrink-0" />
-                                        <span className="group/status relative" title={isRtl ? "تغيير الحالة" : "Change status"}>
-                                          <Select value={job.status} onValueChange={(val) => handleStatusChange(job.id, val as PrintStatus)}>
-                                            <SelectTrigger className={`h-8 w-8 border-0 p-0 ${job.status === PrintStatus.PRINTED ? "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-white/10" : job.status === PrintStatus.READY ? "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10" : "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-white/10"}`}>
-                                              <SelectValue>
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                              </SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value={PrintStatus.PENDING}>
-                                                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500 dark:bg-yellow-400 inline-block"></span>{isRtl ? "قيد الانتظار" : "Pending"}</span>
-                                              </SelectItem>
-                                              <SelectItem value={PrintStatus.READY}>
-                                                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>{isRtl ? "جاهز" : "Ready"}</span>
-                                              </SelectItem>
-                                              <SelectItem value={PrintStatus.PRINTED}>
-                                                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>{isRtl ? "تمت الطباعة" : "Printed"}</span>
-                                              </SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </span>
-                                        <Button variant="ghost" size="icon" onClick={() => handleDelete(job.id)} title={t("delete")} className="text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-white/10 w-8 h-8">
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                        </Button>
-                                      </div>
+                                      {renderActions(job)}
                                     </td>
                                   </tr>
                                 );

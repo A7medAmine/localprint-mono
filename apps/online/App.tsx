@@ -1,6 +1,8 @@
 import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Routes, Route, useParams, Link, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
+import { emitAppEvent } from "@localprint/shared/lib/appEvents";
+import { readPref, writePref } from "@localprint/shared/lib/prefs";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
 // The upload flow pulls in pdf.js and xlsx for previews; the account page is a
@@ -16,6 +18,7 @@ const RouteFallback: React.FC = () => (
 import LanguageToggle from "./components/LanguageToggle";
 import { useAuth } from "./hooks/useAuth";
 import { isCustomerAuthConfigured } from "./services/supabaseClient";
+import { Icon } from "./components/ui/icon";
 
 const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
   <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
@@ -65,7 +68,7 @@ const App: React.FC = () => {
   const location = useLocation();
   const isAccountRoute = location.pathname === "/account";
   const [lang, setLang] = useState<Language>(() => {
-    const savedLang = localStorage.getItem("ps_language") as Language;
+    const savedLang = readPref("language") as Language;
     return savedLang || "ar";
   });
 
@@ -75,27 +78,27 @@ const App: React.FC = () => {
   });
 
   const [lastShopSlug, setLastShopSlug] = useState<string | null>(() =>
-    localStorage.getItem("ps_last_shop_slug"),
+    readPref("lastShopSlug"),
   );
   const handleShopVisited = (slug: string) => {
     setLastShopSlug(slug);
-    localStorage.setItem("ps_last_shop_slug", slug);
+    writePref("lastShopSlug", slug);
   };
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem("ps_dark_mode") === "true";
+    return readPref("legacyDarkMode") === "true";
   });
 
   useEffect(() => {
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = lang;
-    localStorage.setItem("ps_language", lang);
-    window.dispatchEvent(new CustomEvent("ps:langchange", { detail: lang }));
+    writePref("language", lang);
+    emitAppEvent("ps:langchange", lang);
   }, [lang]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
-    localStorage.setItem("ps_dark_mode", String(darkMode));
+    writePref("legacyDarkMode", String(darkMode));
   }, [darkMode]);
 
   return (
@@ -112,9 +115,7 @@ const App: React.FC = () => {
                 {settings.logoUrl ? (
                   <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain" />
                 ) : (
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm-1 9H8v2h4v-2z" clipRule="evenodd" />
-                  </svg>
+                  <Icon name="print" className="w-6 h-6" />
                 )}
               </div>
               <div className="flex flex-col justify-center min-w-0">
@@ -142,13 +143,9 @@ const App: React.FC = () => {
             aria-label={lang === "ar" ? "الوضع الليلي" : "Dark mode"}
           >
             {darkMode ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
+              <Icon name="sun" className="w-5 h-5" />
             ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-              </svg>
+              <Icon name="moon" className="w-5 h-5" />
             )}
           </button>
           <LanguageToggle currentLang={lang} onToggle={setLang} />
@@ -163,9 +160,7 @@ const App: React.FC = () => {
               aria-label={lang === "ar" ? "حسابي" : "My account"}
               title={user?.email || (lang === "ar" ? "تسجيل الدخول" : "Sign in")}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+              <Icon name="user" className="w-5 h-5" />
             </Link>
           )}
         </div>

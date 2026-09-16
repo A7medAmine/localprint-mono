@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { DiscountRule, DiscountType, ConditionType, PaperType, PrinterJobDefaults } from "../../../types";
+import { DiscountRule, DiscountType, ConditionType, PaperType, ShopSettings } from "../../../types";
 import { storageService } from "../../../services/storageService";
-import { isElectron, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
 import { cn } from "@localprint/shared";
 import { toast } from "../../../components/ui/use-toast";
 import {
@@ -19,23 +18,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
-import { Label } from "../../../components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import QrPosterDialog from "../../../components/QrPosterDialog";
 import { useAdmin } from "../AdminContext";
+import { PasswordCard } from "./PasswordCard";
+import { BackupCard } from "./BackupCard";
+import { PrintersCard } from "./PrintersCard";
+import { Icon } from "../../../components/ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface JobStats {
   pending: number;
@@ -53,7 +48,7 @@ interface SettingsPanelProps {
   onManageInventory: () => void;
 }
 
-const PAPER_TYPE_FALLBACK = (pricing: any): PaperType[] => [
+const PAPER_TYPE_FALLBACK = (pricing: ShopSettings["pricing"]): PaperType[] => [
   { id: "normal", name: "Normal", nameAr: "عادي", colorPerPage: pricing?.colorPerPage || 30.0, blackWhitePerPage: pricing?.blackWhitePerPage || 15.0 },
   { id: "glossy", name: "Glossy", nameAr: "لامع", colorPerPage: pricing?.glossyPerPage || 50.0, blackWhitePerPage: pricing?.glossyPerPage || 50.0 },
   { id: "cardboard", name: "Cardboard", nameAr: "ورق مقوى", colorPerPage: pricing?.cardboardPerPage || 40.0, blackWhitePerPage: pricing?.cardboardPerPage || 40.0 },
@@ -83,7 +78,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const [returnPolicy, setReturnPolicy] = useState(currentSettings.returnPolicy || "");
   const [showAddPaperTypeForm, setShowAddPaperTypeForm] = useState(false);
   const [newPaperTypeForm, setNewPaperTypeForm] = useState({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
-  const [showPasswords, setShowPasswords] = useState({ current: false, newPass: false, confirm: false });
   const [cloudSyncUrl, setCloudSyncUrl] = useState(currentSettings.cloudSyncUrl || "");
   const [cloudShopSlug, setCloudShopSlug] = useState(currentSettings.cloudShopSlug || "");
   const [shopApiToken, setShopApiToken] = useState(currentSettings.shopApiToken || "");
@@ -93,18 +87,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   // "draft" tests the fields as typed, "saved" tests what the server has stored.
   const [cloudTesting, setCloudTesting] = useState<null | "draft" | "saved">(null);
   const [cloudTestResult, setCloudTestResult] = useState<{ ok: boolean; text: string } | null>(null);
-  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
-  const [printersLoading, setPrintersLoading] = useState(false);
-  const [printersError, setPrintersError] = useState<string | null>(null);
-  const [defaultPrinterName, setDefaultPrinterName] = useState<string>(currentSettings.defaultPrinterName || "");
-  const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>(currentSettings.printerDefaults || {});
-  const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
-  const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const [restoring, setRestoring] = useState(false);
   const [qrPosterOpen, setQrPosterOpen] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({ current: "", newPass: "", confirm: "" });
-  const [passwordError, setPasswordError] = useState("");
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [isEditingRule, setIsEditingRule] = useState(false);
   const [editingRule, setEditingRule] = useState<DiscountRule | null>(null);
   const [showRuleForm, setShowRuleForm] = useState(false);
@@ -129,7 +112,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   useEffect(() => {
     const prev = prevSyncedRef.current;
     // "clean" = the draft still matches what we last synced, i.e. untouched.
-    const clean = (local: any, prevVal: any) =>
+    const clean = (local: unknown, prevVal: unknown) =>
       prev === null || JSON.stringify(local) === JSON.stringify(prevVal);
 
     if (clean(shopName, prev?.shopName)) setShopName(currentSettings.shopName);
@@ -149,29 +132,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     if (clean(cloudSyncPollInterval, prev?.cloudSyncPollInterval || "30000")) setCloudSyncPollInterval(currentSettings.cloudSyncPollInterval || "30000");
     if (clean(autoAcceptCloudJobs, prev ? prev.autoAcceptCloudJobs !== false : undefined)) setAutoAcceptCloudJobs(currentSettings.autoAcceptCloudJobs !== false);
     if (clean(autoDeductStock, prev ? prev.autoDeductStock === true : undefined)) setAutoDeductStock(currentSettings.autoDeductStock === true);
-    if (clean(defaultPrinterName, prev?.defaultPrinterName ?? "")) setDefaultPrinterName(currentSettings.defaultPrinterName || "");
-    if (clean(printerDefaults, prev?.printerDefaults ?? {})) setPrinterDefaults(currentSettings.printerDefaults || {});
+    // Printer state lives in PrintersCard, which re-baselines itself.
 
     prevSyncedRef.current = currentSettings;
   }, [currentSettings]);
 
-  const loadPrinters = React.useCallback(async () => {
-    if (!isElectron()) return;
-    setPrintersLoading(true);
-    setPrintersError(null);
-    try {
-      const list = await getPrinters();
-      setPrinters(list);
-    } catch (err) {
-      setPrintersError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPrintersLoading(false);
-    }
-  }, []);
 
-  useEffect(() => {
-    loadPrinters();
-  }, [loadPrinters]);
 
   const handleAddRule = () => {
     setIsEditingRule(false);
@@ -257,47 +223,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError("");
-    setPasswordSuccess(false);
-    if (passwordForm.newPass !== passwordForm.confirm) {
-      setPasswordError(isRtl ? "كلمات المرور الجديدة غير متطابقة" : "New passwords do not match");
-      return;
-    }
-    if (passwordForm.newPass.length < 4) {
-      setPasswordError(isRtl ? "يجب أن تكون كلمة المرور 4 أحرف على الأقل" : "Password must be at least 4 characters");
-      return;
-    }
-    try {
-      await storageService.changePassword(passwordForm.current, passwordForm.newPass);
-      setPasswordSuccess(true);
-      setPasswordForm({ current: "", newPass: "", confirm: "" });
-      toast({ title: isRtl ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", variant: "success" });
-    } catch {
-      setPasswordError(isRtl ? "كلمة المرور الحالية غير صحيحة" : "Current password is incorrect");
-    }
-  };
 
-  const handleBackupDownload = () => {
-    storageService.downloadBackup();
-  };
 
-  const handleBackupRestore = async () => {
-    if (!restoreFile) return;
-    setRestoring(true);
-    try {
-      await storageService.restoreBackup(restoreFile);
-      toast({ title: isRtl ? "تمت الاستعادة. إعادة تحميل..." : "Restored. Reloading...", variant: "success" });
-      setBackupRestoreOpen(false);
-      setRestoreFile(null);
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الاستعادة" : "Restore failed", description: err.message, variant: "destructive" });
-    } finally {
-      setRestoring(false);
-    }
-  };
 
   // Paper types persist immediately via the granular /api/paper-types endpoints
   // (create/update/delete) instead of the old bulk settings save, which wiped
@@ -323,8 +250,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
       setShowAddPaperTypeForm(false);
       setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
       toast({ title: isRtl ? "تم إضافة نوع الورق" : "Paper type added", variant: "success" });
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل إضافة نوع الورق" : "Failed to add paper type", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل إضافة نوع الورق" : "Failed to add paper type", description: errorMessage(err), variant: "destructive" });
     }
   };
 
@@ -336,8 +263,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
       setEditingPaperTypeId(null);
       setEditingPaperTypeForm(null);
       toast({ title: isRtl ? "تم حفظ نوع الورق" : "Paper type saved", variant: "success" });
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل حفظ نوع الورق" : "Failed to save paper type", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل حفظ نوع الورق" : "Failed to save paper type", description: errorMessage(err), variant: "destructive" });
     }
   };
 
@@ -346,8 +273,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
       await storageService.deletePaperType(id);
       syncPaperTypes(paperTypes.filter((pt) => pt.id !== id));
       toast({ title: isRtl ? "تم حذف نوع الورق" : "Paper type deleted", variant: "success" });
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل حذف نوع الورق" : "Failed to delete paper type", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل حذف نوع الورق" : "Failed to delete paper type", description: errorMessage(err), variant: "destructive" });
     }
   };
 
@@ -363,8 +290,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
       await storageService.saveSettings(subset);
       onSettingsUpdate({ ...currentSettings, ...subset });
       toast({ title: isRtl ? "تم الحفظ بنجاح" : "Saved successfully", variant: "success" });
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الحفظ" : "Save failed", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل الحفظ" : "Save failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setSavingSection(null);
     }
@@ -410,8 +337,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
         setCloudTestResult({ ok: false, text });
         toast({ title: isRtl ? "فشل الاتصال" : "Connection failed", description: text, variant: "destructive" });
       }
-    } catch (err: any) {
-      const text = err?.message || (isRtl ? "فشل الاتصال" : "Connection failed");
+    } catch (err) {
+      const text = errorMessage(err) || (isRtl ? "فشل الاتصال" : "Connection failed");
       setCloudTestResult({ ok: false, text });
       toast({ title: isRtl ? "فشل الاتصال" : "Connection failed", description: text, variant: "destructive" });
     } finally {
@@ -420,11 +347,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   };
 
   const saveInventory = () => persistSection("inventory", { autoDeductStock });
-  const savePrinters = () => persistSection("printers", { defaultPrinterName, printerDefaults });
 
   // Per-section dirty flags — drive each Save button's enabled state so one
   // section's Save never silently ships another section's half-made edits.
-  const eq = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+  const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const shopDirty =
     shopName !== currentSettings.shopName ||
     currency !== (currentSettings.currency || "") ||
@@ -440,9 +366,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     cloudSyncPollInterval !== (currentSettings.cloudSyncPollInterval || "30000") ||
     autoAcceptCloudJobs !== (currentSettings.autoAcceptCloudJobs !== false);
   const inventoryDirty = autoDeductStock !== (currentSettings.autoDeductStock === true);
-  const printersDirty =
-    defaultPrinterName !== (currentSettings.defaultPrinterName || "") ||
-    !eq(printerDefaults, currentSettings.printerDefaults || {});
 
   const renderSaveBar = (dirty: boolean, section: string, onSave: () => void) => (
     <div className="flex items-center justify-end gap-3 pt-3 mt-1 border-t border-border">
@@ -452,9 +375,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
         </span>
       )}
       <Button onClick={onSave} disabled={!dirty || savingSection === section} size="sm" className="gap-1.5">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-        </svg>
+        <Icon name="check" className="w-4 h-4" />
         {savingSection === section ? (isRtl ? "جارٍ الحفظ..." : "Saving…") : (isRtl ? "حفظ" : "Save")}
       </Button>
     </div>
@@ -468,7 +389,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
         setLogoUrl(newLogoUrl);
         onSettingsUpdate({ ...currentSettings, logoUrl: newLogoUrl });
         toast({ title: isRtl ? "تم رفع الشعار بنجاح" : "Logo uploaded successfully", variant: "success" });
-      } catch (err) {
+      } catch {
         toast({ title: isRtl ? "فشل رفع الشعار" : "Failed to upload logo", variant: "destructive" });
       }
     }
@@ -497,9 +418,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
-                      </svg>
+                      <Icon name="qr" className="w-5 h-5" />
                     </div>
                     <div>
                       <CardTitle className="text-base">{isRtl ? "ملصق QR للمتجر" : "Shop QR Poster"}</CardTitle>
@@ -519,9 +438,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         : "Pick the local-network link or the online website link before printing."}
                     </p>
                     <Button onClick={() => setQrPosterOpen(true)} className="gap-2 w-full sm:w-auto">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4h12v5M6 18h12v-6H6zM6 14H4a2 2 0 01-2-2V9a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2" />
-                      </svg>
+                      <Icon name="print" className="w-4 h-4" />
                       {isRtl ? "فتح ملصق QR" : "Open QR Poster"}
                     </Button>
                   </div>
@@ -533,9 +450,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
+                      <Icon name="building" className="w-5 h-5" />
                     </div>
                     <div>
                       <CardTitle className="text-base">{isRtl ? "معلومات المحل" : "Shop Information"}</CardTitle>
@@ -557,9 +472,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         </div>
                       ) : (
                         <div className="w-20 h-20 rounded-xl border-2 border-dashed border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
+                          <Icon name="file-image" className="w-8 h-8 text-muted-foreground" />
                         </div>
                       )}
                       <div className="flex-1 w-full">
@@ -576,13 +489,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       {phoneNumbers.map((num, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           <Input value={num} onChange={(e) => { const next = [...phoneNumbers]; next[idx] = e.target.value; setPhoneNumbers(next); }} placeholder={isRtl ? "رقم الهاتف" : "Phone number"} />
-                          <button type="button" onClick={() => setPhoneNumbers(phoneNumbers.filter((_, i) => i !== idx))} className="p-2 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                          <button type="button" onClick={() => setPhoneNumbers(phoneNumbers.filter((_, i) => i !== idx))} aria-label={isRtl ? "حذف الرقم" : "Remove number"} className="p-2 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                            <Icon name="x" className="w-4 h-4" />
                           </button>
                         </div>
                       ))}
                       <Button variant="outline" size="sm" onClick={() => setPhoneNumbers([...phoneNumbers, ""])}>
-                        <svg className="w-3.5 h-3.5 me-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                        <Icon name="plus" className="w-3.5 h-3.5 me-1" />
                         {t("addPhone")}
                       </Button>
                     </div>
@@ -628,9 +541,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                      <Icon name="money" className="w-5 h-5" />
                     </div>
                     <div>
                       <CardTitle className="text-base">{isRtl ? "أسعار الطباعة" : "Printing Prices"}</CardTitle>
@@ -644,7 +555,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       {isRtl ? "أنواع الورق وأسعارها" : "Paper Types & Pricing"}
                     </label>
                     <Button size="sm" onClick={() => { setShowAddPaperTypeForm(true); setEditingPaperTypeId(null); }}>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                      <Icon name="plus" className="w-3.5 h-3.5" />
                       {isRtl ? "إضافة نوع" : "Add Type"}
                     </Button>
                   </div>
@@ -653,9 +564,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     <table className="w-full text-sm min-w-[400px]">
                       <thead>
                         <tr className="bg-muted/40 border-b border-border">
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "نوع الورق" : "Paper Type"}</th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "ملون" : "Color"}</th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground ${"text-start"}`}>{isRtl ? "أبيض/أسود" : "B&W"}</th>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "نوع الورق" : "Paper Type"}</th>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "ملون" : "Color"}</th>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "أبيض/أسود" : "B&W"}</th>
                           <th className="px-3 py-2.5 w-16"></th>
                         </tr>
                       </thead>
@@ -665,19 +576,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                             {editingPaperTypeId === pt.id && editingPaperTypeForm ? (
                               <>
                                 <td className="px-3 py-2">
-                                  <Input value={editingPaperTypeForm.name} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, name: e.target.value })} placeholder="EN" className="text-xs mb-1 h-7" />
-                                  <Input value={editingPaperTypeForm.nameAr} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, nameAr: e.target.value })} placeholder="AR" className="text-xs h-7" />
+                                  <Input value={editingPaperTypeForm.name} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, name: e.target.value })} placeholder="EN" className="text-xs mb-1 h-8" />
+                                  <Input value={editingPaperTypeForm.nameAr} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, nameAr: e.target.value })} placeholder="AR" className="text-xs h-8" />
                                 </td>
                                 <td className="px-3 py-2">
-                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.colorPerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-7" />
+                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.colorPerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
                                 </td>
                                 <td className="px-3 py-2">
-                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.blackWhitePerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-7" />
+                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.blackWhitePerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
                                 </td>
                                 <td className="px-3 py-2">
                                   <div className="flex gap-1">
-                                    <Button size="sm" variant="default" onClick={() => handleSavePaperType(pt.id)}>✓</Button>
-                                    <Button size="sm" variant="outline" onClick={() => { setEditingPaperTypeId(null); setEditingPaperTypeForm(null); }}>✕</Button>
+                                    <Button size="sm" variant="default" onClick={() => handleSavePaperType(pt.id)} aria-label={isRtl ? "حفظ" : "Save"}><Icon name="check" /></Button>
+                                    <Button size="sm" variant="outline" onClick={() => { setEditingPaperTypeId(null); setEditingPaperTypeForm(null); }} aria-label={isRtl ? "إلغاء" : "Cancel"}><Icon name="x" /></Button>
                                   </div>
                                 </td>
                               </>
@@ -697,12 +608,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                                 </td>
                                 <td className="px-3 py-3">
                                   <div className="flex gap-1">
-                                    <Button variant="ghost" size="icon" onClick={() => { setEditingPaperTypeId(pt.id); setEditingPaperTypeForm({ name: pt.name, nameAr: pt.nameAr, colorPerPage: pt.colorPerPage, blackWhitePerPage: pt.blackWhitePerPage }); setShowAddPaperTypeForm(false); }} title="Edit">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536M9 11l6.071-6.071a2.5 2.5 0 113.536 3.536L12.536 14.5a2 2 0 01-.93.534l-3.192.798.798-3.192a2 2 0 01.534-.93L9 11z"/></svg>
+                                    <Button variant="ghost" size="icon" onClick={() => { setEditingPaperTypeId(pt.id); setEditingPaperTypeForm({ name: pt.name, nameAr: pt.nameAr, colorPerPage: pt.colorPerPage, blackWhitePerPage: pt.blackWhitePerPage }); setShowAddPaperTypeForm(false); }} title="Edit" aria-label="Edit">
+                                      <Icon name="edit" className="w-3.5 h-3.5" />
                                     </Button>
                                     {paperTypes.length > 1 && (
-                                      <Button variant="ghost" size="icon" onClick={() => handleDeletePaperType(pt.id)} title="Delete">
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                      <Button variant="ghost" size="icon" onClick={() => handleDeletePaperType(pt.id)} title="Delete" aria-label="Delete">
+                                        <Icon name="trash" className="w-3.5 h-3.5" />
                                       </Button>
                                     )}
                                   </div>
@@ -772,65 +683,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                 </CardContent>
               </Card>
 
-              {/* Password Change Card — full width */}
-              <Card className="lg:col-span-2 border-0">
-              <CardHeader className="flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "تغيير كلمة المرور" : "Change Password"}</CardTitle>
-                    <CardDescription>{isRtl ? "تحديث كلمة مرور المسؤول" : "Update admin password"}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <form onSubmit={handleChangePassword} className="p-5 sm:p-6 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "كلمة المرور الحالية" : "Current Password"}</label>
-                    <div className="relative">
-                      <Input type={showPasswords.current ? "text" : "password"} value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })} placeholder="••••••••" required className="pe-10" />
-                      <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, current: !p.current }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
-                        {showPasswords.current ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "كلمة المرور الجديدة" : "New Password"}</label>
-                    <div className="relative">
-                      <Input type={showPasswords.newPass ? "text" : "password"} value={passwordForm.newPass} onChange={(e) => setPasswordForm({ ...passwordForm, newPass: e.target.value })} placeholder="••••••••" required className="pe-10" />
-                      <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, newPass: !p.newPass }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
-                        {showPasswords.newPass ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "تأكيد كلمة المرور" : "Confirm Password"}</label>
-                    <div className="relative">
-                      <Input type={showPasswords.confirm ? "text" : "password"} value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })} placeholder="••••••••" required className="pe-10" />
-                      <Button type="button" variant="ghost" size="icon" onClick={() => setShowPasswords(p => ({ ...p, confirm: !p.confirm }))} className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7" tabIndex={-1}>
-                        {showPasswords.confirm ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                {passwordError && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{passwordError}</p>}
-                {passwordSuccess && <p className="text-sm text-green-600 dark:text-green-400 font-medium">{isRtl ? "✓ تم تغيير كلمة المرور بنجاح" : "✓ Password changed successfully"}</p>}
-                <Button type="submit" variant="destructive">{isRtl ? "تغيير كلمة المرور" : "Change Password"}</Button>
-              </form>
-            </Card>
+              <PasswordCard />
 
             {/* Discount Rules Card - Full Width */}
             <Card className="lg:col-span-2 border-0">
               <CardHeader className="flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
+                    <Icon name="tag" className="w-5 h-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{isRtl ? "قواعد الخصم" : "Discount Rules"}</CardTitle>
@@ -838,9 +698,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   </div>
                 </div>
                 <Button size="sm" onClick={handleAddRule}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                  </svg>
+                  <Icon name="plus" className="w-4 h-4" />
                   {isRtl ? "إضافة قاعدة" : "Add Rule"}
                 </Button>
               </CardHeader>
@@ -848,9 +706,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <CardContent>
                 {discountRules.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <Icon name="frown" className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-500" />
                     <p>{isRtl ? "لا توجد قواعد خصم بعد" : "No discount rules yet"}</p>
                     <p className="text-sm mt-1">
                       {isRtl ? "انقر على إضافة قاعدة لإنشاء خصم جديد" : "Click Add Rule to create a discount"}
@@ -906,15 +762,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditRule(rule)}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
+                          <Button variant="ghost" size="icon" onClick={() => handleEditRule(rule)} aria-label={isRtl ? "تعديل القاعدة" : "Edit rule"}>
+                            <Icon name="edit" className="w-5 h-5" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(rule.id)}>
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(rule.id)} aria-label={isRtl ? "حذف القاعدة" : "Delete rule"}>
+                            <Icon name="trash" className="w-5 h-5" />
                           </Button>
                         </div>
                       </div>
@@ -929,9 +781,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
+                    <Icon name="cloud-upload" className="w-5 h-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{isRtl ? "المزامنة السحابية" : "Cloud Sync"}</CardTitle>
@@ -1004,9 +854,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       disabled={cloudTesting !== null}
                       onClick={() => runCloudTest("draft")}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
+                      <Icon name="zap" className="w-4 h-4" />
                       {cloudTesting === "draft"
                         ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
                         : (isRtl ? "اختبار هذه القيم" : "Test these values")}
@@ -1019,9 +867,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       disabled={cloudTesting !== null}
                       onClick={() => runCloudTest("saved")}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
+                      <Icon name="refresh" className="w-4 h-4" />
                       {cloudTesting === "saved"
                         ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
                         : (isRtl ? "اختبار الاتصال المحفوظ" : "Test saved connection")}
@@ -1054,9 +900,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
+                    <Icon name="package" className="w-5 h-5" />
                   </div>
                   <div>
                     <CardTitle className="text-base">{isRtl ? "المخزون" : "Inventory"}</CardTitle>
@@ -1080,7 +924,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                       onClick={onManageInventory}
                       className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline mt-2"
                     >
-                      {isRtl ? "إدارة عناصر المخزون ←" : "Manage inventory items →"}
+                      <>{isRtl ? "إدارة عناصر المخزون" : "Manage inventory items"}<Icon name="arrow-end" className="ms-1 inline-block align-text-bottom rtl:rotate-180" /></>
                     </button>
                   </div>
                   <Switch
@@ -1093,210 +937,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
               </CardContent>
             </Card>
 
-            {/* Printers Card (Electron-only surface) */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "الطابعات" : "Printers"}</CardTitle>
-                    <CardDescription>{isRtl ? "اختر الطابعة الافتراضية واضبط إعدادات المهمة لكل طابعة" : "Choose a default printer and set per-printer job defaults"}</CardDescription>
-                  </div>
-                  <div className="ms-auto">
-                    <Button variant="outline" size="sm" onClick={loadPrinters} disabled={printersLoading} className="gap-2">
-                      <svg className={cn("w-4 h-4", printersLoading && "animate-spin")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      {isRtl ? "تحديث" : "Refresh"}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {!isElectron() ? (
-                  <p className="text-sm text-muted-foreground">
-                    {isRtl
-                      ? "الطباعة الأصلية متاحة فقط داخل تطبيق سطح المكتب."
-                      : "Native printing is only available inside the desktop app."}
-                  </p>
-                ) : printersError ? (
-                  <p className="text-sm text-red-600 dark:text-red-400">{printersError}</p>
-                ) : printers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {printersLoading
-                      ? (isRtl ? "جارٍ اكتشاف الطابعات..." : "Detecting printers…")
-                      : (isRtl ? "لم يتم العثور على طابعات مثبتة." : "No installed printers were found.")}
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {printers.map((p) => {
-                      const isDefault = defaultPrinterName === p.name;
-                      const d: PrinterJobDefaults = printerDefaults[p.name] || {
-                        duplexMode: "simplex",
-                        color: true,
-                        copies: 1,
-                        collate: true,
-                        landscape: false,
-                      };
-                      const patchDefaults = (patch: Partial<PrinterJobDefaults>) => {
-                        setPrinterDefaults((prev) => ({ ...prev, [p.name]: { ...d, ...patch } }));
-                      };
-                      return (
-                        <div
-                          key={p.name}
-                          className={cn(
-                            "rounded-xl border p-4",
-                            isDefault
-                              ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20"
-                              : "border-border",
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3 flex-wrap">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-foreground">
-                                  {p.displayName || p.name}
-                                </span>
-                                {p.isDefault && (
-                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                                    {isRtl ? "افتراضي النظام" : "System default"}
-                                  </span>
-                                )}
-                                {isDefault && (
-                                  <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300">
-                                    {isRtl ? "الطباعة السريعة" : "Quick Print"}
-                                  </span>
-                                )}
-                              </div>
-                              {p.description && (
-                                <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>
-                              )}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant={isDefault ? "secondary" : "outline"}
-                              onClick={() => setDefaultPrinterName(isDefault ? "" : p.name)}
-                            >
-                              {isDefault
-                                ? (isRtl ? "الطابعة الافتراضية" : "Default printer")
-                                : (isRtl ? "تعيين كافتراضية" : "Set as default")}
-                            </Button>
-                          </div>
+            <PrintersCard
+              currentSettings={currentSettings}
+              onPersist={persistSection}
+              renderSaveBar={renderSaveBar}
+            />
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-                            <div>
-                              <Label className="text-xs">{isRtl ? "الوجهين" : "Duplex"}</Label>
-                              <Select
-                                value={d.duplexMode}
-                                onValueChange={(v) => patchDefaults({ duplexMode: v as PrinterJobDefaults["duplexMode"] })}
-                              >
-                                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="simplex">{isRtl ? "وجه واحد" : "Single-sided"}</SelectItem>
-                                  <SelectItem value="longEdge">{isRtl ? "وجهين (الحافة الطويلة)" : "Two-sided (long edge)"}</SelectItem>
-                                  <SelectItem value="shortEdge">{isRtl ? "وجهين (الحافة القصيرة)" : "Two-sided (short edge)"}</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label className="text-xs">{isRtl ? "نسخ" : "Copies"}</Label>
-                              <Input
-                                type="number"
-                                min={1}
-                                className="mt-1"
-                                value={d.copies}
-                                onChange={(e) => patchDefaults({ copies: Math.max(1, parseInt(e.target.value || "1", 10) || 1) })}
-                              />
-                            </div>
-                            <div className="flex flex-col justify-between gap-2">
-                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                                <Label className="text-xs cursor-pointer">{isRtl ? "ألوان" : "Color"}</Label>
-                                <Switch checked={d.color} onCheckedChange={(c) => patchDefaults({ color: c })} />
-                              </div>
-                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                                <Label className="text-xs cursor-pointer">{isRtl ? "ترتيب" : "Collate"}</Label>
-                                <Switch checked={d.collate} onCheckedChange={(c) => patchDefaults({ collate: c })} />
-                              </div>
-                              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                                <Label className="text-xs cursor-pointer">{isRtl ? "أفقي" : "Landscape"}</Label>
-                                <Switch checked={d.landscape} onCheckedChange={(c) => patchDefaults({ landscape: c })} />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <p className="text-xs text-muted-foreground">
-                      {isRtl
-                        ? "تُستخدم هذه الإعدادات كنقطة بداية للطباعة السريعة ولمربع حوار خيارات الطباعة."
-                        : "These defaults are the starting point for Quick Print and pre-fill the Options print dialog."}
-                    </p>
-                  </div>
-                )}
-                {isElectron() && renderSaveBar(printersDirty, "printers", savePrinters)}
-              </CardContent>
-            </Card>
-
-            {/* Backup & Restore Card */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground dark:text-gray-500 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{t("backup")}</CardTitle>
-                    <CardDescription>{isRtl ? "تنزيل أو استعادة نسخة احتياطية من قاعدة البيانات" : "Download or restore database backup"}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                  <Button variant="outline" onClick={handleBackupDownload} className="gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                    {t("downloadBackup")}
-                  </Button>
-                  <Button variant="outline" onClick={() => setBackupRestoreOpen(true)} className="gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    {t("restoreBackup")}
-                  </Button>
-                </div>
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-3 flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-                  {t("restoreWarning")}
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Backup Restore Dialog */}
-            <Dialog open={backupRestoreOpen} onOpenChange={(open) => { if (!open) { setBackupRestoreOpen(false); setRestoreFile(null); } }}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t("restoreBackup")}</DialogTitle>
-                  <DialogDescription>{t("restoreWarning")}</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <Input type="file" accept=".sqlite,.db" onChange={(e) => setRestoreFile(e.target.files?.[0] || null)} />
-                  {restoreFile && (
-                    <p className="text-xs text-muted-foreground">{restoreFile.name}</p>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => { setBackupRestoreOpen(false); setRestoreFile(null); }}>
-                    {t("cancel")}
-                  </Button>
-                  <Button disabled={!restoreFile || restoring} onClick={handleBackupRestore} variant="destructive">
-                    {restoring ? (isRtl ? "جارٍ الاستعادة..." : "Restoring...") : (isRtl ? "استعادة" : "Restore")}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <BackupCard />
             </div>
 
             {/* Quick Stats */}
@@ -1421,7 +1068,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             placeholder={ruleFormData.discount_type === "percent" ? (isRtl ? "مثال: 10" : "e.g. 10") : (isRtl ? "مثال: 50" : "e.g. 50")}
             className={"pe-16 ps-4"}
           />
-          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
+          <span className="absolute end-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none">
             {ruleFormData.discount_type === "percent" ? "%" : "DZD"}
           </span>
         </div>
@@ -1465,7 +1112,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             onChange={(e) => setRuleFormData({ ...ruleFormData, threshold: parseInt(e.target.value) })}
             className={"pe-20 ps-4"}
           />
-          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
+          <span className="absolute end-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none">
             {ruleFormData.condition_type === "pages"
               ? (isRtl ? "صفحة" : "pages")
               : "DZD"}
@@ -1488,7 +1135,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             placeholder={isRtl ? "بدون حد أقصى" : "No cap"}
             className={"pe-16 ps-4"}
           />
-          <span className={`absolute ${"end-4"} top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none`}>
+          <span className="absolute end-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold pointer-events-none">
             DZD
           </span>
         </div>

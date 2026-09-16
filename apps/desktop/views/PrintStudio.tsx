@@ -9,6 +9,7 @@ import { Toaster } from "../components/ui/toaster";
 import LanguageToggle from "../components/LanguageToggle";
 import type { Language, ShopSettings } from "../types";
 import { TRANSLATIONS } from "../constants";
+import { Icon } from "../components/ui/icon";
 
 type StudioTab = "cards" | "pdf" | "photos";
 
@@ -40,7 +41,7 @@ interface PrintStudioProps {
 }
 
 const PrintStudio: React.FC<PrintStudioProps> = ({
-  darkMode,
+  darkMode: _darkMode,
   themeMode = "system",
   onToggleDarkMode,
   lang,
@@ -91,9 +92,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           {currentSettings.logoUrl ? (
             <img src={currentSettings.logoUrl} alt="Logo" className="w-full h-full object-contain" />
           ) : (
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v2a2 2 0 002 2h6a2 2 0 002-2v-2h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm-1 9H8v2h4v-2z" clipRule="evenodd" />
-            </svg>
+            <Icon name="print" className="w-5 h-5" />
           )}
         </div>
         {!collapsed && (
@@ -109,9 +108,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             className="hidden md:inline-flex p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
             aria-label={isRtl ? "طي" : "Collapse"}
           >
-            <svg className="w-4 h-4 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-            </svg>
+            <Icon name="chevrons-left" className="w-4 h-4 rtl:rotate-180" />
           </button>
         )}
 
@@ -121,9 +118,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           className="md:hidden ms-auto p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
           aria-label="Close"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M6 18L18 6" />
-          </svg>
+          <Icon name="x" className="w-5 h-5" />
         </button>
       </div>
 
@@ -134,9 +129,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           className="hidden md:flex mx-auto mb-2 p-1.5 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
           aria-label={isRtl ? "توسيع" : "Expand"}
         >
-          <svg className="w-4 h-4 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-          </svg>
+          <Icon name="chevrons-right" className="w-4 h-4 rtl:rotate-180" />
         </button>
       )}
 
@@ -144,7 +137,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* STUDIO */}
         {!collapsed && (
           <div className="px-4 pt-2 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {isRtl ? "الاستوديو" : "STUDIO"}
             </span>
           </div>
@@ -177,7 +170,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
         {/* TOOLS */}
         {!collapsed && (
           <div className="px-4 pt-3 pb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {isRtl ? "أدوات" : "TOOLS"}
             </span>
           </div>
@@ -190,9 +183,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             }`}
             title={collapsed ? (isRtl ? "لوحة التحكم" : "Dashboard") : undefined}
           >
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
+            <Icon name="home" className="w-4 h-4 shrink-0" />
             {!collapsed && <span className="truncate">{isRtl ? "لوحة التحكم" : "Dashboard"}</span>}
           </button>
         </nav>
@@ -202,14 +193,12 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           <div className="px-3 mt-4">
             <div className="bg-white/60 dark:bg-white/[0.06] rounded-xl p-3.5 border border-gray-200 dark:border-white/10">
               <div className="flex items-start gap-2.5 mb-2.5">
-                <svg className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0 9 9 0 0112.728 0zM12 8v4m0 4h.01" />
-                </svg>
+                <Icon name="alert-circle" className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
                 <div>
                   <p className="text-xs font-medium text-foreground leading-tight">
                     {isRtl ? "تحتاج مساعدة؟" : "Need help?"}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-tight">
                     {isRtl ? "فريقنا جاهز للمساعدة" : "Our team is here to help"}
                   </p>
                 </div>
@@ -247,17 +236,11 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           }
         >
           {themeMode === "light" ? (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
+            <Icon name="sun" className="w-4 h-4" />
           ) : themeMode === "dark" ? (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-            </svg>
+            <Icon name="moon" className="w-4 h-4" />
           ) : (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
+            <Icon name="monitor" className="w-4 h-4" />
           )}
         </button>
         {collapsed ? (
@@ -290,8 +273,10 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
 
       {/* Mobile drawer + backdrop */}
       {mobileOpen && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/40 z-40"
+        <button
+          type="button"
+          aria-label={isRtl ? "إغلاق القائمة" : "Close menu"}
+          className="md:hidden fixed inset-0 bg-black/40 z-40 cursor-default"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -318,9 +303,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             className="p-2 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06]"
             aria-label="Menu"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <Icon name="menu" className="w-5 h-5" />
           </button>
           <span className="text-sm font-semibold text-foreground truncate">
             {t(tab === "cards" ? "cardsTab" : tab === "photos" ? "photosTab" : "pdfTab")}
@@ -330,7 +313,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto bg-card">
-          <div className={`p-3 sm:p-4 lg:p-6 ${""}`} dir={isRtl ? "rtl" : "ltr"}>
+          <div className="p-3 sm:p-4 lg:p-6" dir={isRtl ? "rtl" : "ltr"}>
             <Suspense
               fallback={
                 <div className="flex items-center justify-center py-16" role="status" aria-live="polite">

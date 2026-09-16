@@ -15,6 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { writePref } from "@localprint/shared/lib/prefs";
+import { errorMessage } from "@localprint/shared";
 
 const DEFAULT_PASSWORD = "admin123";
 
@@ -100,7 +102,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
 
   const finish = () => {
     try {
-      localStorage.setItem("ps_onboarding_done", "1");
+      writePref("onboardingDone", "1");
     } catch {
       /* ignore quota / privacy-mode errors — completion is best-effort */
     }
@@ -193,8 +195,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
         default:
           return true;
       }
-    } catch (err: any) {
-      toast({ title: tr("فشل الحفظ", "Save failed"), description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: tr("فشل الحفظ", "Save failed"), description: errorMessage(err), variant: "destructive" });
       return false;
     } finally {
       setSaving(false);
@@ -215,8 +217,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
       setLogoUrl(url);
       onSettingsUpdate({ ...currentSettings, logoUrl: url });
       toast({ title: tr("تم رفع الشعار.", "Logo uploaded."), variant: "success" });
-    } catch (err: any) {
-      toast({ title: tr("فشل رفع الشعار", "Logo upload failed"), description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: tr("فشل رفع الشعار", "Logo upload failed"), description: errorMessage(err), variant: "destructive" });
     } finally {
       setLogoUploading(false);
     }
@@ -226,8 +228,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
     try {
       const url = await storageService.getGmailAuthUrl();
       window.open(url, "gmail-auth", "width=600,height=700");
-    } catch (err: any) {
-      toast({ title: tr("تعذر بدء ربط Gmail", "Could not start Gmail connect"), description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: tr("تعذر بدء ربط Gmail", "Could not start Gmail connect"), description: errorMessage(err), variant: "destructive" });
     }
   };
 

@@ -6,7 +6,6 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { fileURLToPath } from "url";
-import { PDFDocument } from "pdf-lib";
 import { randomBytes, randomUUID, createHash } from "crypto";
 
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
@@ -216,7 +215,7 @@ const BLOCKED_MESSAGE = "This store is not accepting uploads from you. Please co
 // ── Optional customer auth — attaches req.userId if a valid Supabase JWT is
 // present, but never rejects the request. Guest requests (no/invalid token)
 // pass through untouched. ──
-async function optionalCustomerAuth(req, res, next) {
+async function _optionalCustomerAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) {
     try {
@@ -706,7 +705,7 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
         })
       : null;
     if (blockedPhone) {
-      try { fs.unlinkSync(filePath); } catch {}
+      try { fs.unlinkSync(filePath); } catch { /* ignored */ }
       console.warn(`\u26d4 Blocked upload to shop ${req.shop.id} (phone)`);
       return res.status(403).json({ success: false, error: BLOCKED_MESSAGE });
     }
@@ -814,7 +813,7 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
   } catch (err) {
     // Clean up the orphaned temp file so a failed upload does not leak disk.
     if (req.file) {
-      try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch {}
+      try { fs.unlinkSync(path.join(UPLOADS_DIR, req.file.filename)); } catch { /* ignored */ }
     }
     // A malformed metadata JSON is the client's fault (400); anything else
     // (Supabase insert, pricing lookup, disk) is ours and must not masquerade
@@ -888,7 +887,7 @@ app.delete("/api/s/:shopSlug/orders/:id", deleteRateLimit, resolveShopBySlug, as
 
   if (order.serverfilename) {
     const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn("⚠️  Could not delete physical file"); }
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { console.warn("⚠️  Could not delete physical file"); }
   }
 
   await supabase.from('orders').delete().eq('shop_id', req.shop.id).eq('id', orderId);
@@ -917,7 +916,7 @@ app.get("/api/s/:shopSlug/files/public/:id", resolveShopBySlug, async (req, res)
     } else {
       res.status(404).json({ error: "File not found" });
     }
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1148,7 +1147,7 @@ app.post("/api/shop/reject", requireShopToken, async (req, res) => {
 
   if (order.serverfilename) {
     const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { console.warn("⚠️  Could not delete rejected order's file"); }
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { console.warn("⚠️  Could not delete rejected order's file"); }
   }
 
   broadcastStatusChange(orderId, 'rejected');
@@ -1247,7 +1246,7 @@ const cleanupOldOrders = async () => {
     for (const order of oldOrders) {
       if (order.serverfilename) {
         const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) {}
+        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* ignored */ }
       }
       await supabase.from('orders').delete().eq('id', order.id);
     }
@@ -1285,7 +1284,7 @@ if (!isDev) {
   );
 }
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error("❌ Unhandled Error:", err.stack);
   if (!res.headersSent) {
     res.status(500).json({ success: false, error: isDev ? err.message : "Internal Server Error" });
@@ -1293,7 +1292,7 @@ app.use((err, req, res, next) => {
 });
 
 if (!isDev) {
-  app.use((req, res, next) => {
+  app.use((req, res, _next) => {
     if (req.path.startsWith("/api/")) {
       return res.status(404).json({ error: "API endpoint not found" });
     }

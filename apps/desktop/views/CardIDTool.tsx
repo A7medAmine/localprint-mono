@@ -5,7 +5,6 @@ import LoadJobModal from "../components/LoadJobModal";
 import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import ImageEditor from "../components/ImageEditor";
 import { useLanguage } from "../lib/useLanguage";
-import { cn } from "@localprint/shared";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -23,6 +22,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "../components/ui/dialog";
+import { Icon } from "../components/ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 const MM_TO_PT = 2.83465;
 const SCALE = 0.45;
@@ -121,7 +122,6 @@ function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph
   const hGapPt = best.cols > 1 ? gap : 0;
   const vGapPt = best.rows > 1 ? gap : 0;
   const gridW = best.cols * cardW + (best.cols - 1) * hGapPt;
-  const gridH = best.rows * cardH + (best.rows - 1) * vGapPt;
   const originX = (pw - gridW) / 2;
   const originY = margin;
 
@@ -161,11 +161,11 @@ const CardIDTool: React.FC = () => {
   // processed PDF when saving.
   const [frontSourceJob, setFrontSourceJob] = useState<PrintJob | null>(null);
   const [backSourceJob, setBackSourceJob] = useState<PrintJob | null>(null);
-  const [lastPdfBlob, setLastPdfBlob] = useState<Blob | null>(null);
+  const [, setLastPdfBlob] = useState<Blob | null>(null);
   const [multiCard, setMultiCard] = useState(false);
   const [copies, setCopies] = useState(4);
-  const [sizeIdx, setSizeIdx] = useState(0);
-  const [paperIdx, setPaperIdx] = useState(0);
+  const [sizeIdx] = useState(0);
+  const [paperIdx] = useState(0);
   // Card printing is duplex by default — front sheet + back sheet on the same
   // physical card. Kept togglable in case someone's printer can't duplex or
   // they're printing to two separate sheets.
@@ -197,8 +197,8 @@ const CardIDTool: React.FC = () => {
     setFrontSourceJob(null);
     try {
       setFrontDataUrl(await readFileAsDataUrl(f));
-    } catch (e: any) {
-      setExportError("Front image: " + (e.message || "failed to load"));
+    } catch (e) {
+      setExportError("Front image: " + (errorMessage(e) || "failed to load"));
     }
   }, []);
 
@@ -208,8 +208,8 @@ const CardIDTool: React.FC = () => {
     setBackSourceJob(null);
     try {
       setBackDataUrl(await readFileAsDataUrl(f));
-    } catch (e: any) {
-      setExportError("Back image: " + (e.message || "failed to load"));
+    } catch (e) {
+      setExportError("Back image: " + (errorMessage(e) || "failed to load"));
     }
   }, []);
 
@@ -246,8 +246,8 @@ const CardIDTool: React.FC = () => {
         setBackDataUrl(dataUrl);
       }
       toast({ title: isRtl ? "تم تحديث الصورة" : "Image updated", variant: "success" });
-    } catch (e: any) {
-      setExportError("Edit: " + (e.message || "failed to apply"));
+    } catch (e) {
+      setExportError("Edit: " + (errorMessage(e) || "failed to apply"));
     } finally {
       setEditingTarget(null);
       setEditingBlob(null);
@@ -323,7 +323,7 @@ const CardIDTool: React.FC = () => {
             const file = new File([blob], frontId, { type: blob.type || "image/png" });
             await handleFrontFile(file);
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
       if (backId) {
         try {
@@ -333,7 +333,7 @@ const CardIDTool: React.FC = () => {
             const file = new File([blob], backId, { type: blob.type || "image/png" });
             await handleBackFile(file);
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
     })();
   }, [handleFrontFile, handleBackFile]);
@@ -377,8 +377,8 @@ const CardIDTool: React.FC = () => {
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       setLastPdfBlob(blob);
       return blob;
-    } catch (e: any) {
-      setExportError(e?.message || "Export failed");
+    } catch (e) {
+      setExportError(errorMessage(e) || "Export failed");
       return null;
     } finally {
       setExporting(false);
@@ -438,10 +438,10 @@ const CardIDTool: React.FC = () => {
       } else if (result.ok) {
         toast({ title: isRtl ? "تم إرسال المهمة" : "Sent to printer", variant: "success" });
       }
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: isRtl ? "فشل الطباعة" : "Print failed",
-        description: err?.message,
+        description: errorMessage(err),
         variant: "destructive",
       });
     } finally {
@@ -503,8 +503,8 @@ const CardIDTool: React.FC = () => {
           : isRtl ? "تمت إضافة المهمة" : "Job added",
         variant: "success",
       });
-    } catch (e: any) {
-      setExportError(e?.message || "Failed to add job");
+    } catch (e) {
+      setExportError(errorMessage(e) || "Failed to add job");
     } finally {
       setExporting(false);
     }
@@ -533,9 +533,7 @@ const CardIDTool: React.FC = () => {
             {!frontFile ? (
               <div className="space-y-3">
                 <label className="flex flex-col items-center justify-center border-2 border-dashed border-input rounded-xl p-4 cursor-pointer hover:border-primary/50 transition">
-                  <svg className="w-6 h-6 text-muted-foreground mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
+                  <Icon name="cloud-upload" className="w-6 h-6 text-muted-foreground mb-1" />
                   <span className="text-xs text-muted-foreground">{t("uploadFront")}</span>
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFrontFile(f); }} />
                 </label>
@@ -568,9 +566,7 @@ const CardIDTool: React.FC = () => {
             {!backFile ? (
               <div className="space-y-3">
                 <label className="flex flex-col items-center justify-center border-2 border-dashed border-input rounded-xl p-4 cursor-pointer hover:border-primary/50 transition">
-                  <svg className="w-6 h-6 text-muted-foreground mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
+                  <Icon name="cloud-upload" className="w-6 h-6 text-muted-foreground mb-1" />
                   <span className="text-xs text-muted-foreground">{t("uploadBack")}</span>
                   <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleBackFile(f); }} />
                 </label>
@@ -600,7 +596,7 @@ const CardIDTool: React.FC = () => {
             <Label className="text-xs font-medium cursor-pointer">
               {isRtl ? "طباعة على الوجهين" : "Duplex printing"}
             </Label>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {isRtl
                 ? "الأمام والخلف على نفس البطاقة (افتراضي)"
                 : "Front and back on the same card (default)"}
@@ -614,7 +610,7 @@ const CardIDTool: React.FC = () => {
             <Label className="text-xs font-medium cursor-pointer">
               {isRtl ? "أبيض وأسود" : "Black & white"}
             </Label>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {isRtl
                 ? "طباعة رمادية بدلاً من الألوان"
                 : "Print grayscale instead of color"}
@@ -631,7 +627,7 @@ const CardIDTool: React.FC = () => {
             <Label className="text-xs font-medium cursor-pointer">
               {isRtl ? "نسخ متعددة في نفس الورقة" : "Multiple copies per sheet"}
             </Label>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {isRtl
                 ? "طباعة عدة بطاقات على نفس الصفحة"
                 : "Print several cards on one paper sheet"}
@@ -650,7 +646,7 @@ const CardIDTool: React.FC = () => {
               value={copies}
               onChange={(e) => setCopies(Math.max(1, Math.min(maxCapacity, Number(e.target.value) || 1)))}
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {isRtl
                 ? `أقصى عدد يناسب الصفحة: ${maxCapacity} (${layoutCols}×${layoutRows})`
                 : `Fits up to ${maxCapacity} per sheet (${layoutCols}×${layoutRows} layout), packed automatically`}

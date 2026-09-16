@@ -14,6 +14,9 @@ import { layoutBatch } from "../lib/photoLayout";
 import { buildPhotoPdf } from "../lib/photoPdf";
 import { setPhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType } from "../types";
+import { Icon } from "./ui/icon";
+import { readPref } from "@localprint/shared/lib/prefs";
+import { errorMessage } from "@localprint/shared";
 
 const ACCEPT = ALLOWED_TYPES.join(",");
 
@@ -95,7 +98,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
     const formData = new FormData();
     formData.append("file", file);
     formData.append("metadata", JSON.stringify({ ...meta(), fileName }));
-    const token = localStorage.getItem("ps_admin_token");
+    const token = readPref("adminToken");
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -106,7 +109,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
       try {
         const body = await res.json();
         if (body.error) msg = body.error;
-      } catch {}
+      } catch { /* ignored */ }
       throw new Error(msg);
     }
   };
@@ -121,7 +124,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
       try {
         await postJob(files[i], files[i].name);
         created++;
-      } catch (e: any) {
+      } catch {
         failed.push(files[i].name);
       }
     }
@@ -187,8 +190,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
       reset();
       onOpenChange(false);
       onCreated?.();
-    } catch (e: any) {
-      toast({ title: t("jobCreateFailed"), description: e?.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: t("jobCreateFailed"), description: errorMessage(e), variant: "destructive" });
     } finally {
       setWorking(false);
     }
@@ -263,14 +266,20 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
           </div>
 
           <div
+            role="button"
+            tabIndex={0}
             onDragOver={(e) => e.preventDefault()}
             onDrop={onDrop}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             className="border-2 border-dashed border-input rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition"
           >
-            <svg className="w-6 h-6 text-muted-foreground mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
+            <Icon name="cloud-upload" className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
             <span className="text-xs text-muted-foreground">{t("selectFiles")}</span>
             <input
               ref={fileInputRef}
@@ -291,7 +300,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
               {files.map((f) => (
                 <div key={f.name + f.size + f.lastModified} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 text-sm">
                   <span className="flex-1 truncate">{f.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                  <span className="text-xs text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
                   <button
                     className="text-red-500 hover:text-red-700 text-lg leading-none"
                     onClick={() => onFilesChosen(files.filter((x) => x !== f))}

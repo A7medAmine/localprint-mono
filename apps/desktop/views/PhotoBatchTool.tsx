@@ -19,6 +19,8 @@ import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { consumePhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType, PrinterJobDefaults, ShopSettings } from "../types";
 import { formatPrice } from "../utils/pricingUtils";
+import { Icon } from "../components/ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface BatchItem {
   id: string;
@@ -77,7 +79,7 @@ const PhotoBatchTool: React.FC = () => {
   const [settings, setSettings] = useState<ShopSettings>({ shopName: "", logoUrl: null });
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [defaultPrinter, setDefaultPrinter] = useState("");
-  const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>({});
+  const [, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>({});
 
   const [building, setBuilding] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -131,10 +133,10 @@ const PhotoBatchTool: React.FC = () => {
           });
         }
         if (picked.length) addFiles(picked);
-      } catch (e: any) {
+      } catch (e) {
         toast({
           title: isRtl ? "تعذر تحميل الصور المحددة" : "Could not load the selected photos",
-          description: e?.message,
+          description: errorMessage(e),
           variant: "destructive",
         });
       }
@@ -231,8 +233,8 @@ const PhotoBatchTool: React.FC = () => {
         it.naturalWidth = width;
         it.naturalHeight = height;
         setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, bitmap, naturalWidth: width, naturalHeight: height, error: undefined } : p)));
-      } catch (e: any) {
-        it.error = e?.message || "Failed to decode";
+      } catch (e) {
+        it.error = errorMessage(e) || "Failed to decode";
         setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, error: it.error } : p)));
       }
     }
@@ -312,8 +314,8 @@ const PhotoBatchTool: React.FC = () => {
     try {
       const imageMap = new Map(items.map((it) => [it.id, it.bitmap!]));
       return await buildPhotoPdf(pages, imageMap, copies);
-    } catch (e: any) {
-      toast({ title: isRtl ? "فشل إنشاء الملف" : "Failed to build PDF", description: e?.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: isRtl ? "فشل إنشاء الملف" : "Failed to build PDF", description: errorMessage(e), variant: "destructive" });
       return null;
     } finally {
       setBuilding(false);
@@ -345,8 +347,8 @@ const PhotoBatchTool: React.FC = () => {
       });
       if (result.cancelled) toast({ title: isRtl ? "تم إلغاء الطباعة" : "Print cancelled" });
       else if (result.ok) toast({ title: isRtl ? "تم إرسال المهمة إلى الطابعة" : "Sent to printer", variant: "success" });
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الطباعة" : "Print failed", description: err?.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل الطباعة" : "Print failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setPrinting(false);
     }
@@ -398,8 +400,8 @@ const PhotoBatchTool: React.FC = () => {
         variant: "success",
       });
       navigate("/admin/dashboard");
-    } catch (e: any) {
-      toast({ title: isRtl ? "فشل حفظ المهمة" : "Failed to save job", description: e?.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: isRtl ? "فشل حفظ المهمة" : "Failed to save job", description: errorMessage(e), variant: "destructive" });
     } finally {
       setBuilding(false);
     }
@@ -466,14 +468,20 @@ const PhotoBatchTool: React.FC = () => {
               {t("fromCustomer")}
             </Button>
             <div
+              role="button"
+              tabIndex={0}
               onDragOver={(e) => e.preventDefault()}
               onDrop={onDrop}
               onClick={() => photoInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  photoInputRef.current?.click();
+                }
+              }}
               className="border-2 border-dashed border-input rounded-xl p-4 text-center cursor-pointer hover:border-primary/50 transition"
             >
-              <svg className="w-6 h-6 text-muted-foreground mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
+              <Icon name="cloud-upload" className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
               <span className="text-xs text-muted-foreground">{t("dropPhotosHere")}</span>
               <input
                 ref={photoInputRef}
@@ -489,7 +497,7 @@ const PhotoBatchTool: React.FC = () => {
               />
             </div>
             {items.length > 0 && (
-              <p className="text-[11px] text-muted-foreground text-center">
+              <p className="text-xs text-muted-foreground text-center">
                 {items.length} {t("photosCount")} &middot; {totalMB.toFixed(1)} MB
               </p>
             )}
@@ -523,18 +531,18 @@ const PhotoBatchTool: React.FC = () => {
             {paperPreset === "custom" && (
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <Label className="text-[11px]">{isRtl ? "العرض (مم)" : "Width (mm)"}</Label>
+                  <Label className="text-xs">{isRtl ? "العرض (مم)" : "Width (mm)"}</Label>
                   <Input type="number" min={10} value={customW} onChange={(e) => setCustomW(Number(e.target.value) || 210)} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px]">{isRtl ? "الارتفاع (مم)" : "Height (mm)"}</Label>
+                  <Label className="text-xs">{isRtl ? "الارتفاع (مم)" : "Height (mm)"}</Label>
                   <Input type="number" min={10} value={customH} onChange={(e) => setCustomH(Number(e.target.value) || 297)} />
                 </div>
               </div>
             )}
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{isRtl ? "اتجاه الصفحة" : "Page orientation"}</Label>
+              <Label className="text-xs">{isRtl ? "اتجاه الصفحة" : "Page orientation"}</Label>
               <Select value={orientation} onValueChange={(v) => setOrientation(v as Orientation)}>
                 <SelectTrigger className="h-8 text-xs w-full">
                   <SelectValue />
@@ -545,11 +553,11 @@ const PhotoBatchTool: React.FC = () => {
                   <SelectItem value="landscape">{t("orientationLandscape")}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-[11px] text-muted-foreground">{t("orientationNote")}</p>
+              <p className="text-xs text-muted-foreground">{t("orientationNote")}</p>
             </div>
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{t("fillMode")}</Label>
+              <Label className="text-xs">{t("fillMode")}</Label>
               <div className="flex gap-1">
                 {([
                   ["cover", t("fillCover")],
@@ -570,7 +578,7 @@ const PhotoBatchTool: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{t("margins")}</Label>
+              <Label className="text-xs">{t("margins")}</Label>
               <div className="flex flex-wrap gap-1">
                 {marginButtons.map((m) => (
                   <button
@@ -598,25 +606,25 @@ const PhotoBatchTool: React.FC = () => {
                 <div className="grid grid-cols-4 gap-2 mt-1">
                   {(["topMm", "rightMm", "bottomMm", "leftMm"] as const).map((key) => (
                     <div key={key} className="space-y-0.5">
-                      <Label className="text-[10px] text-muted-foreground">{key.replace("Mm", "")}</Label>
+                      <Label className="text-xs text-muted-foreground">{key.replace("Mm", "")}</Label>
                       <Input
                         type="number"
                         min={0}
                         value={customMargins[key]}
                         onChange={(e) => setCustomMargins((prev) => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))}
-                        className="h-7 text-xs"
+                        className="h-8 text-xs"
                       />
                     </div>
                   ))}
                 </div>
               )}
               {marginPreset === 0 && (
-                <p className="text-[11px] text-muted-foreground mt-1">{t("borderlessHint")}</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("borderlessHint")}</p>
               )}
             </div>
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{t("colorMode")}</Label>
+              <Label className="text-xs">{t("colorMode")}</Label>
               <div className="flex gap-1">
                 {([
                   ["color", t("color")],
@@ -637,7 +645,7 @@ const PhotoBatchTool: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{t("paperType")}</Label>
+              <Label className="text-xs">{t("paperType")}</Label>
               <Select value={paperType} onValueChange={setPaperType}>
                 <SelectTrigger className="h-8 text-xs w-full">
                   <SelectValue />
@@ -653,7 +661,7 @@ const PhotoBatchTool: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-[11px]">{t("copies")}</Label>
+              <Label className="text-xs">{t("copies")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -707,6 +715,7 @@ const PhotoBatchTool: React.FC = () => {
                   return (
                     <div
                       key={page.photoId}
+                      role="listitem"
                       draggable
                       onDragStart={() => { dragIndexRef.current = i; }}
                       onDragOver={(e) => e.preventDefault()}
@@ -722,7 +731,7 @@ const PhotoBatchTool: React.FC = () => {
                         )}
                         {lowRes && (
                           <span
-                            className="absolute top-1.5 left-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold"
+                            className="absolute top-1.5 left-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold"
                             title={isRtl ? `دقة منخفضة — قد تبدو الصورة مشوشة (~${Math.round(dpi)} DPI)` : `Low resolution — may look pixelated at this size (~${Math.round(dpi)} DPI)`}
                           >
                             !
@@ -750,10 +759,8 @@ const PhotoBatchTool: React.FC = () => {
                           className="p-1 rounded-lg text-gray-400 hover:text-foreground hover:bg-muted"
                           title={t("rotate90")}
                           onClick={() => updateItem(page.photoId, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 })}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h5M20 20v-5h-5M4.6 9a8 8 0 0114.9 0M19.4 15A8 8 0 014.5 15" />
-                          </svg>
+                         aria-label={t("rotate90")}>
+                          <Icon name="refresh" className="w-4 h-4" />
                         </button>
                         <button
                           className="p-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted"
@@ -766,13 +773,11 @@ const PhotoBatchTool: React.FC = () => {
                           className="p-1 ms-auto rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                           title={t("remove")}
                           onClick={() => removeItem(page.photoId)}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
+                         aria-label={t("remove")}>
+                          <Icon name="x" className="w-4 h-4" />
                         </button>
                       </div>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground truncate" title={item.file.name}>
+                      <div className="mt-0.5 text-xs text-muted-foreground truncate" title={item.file.name}>
                         {item.file.name}
                       </div>
                     </div>

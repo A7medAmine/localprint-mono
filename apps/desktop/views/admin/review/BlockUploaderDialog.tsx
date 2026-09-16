@@ -117,7 +117,7 @@ const BlockUploaderDialog: React.FC<BlockUploaderDialogProps> = ({ job, isRtl, o
             label,
           });
           blocked++;
-        } catch (err) {
+        } catch {
           failed.push(candidate.title);
         }
       }

@@ -36,7 +36,6 @@ const PAGE_SIZES = ["default", "A4", "A3", "A5", "Letter", "Legal", "Tabloid"];
 const PrintOptionsDialog: React.FC<PrintOptionsDialogProps> = ({ job, printers, settings, onClose, onPrint }) => {
   const { isRtl } = useAdmin();
   const savedDefault = settings.defaultPrinterName || "";
-  const perPrinter = (settings.printerDefaults || {})[savedDefault];
 
   const [opts, setOpts] = useState<StudioPrintOptions>({
     printerName: savedDefault,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { PrintJob } from "../types";
+import { PrintJob, PrintStatus } from "../types";
 import { storageService } from "../services/storageService";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -193,7 +193,7 @@ export function useJobTargets() {
           fileType: file.type || "application/pdf",
           fileSize: file.size,
           uploadDate: new Date().toISOString(),
-          status: "PENDING" as any,
+          status: PrintStatus.PENDING,
           pageCount,
           printPreferences: preferences,
           ...(source ? { source } : {}),
@@ -324,7 +324,7 @@ export const JobTargetPicker: React.FC<JobTargetPickerProps> = ({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {targetJob
               ? isRtl
                 ? "سيتم استبدال ملف هذه المهمة بالملف المعالج."
@@ -357,7 +357,7 @@ export const JobTargetPicker: React.FC<JobTargetPickerProps> = ({
             <span className="font-medium">
               {isRtl ? "استبدال الملفات الأصلية بالملف المعالج" : "Replace the source files with the processed file"}
             </span>
-            <span className="block text-[11px] text-muted-foreground mt-0.5">
+            <span className="block text-xs text-muted-foreground mt-0.5">
               {isRtl
                 ? `سيتم حذف ${sourceJobCount} ${sourceLabel || "ملف"} تم استخدامها لإنشاء هذا الملف.`
                 : `Deletes the ${sourceJobCount} ${sourceLabel || "file(s)"} this output was generated from.`}
@@ -388,13 +388,13 @@ export const JobTargetPicker: React.FC<JobTargetPickerProps> = ({
                   className="accent-indigo-600 shrink-0"
                 />
                 <span className="flex-1 min-w-0 truncate">{job.fileName}</span>
-                <span className="text-[10px] text-muted-foreground shrink-0">
+                <span className="text-xs text-muted-foreground shrink-0">
                   {new Date(job.uploadDate).toLocaleDateString()}
                 </span>
               </label>
             ))}
           </div>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {isRtl
               ? "الملفات المحددة سيتم حذفها عند الحفظ."
               : "Checked files will be deleted on save."}

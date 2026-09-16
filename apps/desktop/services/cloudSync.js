@@ -334,7 +334,7 @@ async function importOrder(order) {
           fileName: order.fileName || 'unknown.pdf',
           pendingReview: !autoAccept,
         });
-      } catch (_) {}
+      } catch { /* ignored */ }
     }
 
     if (autoAccept) {
@@ -348,7 +348,7 @@ async function importOrder(order) {
     return true;
   } catch (err) {
     log('error', `Failed to insert job for order ${orderId}`, { error: err.message });
-    try { fs.unlinkSync(dl.filePath); } catch (_) {}
+    try { fs.unlinkSync(dl.filePath); } catch { /* ignored */ }
     return false;
   }
 }
@@ -449,7 +449,7 @@ async function blocksRequest(method, pathSuffix = '', body) {
   });
   if (!res || !res.ok) {
     let detail = '';
-    try { detail = (await res.json())?.error || ''; } catch (_) {}
+    try { detail = (await res.json())?.error || ''; } catch { /* ignored */ }
     throw new Error(detail || `Blocklist request failed (${res?.status || 'no response'})`);
   }
   return res.json();

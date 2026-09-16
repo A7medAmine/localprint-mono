@@ -42,7 +42,7 @@ function sanitizeFilename(name) {
  * byte cap, and magic-byte match against the claimed MIME type.
  * Returns the relative path from uploads base, or null if rejected.
  */
-export async function saveAttachment(filename, mimeType, base64Data, gmailMessageId) {
+export async function saveAttachment(filename, mimeType, base64Data, _gmailMessageId) {
   if (!ALLOWED_MIMES.has(mimeType)) {
     console.warn(`⚠️  Rejected attachment with unsupported MIME type: ${mimeType}`);
     return null;

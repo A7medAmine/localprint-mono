@@ -30,3 +30,8 @@ jobs:
 
       - name: Test (all workspaces)
         run: npm run test
+
+      # Catches what typecheck cannot: a bad CSS import, a missing asset, a
+      # bundler-only resolution error.
+      - name: Build (all workspaces)
+        run: npm run build

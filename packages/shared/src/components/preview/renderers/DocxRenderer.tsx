@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { sanitizeHtml } from "../../../utils/filePreview";
+import { Icon } from "../../ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface DocxRendererProps {
   src: string;
@@ -33,9 +35,9 @@ const DocxRenderer: React.FC<DocxRendererProps> = ({ src, fileName }) => {
         if (cancelled) return;
         setHtml(sanitized);
         setLoading(false);
-      } catch (err: any) {
+      } catch (err) {
         if (!cancelled) {
-          setError(err.message || "Failed to load document");
+          setError(errorMessage(err) || "Failed to load document");
           setLoading(false);
         }
       }
@@ -48,9 +50,7 @@ const DocxRenderer: React.FC<DocxRendererProps> = ({ src, fileName }) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
-        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-        </svg>
+        <Icon name="alert-circle" className="w-12 h-12" />
         <p className="text-sm font-medium">{error}</p>
       </div>
     );

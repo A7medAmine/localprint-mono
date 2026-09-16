@@ -8,7 +8,7 @@
 // deep-link/URL handling stay predictable. Port + host + NODE_ENV are set
 // before the server.js import so server.js picks them up on load.
 
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, nativeImage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,6 +18,7 @@ import http from 'node:http';
 import dotenv from 'dotenv';
 import { checkEnv } from '../checkEnv.js';
 import { initAutoUpdater, checkForUpdatesManually } from './updater.js';
+import { PDFDocument } from 'pdf-lib';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -374,67 +375,91 @@ async function assertPrinterExists(printerName) {
   }
 }
 
-// Chromium renders a bare image file as an "image document", whose UA
-// stylesheet paints the page background dark (#0e0e0e). Neither the window's
-// backgroundColor nor a late insertCSS overrides it, so an image print came out
-// as the photo letterboxed on a solid black sheet — every printer spitting out
-// a full page of toner. Wrapping the image in our own minimal HTML gives us a
-// document we control: white sheet, image contained inside the page margins.
+// Images are never handed to Chromium's layout engine any more. Rendering a
+// bare image file made Chromium paint it as an "image document" on a dark UA
+// background, and wrapping it in our own HTML only moved the problem: an
+// off-screen BrowserWindow can still be captured mid-composite, so the printer
+// received a half-painted frame — the photo over a solid black sheet.
 //
-// The image is inlined as a data: URI rather than referenced by file:// — a
-// file:// page fetching a file:// subresource is subject to Chromium's
-// file-access rules, and a silently blocked <img> would print a blank sheet,
-// which is worse than the black one we're fixing.
-//
-// Returns the wrapper's path (caller unlinks it) or null for non-images.
-function makeImagePrintWrapper(imagePath, fileType) {
-  const mime = /^image\/[a-z0-9.+-]+$/i.test(fileType || '') ? fileType : 'image/png';
-  const dataUri = `data:${mime};base64,${fs.readFileSync(imagePath).toString('base64')}`;
-  const html = `<!doctype html>
-<meta charset="utf-8">
-<title>print</title>
-<style>
-  @page { margin: 8mm; }
-  :root { color-scheme: light; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    background: #ffffff;
+// Instead we build a real PDF here in the main process: a white page with the
+// image scaled to fit inside the margins. No layout, no compositor, no theme.
+// The resulting PDF then goes through the same code path as any customer PDF,
+// which has always printed correctly.
+const IMAGE_PDF_MARGIN_PT = (8 * 72) / 25.4; // 8mm
+const A4_WIDTH_PT = 595.28;
+const A4_HEIGHT_PT = 841.89;
+
+/**
+ * Embed `imagePath` into a PDF document. pdf-lib only speaks JPEG and PNG, so
+ * anything else (BMP/WEBP/GIF/TIFF) is re-encoded to PNG through Electron's
+ * own image decoder first.
+ */
+async function embedImageForPdf(doc, imagePath, fileType) {
+  const bytes = fs.readFileSync(imagePath);
+  const mime = String(fileType || '').toLowerCase();
+  if (mime === 'image/jpeg' || mime === 'image/jpg') {
+    try { return await doc.embedJpg(bytes); } catch { /* fall through to re-encode */ }
+  } else if (mime === 'image/png') {
+    try { return await doc.embedPng(bytes); } catch { /* fall through to re-encode */ }
+  } else {
+    // Unknown/absent MIME — try both native formats before re-encoding.
+    try { return await doc.embedJpg(bytes); } catch { /* not a JPEG */ }
+    try { return await doc.embedPng(bytes); } catch { /* not a PNG */ }
   }
-  body { display: flex; align-items: center; justify-content: center; }
-  img {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    background: #ffffff;
+  const decoded = nativeImage.createFromPath(imagePath);
+  if (decoded.isEmpty()) {
+    throw new Error('This image format could not be decoded for printing.');
   }
-</style>
-<img src="${dataUri}">
-`;
-  const wrapperPath = path.join(
-    os.tmpdir(),
-    `printshop-wrap-${crypto.randomBytes(8).toString('hex')}.html`,
-  );
-  fs.writeFileSync(wrapperPath, html, 'utf8');
-  return wrapperPath;
+  return doc.embedPng(decoded.toPNG());
 }
 
-function nativePrint({ filePath, fileType, printerName, silent, options }) {
-  return new Promise((resolve, reject) => {
-    // Images go through the white HTML wrapper above; PDFs load directly into
-    // the built-in viewer.
-    let wrapperPath = null;
-    if (fileType && fileType.startsWith('image/')) {
-      try {
-        wrapperPath = makeImagePrintWrapper(filePath, fileType);
-      } catch (err) {
-        return reject(new Error(`Could not prepare the image for printing: ${err.message}`));
-      }
+/**
+ * Turn an image on disk into a single-page print-ready PDF (white sheet, image
+ * centred and contained inside the margins, page orientation matched to the
+ * image). Returns the temp PDF path — the caller unlinks it.
+ */
+async function makeImagePrintPdf(imagePath, fileType) {
+  const doc = await PDFDocument.create();
+  const img = await embedImageForPdf(doc, imagePath, fileType);
+
+  const landscape = img.width > img.height;
+  const pageW = landscape ? A4_HEIGHT_PT : A4_WIDTH_PT;
+  const pageH = landscape ? A4_WIDTH_PT : A4_HEIGHT_PT;
+  const page = doc.addPage([pageW, pageH]);
+
+  const boxW = pageW - IMAGE_PDF_MARGIN_PT * 2;
+  const boxH = pageH - IMAGE_PDF_MARGIN_PT * 2;
+  const scale = Math.min(boxW / img.width, boxH / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  page.drawImage(img, {
+    x: (pageW - drawW) / 2,
+    y: (pageH - drawH) / 2,
+    width: drawW,
+    height: drawH,
+  });
+
+  const pdfPath = path.join(
+    os.tmpdir(),
+    `printshop-image-${crypto.randomBytes(8).toString('hex')}.pdf`,
+  );
+  fs.writeFileSync(pdfPath, Buffer.from(await doc.save()));
+  return pdfPath;
+}
+
+async function nativePrint({ filePath, fileType, printerName, silent, options }) {
+  // Images are converted to a white-sheet PDF first; PDFs load directly into
+  // the built-in viewer. Either way the window only ever renders a PDF.
+  let wrapperPath = null;
+  if (fileType && fileType.startsWith('image/')) {
+    try {
+      wrapperPath = await makeImagePrintPdf(filePath, fileType);
+    } catch (err) {
+      throw new Error(`Could not prepare the image for printing: ${err.message}`);
     }
-    const loadPath = wrapperPath || filePath;
+  }
+  const loadPath = wrapperPath || filePath;
+  return new Promise((resolve, reject) => {
     const win = new BrowserWindow({
       // Must be a *shown* window, just parked off-screen. `show: false` skips
       // compositing on Windows/Electron 33 — webContents.print() then snapshots

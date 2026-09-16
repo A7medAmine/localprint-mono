@@ -30,6 +30,8 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
+import { Icon } from "./ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface InventorySectionProps {
   lang: Language;
@@ -185,8 +187,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       }
       setItemDialogOpen(false);
       loadInventory();
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الحفظ" : "Failed to save", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل الحفظ" : "Failed to save", description: errorMessage(err), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -198,8 +200,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       await storageService.deleteInventoryItem(deleteConfirm.id);
       toast({ title: isRtl ? "تم حذف العنصر" : "Item deleted", variant: "success" });
       loadInventory();
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل الحذف" : "Delete failed", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل الحذف" : "Delete failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setDeleteConfirm(null);
     }
@@ -214,8 +216,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
       const { lowStockCount } = await storageService.getInventory();
       onLowStockCountChange?.(lowStockCount);
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل التعديل" : "Adjustment failed", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل التعديل" : "Adjustment failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setAdjustingId(null);
     }
@@ -235,8 +237,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       setRestockAmount(0);
       setRestockNote("");
       loadInventory();
-    } catch (err: any) {
-      toast({ title: isRtl ? "فشل إعادة التعبئة" : "Restock failed", description: err.message, variant: "destructive" });
+    } catch (err) {
+      toast({ title: isRtl ? "فشل إعادة التعبئة" : "Restock failed", description: errorMessage(err), variant: "destructive" });
     }
   };
 
@@ -280,9 +282,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
           </p>
         </div>
         <Button onClick={openAddDialog} className="gap-2 shrink-0">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
+          <Icon name="plus" className="w-4 h-4" />
           {isRtl ? "إضافة عنصر" : "Add Item"}
         </Button>
       </div>
@@ -290,9 +290,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
       {/* Low stock banner */}
       {!loading && lowStockItems.length > 0 && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 px-4 py-3">
-          <svg className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
+          <Icon name="alert" className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-300">
               {lowStockItems.length} {isRtl ? "عنصر منخفض المخزون" : lowStockItems.length === 1 ? "item is low on stock" : "items are low on stock"}
@@ -318,16 +316,12 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
         </div>
       ) : items.length === 0 ? (
         <div className="p-12 text-center bg-card rounded-2xl border border-border">
-          <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-          </svg>
+          <Icon name="package" className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
           <p className="text-muted-foreground">
             {isRtl ? "لا توجد عناصر في المخزون بعد" : "No inventory items yet"}
           </p>
           <Button variant="outline" onClick={openAddDialog} className="mt-4 gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-            </svg>
+            <Icon name="plus" className="w-4 h-4" />
             {isRtl ? "إضافة أول عنصر" : "Add your first item"}
           </Button>
         </div>
@@ -366,16 +360,16 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                     <table className="w-full text-start border-collapse">
                       <thead className="border-b border-border">
                         <tr>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             {isRtl ? "العنصر" : "Item"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             {isRtl ? "المخزون" : "Stock"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell ${""}`}>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
                             {isRtl ? "حد التنبيه" : "Low at"}
                           </th>
-                          <th className={`px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${""}`}>
+                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             {isRtl ? "تعديل" : "Adjust"}
                           </th>
                           <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -405,7 +399,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                     {item.name}
                                   </span>
                                   {low && (
-                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
                                       {isRtl ? "منخفض" : "Low"}
                                     </span>
                                   )}
@@ -413,14 +407,12 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                 {item.category === "paper" && (
                                   <div className="mt-1">
                                     {linkedName ? (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
-                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m6.656-6.656l1.5-1.5a4 4 0 015.656 5.656l-3 3a4 4 0 01-5.656 0" />
-                                        </svg>
+                                      <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                                        <Icon name="link" className="w-2.5 h-2.5" />
                                         {linkedName}
                                       </span>
                                     ) : (
-                                      <span className="text-[10px] text-muted-foreground">
+                                      <span className="text-xs text-muted-foreground">
                                         {isRtl ? "غير مرتبط" : "Not linked"}
                                       </span>
                                     )}
@@ -467,7 +459,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                         [item.id]: Math.max(1, parseInt(e.target.value) || 1),
                                       }))
                                     }
-                                    className="w-12 text-center text-xs font-semibold h-7 px-0"
+                                    className="w-12 text-center text-xs font-semibold h-8 px-0"
                                   />
                                   <Button
                                     type="button"
@@ -489,7 +481,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    className="text-xs h-7 px-2 gap-1"
+                                    className="text-xs h-8 px-2.5 gap-1"
                                     title={isRtl ? "إعادة تعبئة" : "Restock"}
                                     onClick={() => {
                                       setRestockItem(item);
@@ -497,25 +489,17 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                                       setRestockNote("");
                                     }}
                                   >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                    </svg>
+                                    <Icon name="plus" className="w-3 h-3" />
                                     {isRtl ? "تعبئة" : "Restock"}
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="w-7 h-7" title={isRtl ? "السجل" : "History"} onClick={() => openHistory(item)}>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={isRtl ? "السجل" : "History"} onClick={() => openHistory(item)} aria-label={isRtl ? "السجل" : "History"}>
+                                    <Icon name="clock" className="w-4 h-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="w-7 h-7" title={isRtl ? "تعديل" : "Edit"} onClick={() => openEditDialog(item)}>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={isRtl ? "تعديل" : "Edit"} onClick={() => openEditDialog(item)} aria-label={isRtl ? "تعديل" : "Edit"}>
+                                    <Icon name="edit" className="w-4 h-4" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="w-7 h-7" title={isRtl ? "حذف" : "Delete"} onClick={() => setDeleteConfirm(item)}>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" title={isRtl ? "حذف" : "Delete"} onClick={() => setDeleteConfirm(item)} aria-label={isRtl ? "حذف" : "Delete"}>
+                                    <Icon name="trash" className="w-4 h-4" />
                                   </Button>
                                 </div>
                               </td>
@@ -738,7 +722,7 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                   <div key={adj.id} className="flex items-center justify-between gap-3 py-2.5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${reasonClasses(adj.reason)}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${reasonClasses(adj.reason)}`}>
                           {reasonLabel(adj.reason)}
                         </span>
                         <span className="text-xs text-muted-foreground">
@@ -754,8 +738,8 @@ const InventorySection: React.FC<InventorySectionProps> = ({ lang, paperTypes, o
                       <span className={`text-sm font-bold ${adj.amount < 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                         {adj.amount > 0 ? "+" : ""}{formatStock(adj.amount)}
                       </span>
-                      <p className="text-[10px] text-muted-foreground">
-                        → {formatStock(adj.stockAfter)}
+                      <p className="text-xs text-muted-foreground">
+                        <Icon name="arrow-end" className="inline-block w-3 h-3 align-text-bottom rtl:rotate-180" /> {formatStock(adj.stockAfter)}
                       </p>
                     </div>
                   </div>

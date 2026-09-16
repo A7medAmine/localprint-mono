@@ -105,16 +105,16 @@ if (!gmailRow) {
 // Migrations for columns added after initial schema — handled by numbered
 // migration runner for new installs, but kept for existing databases that
 // haven't run migrate.js yet (idempotent ADD COLUMN).
-try { db.exec(`ALTER TABLE jobs ADD COLUMN customerEmail TEXT DEFAULT ''`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'upload'`); } catch (e) {}
-try { db.exec(`ALTER TABLE gmail_pending ADD COLUMN discarded_at TEXT`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentStatus TEXT DEFAULT 'UNPAID'`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentAmount REAL`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentDate TEXT`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch (e) {}
-try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch (e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN customerEmail TEXT DEFAULT ''`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'upload'`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE gmail_pending ADD COLUMN discarded_at TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentStatus TEXT DEFAULT 'UNPAID'`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentAmount REAL`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN paymentDate TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch { /* ignored */ }
 
 runMigrations(db);
 
@@ -125,7 +125,7 @@ try {
   const orphans = db.prepare(`SELECT serverFileName FROM jobs WHERE id IS NULL`).all();
   for (const row of orphans) {
     if (!row.serverFileName) continue;
-    try { fs.unlinkSync(path.join(uploadsDir, row.serverFileName)); } catch (e) {}
+    try { fs.unlinkSync(path.join(uploadsDir, row.serverFileName)); } catch { /* ignored */ }
   }
   const del = db.prepare(`DELETE FROM jobs WHERE id IS NULL`).run();
   if (del.changes) console.warn(`🧹 Removed ${del.changes} ghost job row(s) with NULL id`);
@@ -206,7 +206,7 @@ export const getSettings = () => {
   rows.forEach(row => {
     try {
       settings[row.key] = JSON.parse(row.value);
-    } catch (e) {
+    } catch {
       settings[row.key] = row.value;
     }
   });
@@ -598,8 +598,8 @@ export const getPendingEmailById = (id) => {
 // those committed transactions. SQLite recreates and manages both files on
 // the next open — leave them alone.
 export function checkpointAndClose() {
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (e) { /* best effort */ }
-  try { db.close(); } catch (e) { /* already closed */ }
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* best effort */ }
+  try { db.close(); } catch { /* already closed */ }
 }
 
 export function reopenDb() {

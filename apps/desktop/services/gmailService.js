@@ -138,7 +138,6 @@ export async function sendReply(originalMessageId, replyBody) {
   const subject = headers.find(h => h.name === 'Subject')?.value || '';
   const msgId = headers.find(h => h.name === 'Message-ID')?.value || '';
   const references = headers.find(h => h.name === 'References')?.value || '';
-  const inReplyTo = headers.find(h => h.name === 'In-Reply-To')?.value || '';
 
   const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
 

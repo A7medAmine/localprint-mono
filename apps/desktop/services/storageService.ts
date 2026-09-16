@@ -1,4 +1,44 @@
 import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment } from "../types";
+import { emitAppEvent } from "@localprint/shared/lib/appEvents";
+
+/** What the write endpoints answer with: success, plus how many rows moved. */
+export interface MutationResult {
+  success: boolean;
+  deleted?: number;
+  updated?: number;
+  error?: string;
+}
+
+/** One attachment on a pending email, as gmail_pending stores it. */
+export interface GmailAttachmentMeta {
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+/** A fetched-but-not-yet-imported email awaiting the operator's review. */
+export interface GmailPendingEmail {
+  id: number;
+  email_from: string;
+  email_address: string;
+  subject: string;
+  body_preview?: string;
+  attachment_meta: GmailAttachmentMeta[];
+  fetched_at?: string;
+  received_at?: string;
+}
+
+/** One row of the Gmail import result: an imported job, or why it failed. */
+export interface GmailImportRow {
+  id: number;
+  subject?: string;
+  error?: string;
+}
+
+export interface GmailImportResult {
+  imported?: GmailImportRow[];
+  error?: string;
+}
 
 class StorageService {
   private authToken: string | null = null;
@@ -15,10 +55,13 @@ class StorageService {
     return (await this.safeFetchWithHeaders(url, options)).data;
   }
 
-  private async safeFetchWithHeaders(
+  // The single JSON boundary of the client. Callers state the shape they
+  // expect; parsed JSON genuinely is `any` until one of them does.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed JSON is untyped until a caller names its shape
+  private async safeFetchWithHeaders<T = any>(
     url: string,
     options?: RequestInit,
-  ): Promise<{ data: any; headers: Headers }> {
+  ): Promise<{ data: T; headers: Headers }> {
     try {
       const token = this.authToken || localStorage.getItem("ps_admin_token");
       if (token && !this.authToken) this.authToken = token;
@@ -42,7 +85,7 @@ class StorageService {
       if (response.status === 401) {
         localStorage.removeItem("ps_admin_token");
         this.authToken = null;
-        window.dispatchEvent(new CustomEvent("session-expired"));
+        emitAppEvent("session-expired");
         throw new Error("Session expired");
       }
 
@@ -50,22 +93,22 @@ class StorageService {
         try {
           const errBody = JSON.parse(text);
           if (errBody.mustChangePassword) {
-            window.dispatchEvent(new CustomEvent("must-change-password"));
+            emitAppEvent("must-change-password");
           }
-        } catch {}
+        } catch { /* ignored */ }
       }
 
       if (!response.ok) {
         let msg = `Server error: ${response.status}`;
-        try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch {}
+        try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch { /* ignored */ }
         throw new Error(msg);
       }
 
-      if (!text) return { data: {}, headers: response.headers };
+      if (!text) return { data: {} as T, headers: response.headers };
 
       try {
         return { data: JSON.parse(text), headers: response.headers };
-      } catch (parseError) {
+      } catch {
         console.error("Failed to parse JSON response:", text);
         throw new Error("Malformed JSON response from server");
       }
@@ -112,7 +155,7 @@ class StorageService {
               this.setMyDeleteToken(response.job.id, response.deleteToken);
             }
             resolve();
-          } catch (e) {
+          } catch {
             reject(new Error("Malformed response from server"));
           }
         } else {
@@ -170,7 +213,7 @@ class StorageService {
     try {
       const data = localStorage.getItem("my_upload_ids");
       return data ? JSON.parse(data) : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -199,7 +242,7 @@ class StorageService {
         body: JSON.stringify({ ids: myIds }),
       });
       return Array.isArray(data) ? data : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -221,7 +264,7 @@ class StorageService {
       if (response.status === 401) {
         localStorage.removeItem("ps_admin_token");
         this.authToken = null;
-        window.dispatchEvent(new CustomEvent("session-expired"));
+        emitAppEvent("session-expired");
         return null;
       }
       if (!response.ok) return null;
@@ -376,7 +419,7 @@ class StorageService {
       // is present, fetch the full set (cloud config, printer defaults, ...);
       // fall back to the public view if that call fails.
       const hasToken = !!(this.authToken || localStorage.getItem("ps_admin_token"));
-      let settings: any;
+      let settings: ShopSettings;
       if (hasToken) {
         try {
           settings = await this.safeFetch("/api/settings/admin");
@@ -425,7 +468,7 @@ class StorageService {
           ? settings.printerDefaults
           : {},
       };
-    } catch (e) {
+    } catch {
       return { shopName: "PrintShop Hub", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
     }
   }
@@ -584,7 +627,7 @@ class StorageService {
     await this.safeFetch("/api/gmail/disconnect", { method: "POST" });
   }
 
-  async triggerGmailPoll(): Promise<any> {
+  async triggerGmailPoll(): Promise<{ success: boolean; imported?: number }> {
     return this.safeFetch("/api/gmail/poll", { method: "POST" });
   }
 
@@ -602,11 +645,11 @@ class StorageService {
     return this.safeFetch("/api/gmail/settings");
   }
 
-  async getGmailPending(): Promise<any[]> {
+  async getGmailPending(): Promise<GmailPendingEmail[]> {
     return this.safeFetch("/api/gmail/pending");
   }
 
-  async importGmailEmails(ids: number[], overrides?: Record<string, { copies: number; colorMode: string; paperType: string }>): Promise<any> {
+  async importGmailEmails(ids: number[], overrides?: Record<string, { copies: number; colorMode: string; paperType: string }>): Promise<GmailImportResult> {
     return this.safeFetch("/api/gmail/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -658,7 +701,7 @@ class StorageService {
 
   // ── Bulk Actions ──────────────────────────────────────────
 
-  async bulkDeleteJobs(ids: string[]): Promise<any> {
+  async bulkDeleteJobs(ids: string[]): Promise<MutationResult> {
     return this.safeFetch("/api/jobs/bulk/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -666,7 +709,7 @@ class StorageService {
     });
   }
 
-  async bulkUpdateStatus(ids: string[], status: PrintStatus): Promise<any> {
+  async bulkUpdateStatus(ids: string[], status: PrintStatus): Promise<MutationResult> {
     return this.safeFetch("/api/jobs/bulk/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -676,7 +719,7 @@ class StorageService {
 
   // ── Payment ───────────────────────────────────────────────
 
-  async updatePaymentStatus(id: string, paymentStatus: string, paymentAmount?: number): Promise<any> {
+  async updatePaymentStatus(id: string, paymentStatus: string, paymentAmount?: number): Promise<MutationResult> {
     return this.safeFetch(`/api/jobs/${id}/payment`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -684,7 +727,7 @@ class StorageService {
     });
   }
 
-  async bulkUpdatePayment(ids: string[], paymentStatus: string): Promise<any> {
+  async bulkUpdatePayment(ids: string[], paymentStatus: string): Promise<MutationResult> {
     return this.safeFetch("/api/jobs/bulk/payment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -711,7 +754,7 @@ class StorageService {
     URL.revokeObjectURL(url);
   }
 
-  async restoreBackup(file: File): Promise<any> {
+  async restoreBackup(file: File): Promise<MutationResult> {
     const formData = new FormData();
     formData.append("file", file);
     return this.safeFetch("/api/backup/restore", {

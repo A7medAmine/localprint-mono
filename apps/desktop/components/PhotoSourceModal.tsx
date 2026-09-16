@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { PrintJob } from "../types";
 import { useLanguage } from "../lib/useLanguage";
+import { Icon } from "./ui/icon";
+import { readPref } from "@localprint/shared/lib/prefs";
 
 interface PhotoSourceModalProps {
   isOpen: boolean;
@@ -27,13 +29,13 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
       setLoading(true);
       setError("");
       try {
-        const token = localStorage.getItem("ps_admin_token");
+        const token = readPref("adminToken");
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch("/api/jobs", { headers });
         const data = await res.json();
         const list = Array.isArray(data)
-          ? data.filter((j: any) => j.serverFileName && j.fileType?.startsWith("image/"))
+          ? data.filter((j: PrintJob) => j.serverFileName && j.fileType?.startsWith("image/"))
           : [];
         setJobs(list);
         setSelected(new Set());
@@ -100,8 +102,18 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onClick={onClose}>
-      <div className="bg-card rounded-xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-border w-full max-w-2xl max-h-[80vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label={t("close")}
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative bg-card rounded-xl shadow-xl dark:shadow-2xl dark:shadow-black/40 border border-border w-full max-w-2xl max-h-[80vh] flex flex-col mx-4"
+      >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="font-semibold text-foreground">{t("loadFromPrintJobs")}</h2>
           <button className="text-muted-foreground hover:text-muted-foreground text-xl leading-none" onClick={onClose}>&times;</button>
@@ -122,7 +134,7 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
                     <span>
                       {group.customer} &middot; {group.jobs.length} {group.jobs.length === 1 ? t("file") : t("files")}
                     </span>
-                    <label className="flex items-center gap-1.5 text-[11px] font-medium normal-case tracking-normal cursor-pointer select-none">
+                    <label className="flex items-center gap-1.5 text-xs font-medium normal-case tracking-normal cursor-pointer select-none">
                       <input
                         type="checkbox"
                         className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 dark:text-indigo-400 cursor-pointer"
@@ -148,9 +160,7 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
                           onChange={() => toggleJob(job.id)}
                         />
                         <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0">
-                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                          </svg>
+                          <Icon name="file-doc" className="w-4 h-4 text-muted-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-foreground truncate">{job.fileName}</div>

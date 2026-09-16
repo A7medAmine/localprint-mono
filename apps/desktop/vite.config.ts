@@ -29,7 +29,7 @@ export default defineConfig({
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on("error", (err) => {
-            if ((err as any).code === "ECONNREFUSED") return;
+            if ((err as NodeJS.ErrnoException).code === "ECONNREFUSED") return;
             console.error("proxy error", err);
           });
         },

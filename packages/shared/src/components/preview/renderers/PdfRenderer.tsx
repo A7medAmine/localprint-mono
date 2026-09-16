@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getPdfjs, PDF_DOC_OPTIONS } from "../../../lib/pdfRender";
+import { Icon } from "../../ui/icon";
+import { errorMessage } from "@localprint/shared";
 
 interface PdfRendererProps {
   src: string;
@@ -38,9 +40,9 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
         setPageCount(doc.numPages);
         setCurrentPage(1);
         setLoading(false);
-      } catch (err: any) {
+      } catch (err) {
         if (!cancelled) {
-          setError(err.message || "Failed to load PDF");
+          setError(errorMessage(err) || "Failed to load PDF");
           setLoading(false);
         }
       }
@@ -57,7 +59,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
     async function renderPage() {
       try {
         if (renderTaskRef.current) {
-          try { await renderTaskRef.current.cancel(); } catch {}
+          try { await renderTaskRef.current.cancel(); } catch { /* ignored */ }
         }
         const page = await pdf.getPage(currentPage);
         if (cancelled) return;
@@ -78,14 +80,15 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
           renderTaskRef.current = page.render({ canvasContext: ctx, viewport });
           await renderTaskRef.current.promise;
           renderTaskRef.current = null;
-        } catch (err: any) {
-          if (err?.name === "RenderingCancelledException") return;
+        } catch (err) {
+          // pdf.js signals a superseded render by name, not by type.
+          if ((err as { name?: string } | null)?.name === "RenderingCancelledException") return;
           throw err;
         }
-      } catch (err: any) {
+      } catch (err) {
         if (cancelled) return;
         console.error("PdfRenderer render failed", err);
-        setError(err?.message || "Failed to render PDF page");
+        setError(errorMessage(err) || "Failed to render PDF page");
       }
     }
 
@@ -107,9 +110,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
-        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-        </svg>
+        <Icon name="alert-circle" className="w-12 h-12" />
         <p className="text-sm font-medium">{error}</p>
       </div>
     );
@@ -136,10 +137,8 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
             disabled={currentPage <= 1}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Previous page"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
+           aria-label="Previous page">
+            <Icon name="chevron-left" className="w-4 h-4" />
           </button>
           <span className="text-xs font-medium text-muted-foreground min-w-[5rem] text-center tabular-nums">
             {currentPage} / {pageCount}
@@ -149,10 +148,8 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
             disabled={currentPage >= pageCount}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Next page"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+           aria-label="Next page">
+            <Icon name="chevron-right" className="w-4 h-4" />
           </button>
         </div>
 
@@ -165,10 +162,8 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
             disabled={zoom <= MIN_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom out"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
+           aria-label="Zoom out">
+            <Icon name="minus" className="w-4 h-4" />
           </button>
           <button
             onClick={resetZoom}
@@ -182,10 +177,8 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
             disabled={zoom >= MAX_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom in"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+           aria-label="Zoom in">
+            <Icon name="plus" className="w-4 h-4" />
           </button>
         </div>
       </div>

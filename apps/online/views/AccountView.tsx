@@ -4,6 +4,7 @@ import { Language, AccountProfile, AccountOrder, ShopSettings, PrintJob, PrintSt
 import { storageService } from "../services/storageService";
 import { calculatePrintPrice, formatPrice } from "../utils/pricingUtils";
 import { useAuth } from "../hooks/useAuth";
+import { readPref } from "@localprint/shared/lib/prefs";
 import { isCustomerAuthConfigured } from "../services/supabaseClient";
 import AuthPanel from "../components/auth/AuthPanel";
 import { Button } from "../components/ui/button";
@@ -13,6 +14,7 @@ import { Card, CardContent } from "../components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { toast } from "../components/ui/use-toast";
 import LanguageToggle from "../components/LanguageToggle";
+import { Icon } from "../components/ui/icon";
 
 interface AccountViewProps {
   lang: Language;
@@ -36,9 +38,9 @@ interface ShopStats {
 const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
   const isRtl = lang === "ar";
   const { user, accessToken, loading: authLoading, signOut } = useAuth();
-  const lastShopSlug = localStorage.getItem("ps_last_shop_slug");
+  const lastShopSlug = readPref("lastShopSlug");
 
-  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [, setProfile] = useState<AccountProfile | null>(null);
   const [orders, setOrders] = useState<AccountOrder[]>([]);
   const [shopSettingsBySlug, setShopSettingsBySlug] = useState<Record<string, ShopSettings>>({});
   const [loadingData, setLoadingData] = useState(false);
@@ -171,9 +173,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
           to={`/s/${lastShopSlug}/upload`}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
         >
-          <svg className="w-4 h-4 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-          </svg>
+          <Icon name="chevron-left" className="w-4 h-4 rtl:rotate-180" />
           {isRtl ? "العودة إلى صفحة الرفع" : "Back to upload page"}
         </Link>
       ) : <span />}
@@ -378,7 +378,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                           {formatPrice(price)}
                         </span>
                       )}
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full w-fit ${statusClasses}`}>
+                      <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full w-fit ${statusClasses}`}>
                         {isRtl
                           ? (status === PrintStatus.PRINTED ? "تمت الطباعة" : status === "REJECTED" ? "مرفوض" : "قيد الانتظار")
                           : status}

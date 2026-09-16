@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { PaperType } from "../../../types";
-import { storageService } from "../../../services/storageService";
+import { storageService, type GmailAttachmentMeta, type GmailPendingEmail } from "../../../services/storageService";
 import { formatRelativeTime } from "../../../utils/timeUtils";
 import { toast } from "../../../components/ui/use-toast";
 import { ToastAction } from "../../../components/ui/toast";
@@ -28,6 +28,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../..
 import { Icon, fileTypeIcon } from "../../../components/ui/icon";
 import { useAdmin } from "../AdminContext";
 import { openAdminEventSource } from "../../../utils/adminEvents";
+import { errorMessage } from "@localprint/shared";
+
+
+/** Per-attachment print settings the operator picks in the review dialog. */
+interface GmailOverride {
+  copies: number;
+  colorMode: string;
+  paperType: string;
+}
 
 const formatFileSize = (bytes: number) => {
   if (!bytes || bytes === 0) return "";
@@ -51,7 +60,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
   const [gmailPolling, setGmailPolling] = useState(false);
   const [gmailDisconnectConfirm, setGmailDisconnectConfirm] = useState(false);
   const [gmailPollResult] = useState<string | null>(null);
-  const [gmailPending, setGmailPending] = useState<any[]>([]);
+  const [gmailPending, setGmailPending] = useState<GmailPendingEmail[]>([]);
   const [gmailSelectedIds, setGmailSelectedIds] = useState<Set<number>>(new Set());
   const [gmailImporting, setGmailImporting] = useState(false);
   const [gmailLastPolledAt] = useState<string | null>(null);
@@ -60,7 +69,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
   const [gmailFilterDate, setGmailFilterDate] = useState<"today" | "week" | "all">("all");
   const [gmailFilterType, setGmailFilterType] = useState<"all" | "pdf" | "images" | "other">("all");
   const [gmailReviewOverrides, setGmailReviewOverrides] = useState<
-    Record<string, { copies: number; colorMode: string; paperType: string }>
+    Record<string, GmailOverride>
   >({});
   const [gmailPollInterval, setGmailPollInterval] = useState(60);
   const [gmailReplyTemplate, setGmailReplyTemplate] = useState("");
@@ -179,7 +188,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
       setGmailConnected(false);
       setGmailEmail("");
       toast({ title: isRtl ? "تم قطع الاتصال بـ Gmail" : "Gmail disconnected", variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: isRtl ? "فشل قطع الاتصال" : "Failed to disconnect", variant: "destructive" });
     }
   };
@@ -220,7 +229,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     if (gmailFilterType !== "all") {
       const atts = e.attachment_meta || [];
       if (atts.length === 0) return gmailFilterType === "other";
-      const hasMatch = atts.some((att: any) => {
+      const hasMatch = atts.some((att: GmailAttachmentMeta) => {
         const mt = (att.mimeType || "").toLowerCase();
         if (gmailFilterType === "pdf") return mt.includes("pdf");
         if (gmailFilterType === "images") return mt.includes("image");
@@ -234,7 +243,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
 
   const handleGmailImportSelected = async () => {
     if (gmailSelectedIds.size === 0) return;
-    const defaults: Record<string, { copies: number; colorMode: string; paperType: string }> = {};
+    const defaults: Record<string, GmailOverride> = {};
     for (const email of gmailSelectedEmails) {
       for (let i = 0; i < (email.attachment_meta || []).length; i++) {
         defaults[`${email.id}_${i}`] = { copies: 1, colorMode: "color", paperType: "normal" };
@@ -253,12 +262,12 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
         gmailReviewOverrides,
       );
       const imported = result.imported || [];
-      const successCount = imported.filter((r: any) => !r.error).length;
-      const errorCount = imported.filter((r: any) => r.error).length;
+      const successCount = imported.filter((r) => !r.error).length;
+      const errorCount = imported.filter((r) => r.error).length;
       if (errorCount > 0) {
         const errors = imported
-          .filter((r: any) => r.error)
-          .map((r: any) => `${r.subject || r.id}: ${r.error}`)
+          .filter((r) => r.error)
+          .map((r) => `${r.subject || r.id}: ${r.error}`)
           .join("; ");
         toast({ title: `${successCount} imported, ${errorCount} failed`, description: errors, variant: "destructive" });
       } else {
@@ -267,15 +276,15 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
       setGmailSelectedIds(new Set());
       await loadGmailPending();
       onJobsImported();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to import emails:", err);
-      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+      toast({ title: "Import failed", description: errorMessage(err), variant: "destructive" });
     } finally {
       setGmailImporting(false);
     }
   };
 
-  const updateGmailOverride = (key: string, field: string, value: any) => {
+  const updateGmailOverride = (key: string, field: keyof GmailOverride, value: string | number) => {
     setGmailReviewOverrides((prev) => ({
       ...prev,
       [key]: { ...prev[key], [field]: value },
@@ -344,7 +353,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     try {
       await storageService.saveGmailReplyTemplate(gmailReplyTemplate, gmailReplyTemplateLang);
       toast({ title: isRtl ? "تم حفظ قالب الرد" : "Reply template saved", variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: "Failed to save", variant: "destructive" });
     }
   };
@@ -353,7 +362,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     try {
       await storageService.saveGmailReadyTemplate(gmailReadyTemplate, gmailReadyTemplateLang);
       toast({ title: isRtl ? "تم حفظ قالب الإشعار" : "Ready template saved", variant: "success" });
-    } catch (err) {
+    } catch {
       toast({ title: "Failed to save", variant: "destructive" });
     }
   };
@@ -365,9 +374,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M22.288 5.292A1.2 1.2 0 0021.6 4.8H2.4a1.2 1.2 0 00-.688.492l10.288 7.712 10.288-7.712zM21.6 7.2l-9.6 7.2L2.4 7.2v9.6a1.2 1.2 0 001.2 1.2h16.8a1.2 1.2 0 001.2-1.2V7.2z" />
-                </svg>
+                <Icon name="mail" className="w-5 h-5" />
               </div>
               <div>
                 <CardTitle className="text-base">{isRtl ? "البريد الإلكتروني (Gmail)" : "Email-to-Print (Gmail)"}</CardTitle>
@@ -398,23 +405,17 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
               <div className="flex items-center gap-2">
                 {!gmailConnected ? (
                   <Button size="sm" onClick={handleGmailConnect}>
-                    <svg className="w-4 h-4 me-1.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.288 5.292A1.2 1.2 0 0021.6 4.8H2.4a1.2 1.2 0 00-.688.492l10.288 7.712 10.288-7.712zM21.6 7.2l-9.6 7.2L2.4 7.2v9.6a1.2 1.2 0 001.2 1.2h16.8a1.2 1.2 0 001.2-1.2V7.2z" />
-                    </svg>
+                    <Icon name="mail" className="w-4 h-4 me-1.5" />
                     {isRtl ? "الاتصال بـ Gmail" : "Connect Gmail"}
                   </Button>
                 ) : (
                   <>
                     <Button size="sm" variant="outline" onClick={handleGmailPoll} disabled={gmailPolling}>
-                      <svg className={`w-4 h-4 me-1.5 ${gmailPolling ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
+                      <Icon name="refresh" className={`w-4 h-4 me-1.5 ${gmailPolling ? "animate-spin" : ""}`} />
                       {gmailPolling ? (isRtl ? "جارٍ الفحص..." : "Checking...") : isRtl ? "فحص البريد الآن" : "Check Mail Now"}
                     </Button>
                     <Button size="sm" variant="destructive" onClick={handleGmailDisconnect}>
-                      <svg className="w-4 h-4 me-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
+                      <Icon name="log-out" className="w-4 h-4 me-1.5" />
                       {isRtl ? "قطع الاتصال" : "Disconnect"}
                     </Button>
                   </>
@@ -474,14 +475,14 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   {isRtl ? "قالب الرد التلقائي" : "Auto-reply Template"}
                 </h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
+                  <span className="text-xs text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
                   <div className="inline-flex rounded-md border border-border overflow-hidden">
                     {(["en", "ar"] as const).map((l) => (
                       <button
                         key={l}
                         type="button"
                         onClick={() => setGmailReplyTemplateLang(l)}
-                        className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        className={`px-2 py-0.5 text-xs font-medium transition-colors ${
                           gmailReplyTemplateLang === l
                             ? "bg-indigo-600 text-white"
                             : "bg-card text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -491,7 +492,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                       </button>
                     ))}
                   </div>
-                  <span className="text-[10px] text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-2">
@@ -537,14 +538,14 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                   {isRtl ? "قالب إشعار الجاهزية" : "Ready Notification Template"}
                 </h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
+                  <span className="text-xs text-muted-foreground">{isRtl ? "لغة القيم" : "Values language"}</span>
                   <div className="inline-flex rounded-md border border-border overflow-hidden">
                     {(["en", "ar"] as const).map((l) => (
                       <button
                         key={l}
                         type="button"
                         onClick={() => setGmailReadyTemplateLang(l)}
-                        className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                        className={`px-2 py-0.5 text-xs font-medium transition-colors ${
                           gmailReadyTemplateLang === l
                             ? "bg-emerald-600 text-white"
                             : "bg-card text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -554,10 +555,10 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                       </button>
                     ))}
                   </div>
-                  <span className="text-[10px] text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:inline">{isRtl ? "انقر للإدراج" : "Click to insert"}</span>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground mb-2">
+              <p className="text-xs text-muted-foreground mb-2">
                 {isRtl
                   ? "يُرسَل تلقائيًا عند تحديد الطلب كـ«جاهز». يُرسَل مرة واحدة لكل طلب."
                   : "Sent automatically when a job's status becomes READY. Fires once per job."}
@@ -603,8 +604,8 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <h4 className="font-semibold text-foreground flex items-center gap-2">
                         {isRtl ? "رسائل بريد إلكتروني جديدة" : "New Emails"}
-                        <button type="button" onClick={handleGmailPoll} disabled={gmailPolling} className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" title={isRtl ? "تحديث" : "Refresh"}>
-                          <svg className={`w-4 h-4 ${gmailPolling ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        <button type="button" onClick={handleGmailPoll} disabled={gmailPolling} className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" title={isRtl ? "تحديث" : "Refresh"} aria-label={isRtl ? "تحديث" : "Refresh"}>
+                          <Icon name="refresh" className={`w-4 h-4 ${gmailPolling ? "animate-spin" : ""}`} />
                         </button>
                       </h4>
                       <span className="text-xs text-muted-foreground">{gmailFilteredPending.length} {isRtl ? "نتيجة" : "result(s)"}</span>
@@ -669,7 +670,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                               <td className="p-3">
                                 {email.attachment_meta && email.attachment_meta.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
-                                    {email.attachment_meta.map((att: any, i: number) => (
+                                    {email.attachment_meta.map((att, i) => (
                                       <span key={i} className="px-2 py-0.5 bg-muted text-muted-foreground dark:text-gray-500 rounded text-xs flex items-center gap-1" title={`${att.filename} (${formatFileSize(att.size)})`}>
                                         <Icon name={fileTypeIcon(att.mimeType)} className="h-3.5 w-3.5" />
                                         <span className="max-w-[80px] truncate">{att.filename}</span>
@@ -710,7 +711,7 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                     <div className="text-sm text-muted-foreground italic">{isRtl ? "لا توجد مرفقات" : "No attachments"}</div>
                   ) : (
                     <div className="space-y-2">
-                      {email.attachment_meta.map((att: any, i: number) => {
+                      {email.attachment_meta.map((att, i) => {
                         const key = `${email.id}_${i}`;
                         const ov = gmailReviewOverrides[key] || { copies: 1, colorMode: "color", paperType: "normal" };
                         return (

@@ -351,7 +351,7 @@ export const getSettings = async (shopId) => {
   (rows || []).forEach(row => {
     try {
       settings[row.key] = JSON.parse(row.value);
-    } catch (e) {
+    } catch {
       settings[row.key] = row.value;
     }
   });

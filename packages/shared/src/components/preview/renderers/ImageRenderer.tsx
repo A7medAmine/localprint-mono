@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import { Icon } from "../../ui/icon";
 
 interface ImageRendererProps {
   src: string;
@@ -54,9 +55,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
-        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-        </svg>
+        <Icon name="alert-circle" className="w-12 h-12" />
         <p className="text-sm font-medium">Failed to load image</p>
       </div>
     );
@@ -74,10 +73,8 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
             disabled={zoom <= MIN_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom out"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-            </svg>
+           aria-label="Zoom out">
+            <Icon name="minus" className="w-4 h-4" />
           </button>
           <button
             onClick={resetZoom}
@@ -91,10 +88,8 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
             disabled={zoom >= MAX_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
             title="Zoom in"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+           aria-label="Zoom in">
+            <Icon name="plus" className="w-4 h-4" />
           </button>
         </div>
       </div>
