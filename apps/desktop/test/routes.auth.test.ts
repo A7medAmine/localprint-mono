@@ -28,6 +28,44 @@ beforeEach(() => {
   setMustChangePassword(false);
 });
 
+describe("first-run bootstrap", () => {
+  it("reports a fresh install and issues a token without a password", async () => {
+    const app = makeApp();
+
+    const status = await request(app).get("/api/auth/status");
+    expect(status.body).toEqual({ freshInstall: true });
+
+    const res = await request(app).post("/api/auth/bootstrap");
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^[0-9a-f]{64}$/);
+
+    // The token may only change the password — everything else stays blocked.
+    const blocked = await request(app)
+      .post("/api/auth/logout-all")
+      .set("Authorization", `Bearer ${res.body.token}`);
+    expect(blocked.status).toBe(403);
+
+    const change = await request(app)
+      .post("/api/settings/password")
+      .set("Authorization", `Bearer ${res.body.token}`)
+      .send({ currentPassword: "admin123", newPassword: "a-good-password" });
+    expect(change.status).toBe(200);
+  });
+
+  it("refuses once a password has been set", async () => {
+    state.set("adminPassword", hashPassword("correct horse battery"));
+    refreshMustChangePassword();
+    const app = makeApp();
+
+    const status = await request(app).get("/api/auth/status");
+    expect(status.body).toEqual({ freshInstall: false });
+
+    const res = await request(app).post("/api/auth/bootstrap");
+    expect(res.status).toBe(403);
+    expect(res.body.token).toBeUndefined();
+  });
+});
+
 describe("POST /api/auth/verify", () => {
   it("issues a token for the default password on a fresh install", async () => {
     const res = await request(makeApp()).post("/api/auth/verify").send({ password: "admin123" });

@@ -46,6 +46,13 @@ export function checkAdminPassword(password) {
   return verifyHash(password, stored);
 }
 
+// A fresh install: the operator has never set a credential at all, so the
+// implicit one is still the factory default. Used to skip the login screen and
+// drop the operator straight into the first-run wizard.
+export function isFreshInstall() {
+  return !getInternalState("adminPassword");
+}
+
 // Is the current credential still the factory default?
 export function isDefaultPassword() {
   const stored = getInternalState("adminPassword");

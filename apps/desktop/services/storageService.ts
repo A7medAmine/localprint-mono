@@ -587,6 +587,26 @@ class StorageService {
     });
   }
 
+  /** True while the operator has never set an admin password (first run). */
+  async isFreshInstall(): Promise<boolean> {
+    try {
+      const result = await this.safeFetch("/api/auth/status");
+      return !!result?.freshInstall;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Session token for a fresh install, without asking for a password. */
+  async bootstrapSession(): Promise<string | null> {
+    try {
+      const result = await this.safeFetch("/api/auth/bootstrap", { method: "POST" });
+      return result?.success && result.token ? result.token : null;
+    } catch {
+      return null;
+    }
+  }
+
   async verifyPassword(password: string): Promise<{ success: boolean; token?: string; mustChangePassword?: boolean }> {
     try {
       const result = await this.safeFetch("/api/auth/verify", {

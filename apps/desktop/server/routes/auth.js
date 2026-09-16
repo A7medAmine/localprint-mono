@@ -3,6 +3,7 @@ import { setInternalState } from "../../db.js";
 import {
   checkAdminPassword,
   hashPassword,
+  isFreshInstall,
   passwordPolicyError,
 } from "../passwords.js";
 import {
@@ -18,6 +19,26 @@ import {
 } from "../adminAuth.js";
 
 export function registerAuthRoutes(app) {
+  // First-run status. On a fresh install there is no credential yet, so asking
+  // for one is pure friction — the UI sends the operator straight to the setup
+  // wizard instead (which is where the password actually gets set).
+  app.get("/api/auth/status", (req, res) => {
+    res.status(200).json({ freshInstall: isFreshInstall() });
+  });
+
+  // Issue a session token without a password — only while the install is still
+  // fresh. Such a token is already useless for anything but the password change
+  // and logout, because requireAdmin blocks the rest while the credential is
+  // the factory default.
+  app.post("/api/auth/bootstrap", (req, res) => {
+    if (!isFreshInstall()) {
+      return res.status(403).json({ success: false, error: "Setup already completed" });
+    }
+    refreshMustChangePassword();
+    const token = generateToken();
+    res.status(200).json({ success: true, token });
+  });
+
   // Verify admin password — returns a session token on success
   app.post("/api/auth/verify", loginGuard, (req, res) => {
     const { password } = req.body;

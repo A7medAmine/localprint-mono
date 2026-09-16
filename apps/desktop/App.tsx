@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from "react";
+import React, { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
 import { TRANSLATIONS } from "./constants";
@@ -139,6 +139,32 @@ const App: React.FC = () => {
       }
     };
     loadSettings();
+  }, []);
+
+  // First run: there is no admin password yet, so a login screen would only ask
+  // the operator to type a default they were never told. Mint a session server
+  // side (the backend only does this while the credential is untouched) and go
+  // straight to the setup wizard, which is where the real password is set.
+  const bootstrapAttempted = useRef(false);
+  useEffect(() => {
+    if (bootstrapAttempted.current) return;
+    bootstrapAttempted.current = true;
+    if (isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const fresh = await storageService.isFreshInstall();
+      if (cancelled || !fresh) return;
+      const token = await storageService.bootstrapSession();
+      if (cancelled || !token) return;
+      storageService.setAuthToken(token);
+      writePref("adminToken", token);
+      setIsAdmin(true);
+      navigate("/admin/setup", { replace: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Redirect / to /upload
