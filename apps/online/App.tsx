@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState, useEffect } from "react";
-import { Routes, Route, useParams, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, Link, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
@@ -32,6 +32,80 @@ const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
     </p>
   </div>
 );
+
+// Landing on the platform root (no slug) is not an error — it is a customer
+// who does not have the shop's link. List the active shops so they can pick
+// one; fall back to the "no shop specified" note if the list is empty or the
+// request fails.
+const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
+  const [shops, setShops] = useState<{ slug: string; name: string }[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await storageService.listShops();
+        if (!cancelled) setShops(list);
+      } catch (error) {
+        console.error("Failed to load shop directory:", error);
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (failed || (shops && shops.length === 0)) {
+    return <NoShopSpecified isRtl={isRtl} />;
+  }
+
+  if (!shops) {
+    return <RouteFallback />;
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto mt-12 w-full px-2">
+      <h1 className="text-2xl font-bold text-foreground text-center">
+        {isRtl ? "اختر متجرًا" : "Choose a shop"}
+      </h1>
+      <p className="text-sm text-muted-foreground text-center mt-2">
+        {isRtl
+          ? "اختر المحل الذي تريد الطباعة عنده لبدء رفع ملفاتك."
+          : "Pick the print shop you want to order from to start uploading."}
+      </p>
+      <ul className="mt-8 grid gap-3 sm:grid-cols-2">
+        {shops.map((shop) => (
+          <li key={shop.slug}>
+            <Link
+              to={`/s/${shop.slug}/upload`}
+              className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-indigo-200 hover:shadow-md active:scale-[0.99] dark:hover:border-indigo-800/50"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
+                <Icon name="print" className="h-5 w-5" />
+              </span>
+              <span className="min-w-0">
+                <span dir="auto" className="block truncate font-semibold text-foreground">
+                  {shop.name}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">/s/{shop.slug}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// A bare shop link (/s/:slug) — or anything under it that isn't a real page —
+// is a customer who scanned the QR or typed the short URL. Send them to the
+// upload page instead of the "no shop specified" dead end.
+const ShopRootRedirect: React.FC = () => {
+  const { shopSlug } = useParams<{ shopSlug: string }>();
+  return <Navigate to={`/s/${shopSlug}/upload`} replace />;
+};
 
 const UploadRoute: React.FC<{
   lang: Language;
@@ -171,8 +245,10 @@ const App: React.FC = () => {
           <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/s/:shopSlug/upload" element={<UploadRoute lang={lang} onSettingsLoaded={setSettings} onShopVisited={handleShopVisited} />} />
+            <Route path="/s/:shopSlug" element={<ShopRootRedirect />} />
+            <Route path="/s/:shopSlug/*" element={<ShopRootRedirect />} />
             <Route path="/account" element={<AccountView lang={lang} onToggleLang={setLang} />} />
-            <Route path="*" element={<NoShopSpecified isRtl={lang === "ar"} />} />
+            <Route path="*" element={<ShopDirectory isRtl={lang === "ar"} />} />
           </Routes>
           </Suspense>
         </div>

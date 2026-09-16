@@ -91,6 +91,19 @@ export const listShops = async () => {
   return data || [];
 };
 
+// Public storefront directory — what the platform root lists when a customer
+// lands without a shop slug. Active shops only, and no ids/tokens/timestamps.
+export const listPublicShops = async () => {
+  const { data, error } = await supabase
+    .from('shops')
+    .select('slug, name, is_active')
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return (data || [])
+    .filter((s) => s.is_active !== false)
+    .map(({ slug, name }) => ({ slug, name }));
+};
+
 // Platform-wide + per-shop stats for the admin dashboard. Orders are fetched
 // in full and aggregated in JS — Supabase's JS client has no cross-row SUM,
 // and order volume here is small enough that this stays cheap.

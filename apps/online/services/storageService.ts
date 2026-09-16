@@ -217,6 +217,12 @@ class StorageService {
     localStorage.setItem(this.deleteTokensKey(shopSlug), JSON.stringify(tokens));
   }
 
+  /** Public directory of active shops — used by the platform root page. */
+  async listShops(): Promise<{ slug: string; name: string }[]> {
+    const shops = await this.safeFetch(`/api/shops`);
+    return Array.isArray(shops) ? shops : [];
+  }
+
   async getSettings(shopSlug: string): Promise<ShopSettings> {
     try {
       const settings = await this.safeFetch(`/api/s/${shopSlug}/settings`);
