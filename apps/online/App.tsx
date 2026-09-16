@@ -4,7 +4,7 @@ import { Language, ShopSettings } from "./types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import { TRANSLATIONS } from "./constants";
-import { storageService } from "./services/storageService";
+import { storageService, PublicShop } from "./services/storageService";
 // The upload flow pulls in pdf.js and xlsx for previews; the account page is a
 // separate concern entirely. Neither belongs in the first paint of the other.
 const UploadView = lazy(() => import("./views/UploadView"));
@@ -38,7 +38,7 @@ const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
 // one; fall back to the "no shop specified" note if the list is empty or the
 // request fails.
 const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
-  const [shops, setShops] = useState<{ slug: string; name: string }[] | null>(null);
+  const [shops, setShops] = useState<PublicShop[] | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -66,35 +66,131 @@ const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto mt-12 w-full px-2">
-      <h1 className="text-2xl font-bold text-foreground text-center">
-        {isRtl ? "اختر متجرًا" : "Choose a shop"}
-      </h1>
-      <p className="text-sm text-muted-foreground text-center mt-2">
-        {isRtl
-          ? "اختر المحل الذي تريد الطباعة عنده لبدء رفع ملفاتك."
-          : "Pick the print shop you want to order from to start uploading."}
-      </p>
-      <ul className="mt-8 grid gap-3 sm:grid-cols-2">
+    <div className="w-full max-w-5xl mx-auto mt-8 px-1">
+      <div className="text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
+          <Icon name="print" className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+          {isRtl
+            ? `${shops.length} ${shops.length === 1 ? "محل متاح" : "محل متاح"}`
+            : `${shops.length} ${shops.length === 1 ? "shop" : "shops"} available`}
+        </span>
+        <h1 className="mt-4 text-2xl sm:text-3xl font-bold text-foreground">
+          {isRtl ? "اختر متجرًا" : "Choose a shop"}
+        </h1>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          {isRtl
+            ? "اختر المحل الذي تريد الطباعة عنده، تواصل معه مباشرة أو ابدأ برفع ملفاتك."
+            : "Pick the print shop you want to order from — contact it directly or start uploading right away."}
+        </p>
+      </div>
+
+      <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {shops.map((shop) => (
           <li key={shop.slug}>
-            <Link
-              to={`/s/${shop.slug}/upload`}
-              className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-indigo-200 hover:shadow-md active:scale-[0.99] dark:hover:border-indigo-800/50"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
-                <Icon name="print" className="h-5 w-5" />
-              </span>
-              <span className="min-w-0">
-                <span dir="auto" className="block truncate font-semibold text-foreground">
-                  {shop.name}
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">/s/{shop.slug}</span>
-              </span>
-            </Link>
+            <ShopCard shop={shop} isRtl={isRtl} />
           </li>
         ))}
       </ul>
+    </div>
+  );
+};
+
+// One storefront card. The logo is the card's anchor, so it gets a real frame
+// instead of being squeezed into an avatar: shops upload wildly different
+// aspect ratios (wide wordmarks, square marks), and `object-contain` inside a
+// fixed box is the only thing that keeps both readable. Shops with no logo get
+// the shop's first letter rather than a generic icon, so the cards still
+// differ from each other at a glance.
+const ShopCard: React.FC<{ shop: PublicShop; isRtl: boolean }> = ({ shop, isRtl }) => {
+  const phones = (shop.phoneNumbers || []).filter(Boolean);
+  const hasContact = phones.length > 0 || !!shop.email;
+
+  return (
+    <div className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg dark:hover:border-indigo-800/50">
+      <Link to={`/s/${shop.slug}/upload`} className="block">
+        <div className="relative flex h-28 items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-indigo-100/70 dark:from-indigo-950/40 dark:via-gray-900 dark:to-indigo-900/20">
+          {shop.logoUrl ? (
+            <img
+              src={shop.logoUrl}
+              alt=""
+              loading="lazy"
+              className="max-h-20 max-w-[70%] object-contain drop-shadow-sm transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <span
+              dir="auto"
+              aria-hidden="true"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-2xl font-bold text-white shadow-sm"
+            >
+              {(shop.name || "?").trim().charAt(0).toUpperCase()}
+            </span>
+          )}
+        </div>
+      </Link>
+
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="min-w-0">
+          <Link to={`/s/${shop.slug}/upload`} className="block">
+            <h2 dir="auto" className="truncate text-base font-bold text-foreground">
+              {shop.name}
+            </h2>
+          </Link>
+          <p dir="ltr" className="mt-0.5 truncate text-xs text-muted-foreground">
+            /s/{shop.slug}
+          </p>
+        </div>
+
+        {(shop.address || shop.workingHours) && (
+          <div className="space-y-1.5 text-xs text-muted-foreground">
+            {shop.address && (
+              <p className="flex items-start gap-2">
+                <Icon name="map-pin" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                <span dir="auto" className="line-clamp-2">{shop.address}</span>
+              </p>
+            )}
+            {shop.workingHours && (
+              <p className="flex items-start gap-2">
+                <Icon name="clock" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                <span dir="auto" className="line-clamp-2">{shop.workingHours}</span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {hasContact && (
+          <div className="flex flex-wrap gap-1.5">
+            {phones.map((phone) => (
+              <a
+                key={phone}
+                href={`tel:${phone.replace(/\s+/g, "")}`}
+                dir="ltr"
+                className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300"
+              >
+                <Icon name="phone" className="h-3 w-3" />
+                {phone}
+              </a>
+            ))}
+            {shop.email && (
+              <a
+                href={`mailto:${shop.email}`}
+                dir="ltr"
+                className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300"
+              >
+                <Icon name="mail" className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[140px]">{shop.email}</span>
+              </a>
+            )}
+          </div>
+        )}
+
+        <Link
+          to={`/s/${shop.slug}/upload`}
+          className="mt-auto inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-[0.99]"
+        >
+          <Icon name="upload" className="h-4 w-4" />
+          {isRtl ? "ارفع ملفاتك" : "Upload files"}
+        </Link>
+      </div>
     </div>
   );
 };

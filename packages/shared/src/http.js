@@ -72,8 +72,10 @@ export function buildContentSecurityPolicy({
       ["script-src 'self' 'wasm-unsafe-eval' blob:", ...scriptSrc].join(" "),
       "worker-src 'self' blob:",
       "img-src 'self' data: blob:",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' data: https://fonts.gstatic.com",
+      // Both apps self-host Inter and Rubik from their own public/ dir, so
+      // nothing is fetched from Google Fonts any more — don't keep allowing it.
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self' data:",
       `connect-src ${connectSrc.join(" ")}`,
       "frame-src 'self'",
     ].join("; ") + ";"

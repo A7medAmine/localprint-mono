@@ -1,6 +1,17 @@
 import { PrintJob, ShopSettings, DiscountRule, AccountProfile, AccountOrder } from "../types";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 
+/** One entry in the public shop directory (`GET /api/shops`). */
+export interface PublicShop {
+  slug: string;
+  name: string;
+  logoUrl?: string | null;
+  phoneNumbers?: string[];
+  email?: string | null;
+  address?: string | null;
+  workingHours?: string | null;
+}
+
 class StorageService {
   private async safeFetch(url: string, options?: RequestInit) {
     try {
@@ -218,7 +229,7 @@ class StorageService {
   }
 
   /** Public directory of active shops — used by the platform root page. */
-  async listShops(): Promise<{ slug: string; name: string }[]> {
+  async listShops(): Promise<PublicShop[]> {
     const shops = await this.safeFetch(`/api/shops`);
     return Array.isArray(shops) ? shops : [];
   }

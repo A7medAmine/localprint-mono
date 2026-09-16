@@ -91,17 +91,55 @@ export const listShops = async () => {
   return data || [];
 };
 
+// The public profile fields the directory shows next to each shop. Anything
+// outside this list stays private — the `settings` bag also holds pricing,
+// tokens and internal keys like `_logo_filename`.
+const PUBLIC_DIRECTORY_SETTINGS = ['logoUrl', 'phoneNumbers', 'email', 'address', 'workingHours'];
+
 // Public storefront directory — what the platform root lists when a customer
 // lands without a shop slug. Active shops only, and no ids/tokens/timestamps.
+// Each shop carries its public profile (logo, phones, email, address, hours) so
+// the directory can show a real storefront card instead of a bare name; the
+// settings for every shop come back in one query rather than one per shop.
 export const listPublicShops = async () => {
   const { data, error } = await supabase
     .from('shops')
-    .select('slug, name, is_active')
+    .select('id, slug, name, is_active')
     .order('name', { ascending: true });
   if (error) throw error;
-  return (data || [])
-    .filter((s) => s.is_active !== false)
-    .map(({ slug, name }) => ({ slug, name }));
+
+  const active = (data || []).filter((s) => s.is_active !== false);
+  if (active.length === 0) return [];
+
+  const { data: rows, error: settingsError } = await supabase
+    .from('settings')
+    .select('shop_id, key, value')
+    .in('shop_id', active.map((s) => s.id))
+    .in('key', PUBLIC_DIRECTORY_SETTINGS);
+  // A settings failure must not take the directory down — a card with just a
+  // name still gets the customer to the right shop.
+  if (settingsError) console.error('listPublicShops settings:', settingsError);
+
+  const byShop = new Map();
+  (rows || []).forEach((row) => {
+    let value = row.value;
+    try { value = JSON.parse(row.value); } catch { /* plain string */ }
+    if (!byShop.has(row.shop_id)) byShop.set(row.shop_id, {});
+    byShop.get(row.shop_id)[row.key] = value;
+  });
+
+  return active.map(({ id, slug, name }) => {
+    const profile = byShop.get(id) || {};
+    return {
+      slug,
+      name,
+      logoUrl: profile.logoUrl || null,
+      phoneNumbers: Array.isArray(profile.phoneNumbers) ? profile.phoneNumbers : [],
+      email: profile.email || null,
+      address: profile.address || null,
+      workingHours: profile.workingHours || null,
+    };
+  });
 };
 
 // Platform-wide + per-shop stats for the admin dashboard. Orders are fetched
