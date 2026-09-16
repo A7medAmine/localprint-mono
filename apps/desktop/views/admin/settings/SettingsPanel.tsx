@@ -608,9 +608,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     </div>
                   </div>
 
-                  {/* Social links — one row per platform, all optional. A handle
-                      ("@shop") or a full link both work; the server turns either
-                      into the real URL customers click. */}
+                  {/* Social links — one row per platform, all optional. Each
+                      field takes the page's own link, copied from the browser;
+                      a username is rejected rather than guessed into a URL. */}
                   <div>
                     <label className="block text-sm font-semibold text-foreground mb-2">
                       {isRtl ? "روابط التواصل الاجتماعي" : "Social links"}
@@ -638,8 +638,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       {isRtl
-                        ? "اترك الحقل فارغًا إذا لم يكن لديك حساب. تُنشر الحقول المملوءة فقط."
-                        : "Leave a field empty if you don't have that account — only filled ones are published."}
+                        ? "الصق رابط الصفحة كاملًا (وليس اسم المستخدم). اترك الحقل فارغًا إذا لم يكن لديك حساب — تُنشر الحقول المملوءة فقط."
+                        : "Paste the full link to the page, not a username. Leave a field empty if you don't have that account — only filled ones are published."}
                     </p>
                   </div>
 

@@ -1,6 +1,12 @@
 // The shop's social links: one small, closed set of platforms, normalized the
 // same way on the desktop server, the cloud server and the browser.
 //
+// Each field holds a LINK, not a username — the operator pastes the page's own
+// address straight out of their browser, which is the one thing that is always
+// right. Usernames are not accepted: the same handle means a different URL on
+// every platform, and a guessed one sends customers to a page that isn't the
+// shop's.
+//
 // Everything here is written by a shop operator and rendered as an `href` on a
 // public page, so normalization is also the security boundary: only http(s)
 // URLs survive it. A pasted "javascript:..." or "data:..." is dropped, never
@@ -12,11 +18,7 @@
  * @property {string} label
  * @property {string} labelAr
  * @property {string} placeholder
- * @property {(handle: string) => string} fromHandle
  */
-
-/** Strip the decorations operators paste around a handle ("@name", "/name/"). */
-const cleanHandle = (value) => value.replace(/^@+/, '').replace(/^\/+|\/+$/g, '').trim();
 
 /** @type {SocialPlatform[]} */
 export const SOCIAL_PLATFORMS = [
@@ -24,100 +26,77 @@ export const SOCIAL_PLATFORMS = [
     id: 'facebook',
     label: 'Facebook',
     labelAr: 'فيسبوك',
-    placeholder: 'facebook.com/yourshop',
-    fromHandle: (handle) => `https://facebook.com/${handle}`,
+    placeholder: 'https://facebook.com/yourshop',
   },
   {
     id: 'instagram',
     label: 'Instagram',
     labelAr: 'إنستغرام',
-    placeholder: '@yourshop',
-    fromHandle: (handle) => `https://instagram.com/${handle}`,
+    placeholder: 'https://instagram.com/yourshop',
   },
   {
     id: 'tiktok',
     label: 'TikTok',
     labelAr: 'تيك توك',
-    placeholder: '@yourshop',
-    fromHandle: (handle) => `https://tiktok.com/@${handle}`,
+    placeholder: 'https://tiktok.com/@yourshop',
   },
   {
     id: 'whatsapp',
     label: 'WhatsApp',
     labelAr: 'واتساب',
-    placeholder: '+213 555 00 00 00',
-    // A bare phone number is what operators actually have; wa.me wants digits
-    // only, no "+", spaces or dashes.
-    fromHandle: (handle) => `https://wa.me/${handle.replace(/\D/g, '')}`,
+    placeholder: 'https://wa.me/213555001122',
   },
   {
     id: 'telegram',
     label: 'Telegram',
     labelAr: 'تيليغرام',
-    placeholder: '@yourshop',
-    fromHandle: (handle) => `https://t.me/${handle}`,
+    placeholder: 'https://t.me/yourshop',
   },
   {
     id: 'youtube',
     label: 'YouTube',
     labelAr: 'يوتيوب',
-    placeholder: '@yourshop',
-    fromHandle: (handle) => `https://youtube.com/@${handle}`,
+    placeholder: 'https://youtube.com/@yourshop',
   },
   {
     id: 'website',
     label: 'Website',
     labelAr: 'الموقع الإلكتروني',
-    placeholder: 'yourshop.com',
-    fromHandle: (handle) => `https://${handle}`,
+    placeholder: 'https://yourshop.dz',
   },
 ];
 
 export const SOCIAL_PLATFORM_IDS = SOCIAL_PLATFORMS.map((p) => p.id);
 
-const PLATFORM_BY_ID = new Map(SOCIAL_PLATFORMS.map((p) => [p.id, p]));
+const PLATFORM_IDS = new Set(SOCIAL_PLATFORMS.map((p) => p.id));
 
 const MAX_SOCIAL_VALUE_LENGTH = 300;
 
 /**
- * One operator-entered value into a public, clickable https URL — or null when
- * it cannot become one.
+ * One operator-entered link into a public, clickable https URL — or null when
+ * it is not a link at all.
+ *
+ * A missing scheme is the one thing filled in for the operator ("facebook.com/
+ * x" works); a bare username is not, because there is nothing to fill in.
  *
  * @param {string} platformId
  * @param {unknown} raw
  * @returns {string|null}
  */
 export function normalizeSocialUrl(platformId, raw) {
-  const platform = PLATFORM_BY_ID.get(platformId);
-  if (!platform) return null;
+  if (!PLATFORM_IDS.has(platformId)) return null;
   if (typeof raw !== 'string') return null;
 
   const text = raw.trim();
-  if (!text || text.length > MAX_SOCIAL_VALUE_LENGTH) return null;
+  if (!text || text.length > MAX_SOCIAL_VALUE_LENGTH || /\s/.test(text)) return null;
 
-  // WhatsApp is the one field people fill with a phone number rather than a
-  // link, so a digits-only value is resolved before any URL parsing.
-  if (platform.id === 'whatsapp' && /^\+?[\d\s().-]{6,}$/.test(text)) {
-    const digits = text.replace(/\D/g, '');
-    return digits.length >= 6 ? `https://wa.me/${digits}` : null;
-  }
-
-  const looksLikeUrl = /^[a-z][a-z\d+.-]*:/i.test(text) || text.includes('/') || text.includes('.');
-  if (!looksLikeUrl) {
-    const handle = cleanHandle(text);
-    if (!handle || /\s/.test(handle)) return null;
-    return platform.fromHandle(handle);
-  }
-
-  const withScheme = /^https?:\/\//i.test(text)
-    ? text
-    : /^[a-z][a-z\d+.-]*:/i.test(text)
-      ? text // some other scheme — parsed below, then rejected
-      : `https://${text}`;
+  const hasScheme = /^[a-z][a-z\d+.-]*:/i.test(text);
+  // No scheme and no dot in the host means this is a handle, not a link.
+  if (!hasScheme && !text.includes('.')) return null;
 
   let url;
   try {
-    url = new URL(withScheme);
+    url = new URL(hasScheme ? text : `https://${text}`);
   } catch {
     return null;
   }

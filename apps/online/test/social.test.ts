@@ -8,21 +8,29 @@ import {
 } from "@atba3li/shared/social";
 
 describe("normalizeSocialUrl", () => {
-  it("turns a handle into the platform's own URL", () => {
-    expect(normalizeSocialUrl("instagram", "@myshop")).toBe("https://instagram.com/myshop");
-    expect(normalizeSocialUrl("tiktok", "myshop")).toBe("https://tiktok.com/@myshop");
-    expect(normalizeSocialUrl("telegram", "@myshop")).toBe("https://t.me/myshop");
-  });
-
   it("keeps a full link and upgrades it to https", () => {
     expect(normalizeSocialUrl("facebook", "http://facebook.com/myshop")).toBe(
       "https://facebook.com/myshop",
     );
-    expect(normalizeSocialUrl("website", "myshop.dz")).toBe("https://myshop.dz");
+    expect(normalizeSocialUrl("tiktok", "https://tiktok.com/@myshop")).toBe(
+      "https://tiktok.com/@myshop",
+    );
+    expect(normalizeSocialUrl("whatsapp", "https://wa.me/213555001122")).toBe(
+      "https://wa.me/213555001122",
+    );
   });
 
-  it("builds a wa.me link from a phone number", () => {
-    expect(normalizeSocialUrl("whatsapp", "+213 555 00 11 22")).toBe("https://wa.me/213555001122");
+  it("fills in a missing scheme", () => {
+    expect(normalizeSocialUrl("website", "myshop.dz")).toBe("https://myshop.dz");
+    expect(normalizeSocialUrl("instagram", "instagram.com/myshop")).toBe(
+      "https://instagram.com/myshop",
+    );
+  });
+
+  it("rejects a bare username — a link is the only accepted input", () => {
+    expect(normalizeSocialUrl("instagram", "@myshop")).toBeNull();
+    expect(normalizeSocialUrl("tiktok", "myshop")).toBeNull();
+    expect(normalizeSocialUrl("whatsapp", "+213 555 00 11 22")).toBeNull();
   });
 
   it("drops anything that is not an http(s) link", () => {
@@ -33,8 +41,8 @@ describe("normalizeSocialUrl", () => {
 
   it("drops empties, over-long values and unknown platforms", () => {
     expect(normalizeSocialUrl("instagram", "   ")).toBeNull();
-    expect(normalizeSocialUrl("instagram", "a".repeat(400))).toBeNull();
-    expect(normalizeSocialUrl("myspace", "myshop")).toBeNull();
+    expect(normalizeSocialUrl("instagram", `https://instagram.com/${"a".repeat(400)}`)).toBeNull();
+    expect(normalizeSocialUrl("myspace", "https://myspace.com/myshop")).toBeNull();
     expect(normalizeSocialUrl("instagram", 42)).toBeNull();
   });
 });
@@ -43,10 +51,11 @@ describe("normalizeSocialLinks", () => {
   it("keeps only the known, resolvable platforms", () => {
     expect(
       normalizeSocialLinks({
-        instagram: "@myshop",
+        instagram: "https://instagram.com/myshop",
+        tiktok: "@myshop",
         facebook: "",
         website: "javascript:alert(1)",
-        myspace: "myshop",
+        myspace: "https://myspace.com/myshop",
       }),
     ).toEqual({ instagram: "https://instagram.com/myshop" });
   });

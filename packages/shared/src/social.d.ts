@@ -13,8 +13,8 @@ export interface SocialPlatform {
   id: SocialPlatformId;
   label: string;
   labelAr: string;
+  /** An example LINK — every field takes a URL, never a username. */
   placeholder: string;
-  fromHandle: (handle: string) => string;
 }
 
 /** What a shop stores as its `socialLinks` setting: platform id → https URL. */
