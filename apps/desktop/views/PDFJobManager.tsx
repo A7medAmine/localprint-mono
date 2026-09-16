@@ -424,7 +424,7 @@ const PDFJobManager: React.FC = () => {
         data: output,
         fileType: "application/pdf",
         printerName: defaultPrinter,
-        silent: !!defaultPrinter,
+        silent: true,
         options,
       });
       if (result.cancelled) {

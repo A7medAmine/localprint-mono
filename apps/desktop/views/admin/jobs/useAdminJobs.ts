@@ -380,7 +380,9 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
 
     if (mode === "open") {
       try {
-        const result = await printFile({ filePath, fileType: job.fileType });
+        // silent:false keeps the OS print dialog for this one entry point —
+        // it is the "let me choose in the driver UI" escape hatch.
+        const result = await printFile({ filePath, fileType: job.fileType, silent: false });
         if (result.ok) {
           maybeToast({
             title: rtl ? "تم فتح الملف في التطبيق الافتراضي" : "Opened in default app",
@@ -427,7 +429,9 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         filePath,
         fileType: job.fileType,
         printerName: mode === "quick" ? defaultPrinterName : defaultPrinterName || "",
-        silent: mode === "quick",
+        // Always the spooler engine — it honours the options above, which the
+        // Chromium engine drops. Empty printerName = OS default printer.
+        silent: true,
         options,
       });
       if (result.cancelled) {
@@ -495,7 +499,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         filePath,
         fileType: job.fileType,
         printerName: opts.printerName || defaultPrinterName || "",
-        silent: !!opts.printerName,
+        silent: true,
         options: printOptions,
       });
       if (result.cancelled) {

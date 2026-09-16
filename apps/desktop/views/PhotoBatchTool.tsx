@@ -336,7 +336,7 @@ const PhotoBatchTool: React.FC = () => {
         data: bytes,
         fileType: "application/pdf",
         printerName: defaultPrinter || undefined,
-        silent: !!defaultPrinter,
+        silent: true,
         options: {
           duplexMode: "simplex",
           color: colorMode === "color",

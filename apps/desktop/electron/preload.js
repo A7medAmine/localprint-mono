@@ -10,14 +10,19 @@ contextBridge.exposeInMainWorld('electronPrint', {
   // printFile — that's what maps to Chromium's deviceName.
   getPrinters: () => ipcRenderer.invoke('get-printers'),
 
+  // Resolves { engine: 'spooler' | 'chromium', exePath, platform } — which
+  // print engine this install will use (see electron/print/spooler.js).
+  getPrintEngine: () => ipcRenderer.invoke('get-print-engine'),
+
   // payload: { filePath, fileType, printerName, silent, options }
   //   - filePath   absolute path on disk (main will not accept URLs)
-  //   - fileType   MIME string; pdf/image go through webContents.print,
-  //                everything else falls through to shell.openPath
-  //   - printerName Chromium deviceName; empty string uses OS default
-  //   - silent     true = no dialog, false = show the OS print dialog
-  //   - options    forwarded to webContents.print (duplexMode, color,
-  //                copies, collate, landscape, …)
+  //   - fileType   MIME string; pdf/image are printed natively, everything
+  //                else falls through to shell.openPath
+  //   - printerName printer name; empty string uses the OS default
+  //   - silent     false forces the Chromium engine + OS print dialog; any
+  //                other value uses the spooler engine, which never shows UI
+  //   - options    duplexMode, color, copies, collate, landscape, pageSize,
+  //                pageRanges
   // Resolves { ok: true, handedOff?: boolean } or rejects with an Error.
   printFile: (payload) => ipcRenderer.invoke('print-file', payload),
 

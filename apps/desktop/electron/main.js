@@ -8,7 +8,7 @@
 // deep-link/URL handling stay predictable. Port + host + NODE_ENV are set
 // before the server.js import so server.js picks them up on load.
 
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, nativeImage } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,7 +18,8 @@ import http from 'node:http';
 import dotenv from 'dotenv';
 import { checkEnv } from '../checkEnv.js';
 import { initAutoUpdater, checkForUpdatesManually } from './updater.js';
-import { PDFDocument } from 'pdf-lib';
+import { makeImagePrintPdf } from './print/prepare.js';
+import { isSpoolerAvailable, spoolerPrint, spoolerExePath } from './print/spooler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -375,79 +376,12 @@ async function assertPrinterExists(printerName) {
   }
 }
 
-// Images are never handed to Chromium's layout engine any more. Rendering a
-// bare image file made Chromium paint it as an "image document" on a dark UA
-// background, and wrapping it in our own HTML only moved the problem: an
-// off-screen BrowserWindow can still be captured mid-composite, so the printer
-// received a half-painted frame — the photo over a solid black sheet.
-//
-// Instead we build a real PDF here in the main process: a white page with the
-// image scaled to fit inside the margins. No layout, no compositor, no theme.
-// The resulting PDF then goes through the same code path as any customer PDF,
-// which has always printed correctly.
-const IMAGE_PDF_MARGIN_PT = (8 * 72) / 25.4; // 8mm
-const A4_WIDTH_PT = 595.28;
-const A4_HEIGHT_PT = 841.89;
-
-/**
- * Embed `imagePath` into a PDF document. pdf-lib only speaks JPEG and PNG, so
- * anything else (BMP/WEBP/GIF/TIFF) is re-encoded to PNG through Electron's
- * own image decoder first.
- */
-async function embedImageForPdf(doc, imagePath, fileType) {
-  const bytes = fs.readFileSync(imagePath);
-  const mime = String(fileType || '').toLowerCase();
-  if (mime === 'image/jpeg' || mime === 'image/jpg') {
-    try { return await doc.embedJpg(bytes); } catch { /* fall through to re-encode */ }
-  } else if (mime === 'image/png') {
-    try { return await doc.embedPng(bytes); } catch { /* fall through to re-encode */ }
-  } else {
-    // Unknown/absent MIME — try both native formats before re-encoding.
-    try { return await doc.embedJpg(bytes); } catch { /* not a JPEG */ }
-    try { return await doc.embedPng(bytes); } catch { /* not a PNG */ }
-  }
-  const decoded = nativeImage.createFromPath(imagePath);
-  if (decoded.isEmpty()) {
-    throw new Error('This image format could not be decoded for printing.');
-  }
-  return doc.embedPng(decoded.toPNG());
-}
-
-/**
- * Turn an image on disk into a single-page print-ready PDF (white sheet, image
- * centred and contained inside the margins, page orientation matched to the
- * image). Returns the temp PDF path — the caller unlinks it.
- */
-async function makeImagePrintPdf(imagePath, fileType) {
-  const doc = await PDFDocument.create();
-  const img = await embedImageForPdf(doc, imagePath, fileType);
-
-  const landscape = img.width > img.height;
-  const pageW = landscape ? A4_HEIGHT_PT : A4_WIDTH_PT;
-  const pageH = landscape ? A4_WIDTH_PT : A4_HEIGHT_PT;
-  const page = doc.addPage([pageW, pageH]);
-
-  const boxW = pageW - IMAGE_PDF_MARGIN_PT * 2;
-  const boxH = pageH - IMAGE_PDF_MARGIN_PT * 2;
-  const scale = Math.min(boxW / img.width, boxH / img.height);
-  const drawW = img.width * scale;
-  const drawH = img.height * scale;
-  page.drawImage(img, {
-    x: (pageW - drawW) / 2,
-    y: (pageH - drawH) / 2,
-    width: drawW,
-    height: drawH,
-  });
-
-  const pdfPath = path.join(
-    os.tmpdir(),
-    `printshop-image-${crypto.randomBytes(8).toString('hex')}.pdf`,
-  );
-  fs.writeFileSync(pdfPath, Buffer.from(await doc.save()));
-  return pdfPath;
-}
-
-async function nativePrint({ filePath, fileType, printerName, silent, options }) {
+// Legacy engine — kept as the fallback for installs without the bundled
+// SumatraPDF (see electron/print/spooler.js for why it is no longer the
+// default). Every workaround in here exists because Chromium's Windows print
+// path is unreliable: off-screen compositing, the dark-theme black page, the
+// grayscale CSS filter and the callback watchdog are all symptoms of that.
+async function chromiumPrint({ filePath, fileType, printerName, silent, options }) {
   // Images are converted to a white-sheet PDF first; PDFs load directly into
   // the built-in viewer. Either way the window only ever renders a PDF.
   let wrapperPath = null;
@@ -598,6 +532,33 @@ async function nativePrint({ filePath, fileType, printerName, silent, options })
   });
 }
 
+/**
+ * Print engine entry point.
+ *
+ * Default path is the Windows spooler (SumatraPDF) — it is the only one that
+ * reliably honours copies/duplex/paper and reports a real success or failure.
+ * Chromium printing stays as the fallback for installs where the binary was
+ * never fetched, and is also used when the caller explicitly wants the OS
+ * print dialog (silent === false), which the spooler has no equivalent for.
+ *
+ * `silent` is otherwise ignored: the spooler never shows UI, because the app's
+ * own Print Options dialog is where the settings are chosen.
+ */
+async function nativePrint({ filePath, fileType, printerName, silent, options }) {
+  const wantsDialog = silent === false;
+  if (!wantsDialog && isSpoolerAvailable()) {
+    try {
+      return await spoolerPrint({ filePath, fileType, printerName, options });
+    } catch (err) {
+      // A driver rejection is a real failure and must surface — only fall back
+      // when the engine itself could not run.
+      if (!/not installed/i.test(err.message)) throw err;
+      console.warn('[print] spooler unavailable, falling back to Chromium:', err.message);
+    }
+  }
+  return chromiumPrint({ filePath, fileType, printerName, silent, options });
+}
+
 // IPC surface — see electron/preload.js for the renderer-facing shape.
 ipcMain.handle('get-printers', async () => {
   // getPrintersAsync lives on webContents, not app. Any live webContents
@@ -612,6 +573,14 @@ ipcMain.handle('get-printers', async () => {
     tmp.destroy();
   }
 });
+
+// Which engine will actually print, so Settings can show it (and so a missing
+// SumatraPDF is visible to the shop instead of silently degrading).
+ipcMain.handle('get-print-engine', async () => ({
+  engine: isSpoolerAvailable() ? 'spooler' : 'chromium',
+  exePath: spoolerExePath(),
+  platform: process.platform,
+}));
 
 // Print Studio generates PDFs in-memory (card layouts, page reorders) that
 // never touch the jobs store. Rather than saving them just to print, the

@@ -24,3 +24,6 @@ env
 .codegraph/
 .DS_Store
 *.log
+
+# Print engine binary — fetched by scripts/fetch-sumatrapdf.js, never committed
+apps/desktop/resources/print/*.exe

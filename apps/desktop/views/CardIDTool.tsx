@@ -430,7 +430,9 @@ const CardIDTool: React.FC = () => {
         data: bytes,
         fileType: "application/pdf",
         printerName: printer,
-        silent: !!printer,
+        // The spooler engine never shows UI; an empty printerName means the OS
+        // default printer. See electron/print/spooler.js.
+        silent: true,
         options,
       });
       if (result.cancelled) {

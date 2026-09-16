@@ -36,8 +36,16 @@ export interface PrintFileResult {
   handedOff?: boolean;
 }
 
+export interface PrintEngineInfo {
+  /** "spooler" = SumatraPDF via the Windows spooler, "chromium" = fallback. */
+  engine: "spooler" | "chromium";
+  exePath: string | null;
+  platform: string;
+}
+
 interface ElectronPrintBridge {
   getPrinters(): Promise<PrinterInfo[]>;
+  getPrintEngine(): Promise<PrintEngineInfo>;
   printFile(payload: PrintFilePayload): Promise<PrintFileResult>;
   printData(payload: PrintDataPayload): Promise<PrintFileResult>;
 }
@@ -55,6 +63,13 @@ export async function getPrinters(): Promise<PrinterInfo[]> {
   const b = bridge();
   if (!b) return [];
   return b.getPrinters();
+}
+
+/** Which engine will spool jobs, or null outside the desktop app. */
+export async function getPrintEngine(): Promise<PrintEngineInfo | null> {
+  const b = bridge();
+  if (!b?.getPrintEngine) return null;
+  return b.getPrintEngine();
 }
 
 // True while a native print job is in flight. The main process pins the

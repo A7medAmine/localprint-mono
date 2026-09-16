@@ -19,11 +19,11 @@
     "backend": "node server.js",
     "electron": "cross-env NODE_ENV=production electron .",
     "electron:dev": "cross-env NODE_ENV=development VITE_API_TARGET=http://localhost:47821 concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron .\"",
-    "electron:build": "node scripts/generate-packaged-env.js && node scripts/bundle-shared.js && npm run build && electron-builder --win nsis",
-    "electron:release": "node scripts/generate-packaged-env.js && node scripts/bundle-shared.js && npm run build && electron-builder --win nsis --publish always",
+    "electron:build": "node scripts/fetch-sumatrapdf.js && node scripts/generate-packaged-env.js && node scripts/bundle-shared.js && npm run build && electron-builder --win nsis",
+    "electron:release": "node scripts/fetch-sumatrapdf.js && node scripts/generate-packaged-env.js && node scripts/bundle-shared.js && npm run build && electron-builder --win nsis --publish always",
     "rebuild:node": "npm rebuild better-sqlite3 --build-from-source",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
-    "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/patch-pdfjs-worker.js"
+    "postinstall": "electron-rebuild -f -w better-sqlite3 && node scripts/patch-pdfjs-worker.js && node scripts/fetch-sumatrapdf.js"
   },
   "dependencies": {
     "@localprint/shared": "0.0.0",
@@ -91,6 +91,15 @@
       "node_modules/better-sqlite3/**/*",
       "node_modules/bindings/**/*",
       "node_modules/file-uri-to-path/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/print",
+        "to": "print",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "directories": {
       "output": "release",

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { PrinterJobDefaults, ShopSettings } from "../../../types";
-import { isElectron, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
+import { isElectron, getPrinters, getPrintEngine, PrinterInfo, PrintEngineInfo } from "../../../lib/electronPrint";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Icon } from "../../../components/ui/icon";
@@ -35,6 +35,7 @@ export const PrintersCard: React.FC<PrintersCardProps> = ({ currentSettings, onP
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printersLoading, setPrintersLoading] = useState(false);
   const [printersError, setPrintersError] = useState<string | null>(null);
+  const [engine, setEngine] = useState<PrintEngineInfo | null>(null);
   const [defaultPrinterName, setDefaultPrinterName] = useState<string>(currentSettings.defaultPrinterName || "");
   const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>(
     currentSettings.printerDefaults || {},
@@ -57,6 +58,12 @@ export const PrintersCard: React.FC<PrintersCardProps> = ({ currentSettings, onP
   useEffect(() => {
     loadPrinters();
   }, [loadPrinters]);
+
+  // Surface which print engine is active. On the Chromium fallback the shop
+  // should know that copies/duplex/paper size may be ignored by the driver.
+  useEffect(() => {
+    getPrintEngine().then(setEngine).catch(() => setEngine(null));
+  }, []);
 
   // Re-baseline when the panel saves or reloads settings from the server.
   useEffect(() => {
@@ -90,6 +97,13 @@ export const PrintersCard: React.FC<PrintersCardProps> = ({ currentSettings, onP
         </div>
       </CardHeader>
       <CardContent>
+        {engine && engine.engine !== "spooler" && (
+          <p className="mb-4 text-sm text-amber-600 dark:text-amber-400">
+            {isRtl
+              ? "محرك الطباعة الاحتياطي قيد الاستخدام: قد يتجاهل التعريف عدد النسخ والطباعة على الوجهين وحجم الورق. أعد تثبيت التطبيق لاستعادة محرك الطباعة الكامل."
+              : "Running on the fallback print engine — the driver may ignore copies, duplex and paper size. Reinstall the app to restore the full print engine."}
+          </p>
+        )}
         {!isElectron() ? (
           <p className="text-sm text-muted-foreground">
             {isRtl
