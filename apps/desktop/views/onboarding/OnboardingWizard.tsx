@@ -302,7 +302,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
             <div className="space-y-4">
               <div>
                 <Label>{tr("اسم المتجر", "Shop name")}</Label>
-                <Input value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder={tr("متجر الطباعة", "My Print Shop")} />
+                <Input value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder={tr("أطبعلي", "Atba3li")} />
               </div>
               <div>
                 <Label>{tr("العملة", "Currency")}</Label>
