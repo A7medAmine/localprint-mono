@@ -6,6 +6,7 @@ import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import { TRANSLATIONS } from "./constants";
 import { storageService, PublicShop } from "./services/storageService";
 import { directionsUrl, formatDistance, sortByDistance } from "@atba3li/shared/geo";
+import { StoreSocialLinks } from "@atba3li/shared/components/StoreSocialLinks";
 import type { Coordinates } from "@atba3li/shared/geo";
 // The upload flow pulls in pdf.js and xlsx for previews; the account page is a
 // separate concern entirely. Neither belongs in the first paint of the other.
@@ -200,9 +201,13 @@ const ShopCard: React.FC<{
               {shop.name}
             </h2>
           </Link>
-          <p dir="ltr" className="mt-0.5 truncate text-xs text-muted-foreground">
-            /s/{shop.slug}
-          </p>
+          {/* The shop's own blurb sits where the slug used to: a customer
+              picking a shop reads what it does, never its URL path. */}
+          {shop.description && (
+            <p dir="auto" className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+              {shop.description}
+            </p>
+          )}
         </div>
 
         {typeof distanceKm === "number" && (
@@ -258,6 +263,8 @@ const ShopCard: React.FC<{
             )}
           </div>
         )}
+
+        <StoreSocialLinks socialLinks={shop.socialLinks} isRtl={isRtl} />
 
         {/* Upload is the primary action and keeps the full-width weight; going
             to the shop in person is the other half of the decision, so it sits

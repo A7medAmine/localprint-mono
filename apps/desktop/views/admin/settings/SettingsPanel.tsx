@@ -34,6 +34,9 @@ import { errorMessage } from "@atba3li/shared";
 import type { ShopLocation } from "@atba3li/shared/geo";
 import { directionsUrl } from "@atba3li/shared/geo";
 import LocationPicker from "@atba3li/shared/components/map/LocationPicker";
+import type { SocialLinks } from "@atba3li/shared/social";
+import { SOCIAL_PLATFORMS, MAX_DESCRIPTION_LENGTH } from "@atba3li/shared/social";
+import { SocialIcon } from "@atba3li/shared/components/StoreSocialLinks";
 
 interface JobStats {
   pending: number;
@@ -79,6 +82,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const [address, setAddress] = useState(currentSettings.address || "");
   const [workingHours, setWorkingHours] = useState(currentSettings.workingHours || "");
   const [returnPolicy, setReturnPolicy] = useState(currentSettings.returnPolicy || "");
+  const [description, setDescription] = useState(currentSettings.description || "");
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>(currentSettings.socialLinks || {});
   const [location, setLocation] = useState<ShopLocation | null>(currentSettings.location ?? null);
   const [locationOpen, setLocationOpen] = useState(false);
   const [showAddPaperTypeForm, setShowAddPaperTypeForm] = useState(false);
@@ -131,6 +136,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     if (clean(address, prev?.address ?? "")) setAddress(currentSettings.address || "");
     if (clean(workingHours, prev?.workingHours ?? "")) setWorkingHours(currentSettings.workingHours || "");
     if (clean(returnPolicy, prev?.returnPolicy ?? "")) setReturnPolicy(currentSettings.returnPolicy || "");
+    if (clean(description, prev?.description ?? "")) setDescription(currentSettings.description || "");
+    if (clean(socialLinks, prev?.socialLinks ?? {})) setSocialLinks(currentSettings.socialLinks || {});
     if (clean(location, prev?.location ?? null)) setLocation(currentSettings.location ?? null);
     if (clean(cloudSyncUrl, prev?.cloudSyncUrl ?? "")) setCloudSyncUrl(currentSettings.cloudSyncUrl || "");
     if (clean(cloudShopSlug, prev?.cloudShopSlug ?? "")) setCloudShopSlug(currentSettings.cloudShopSlug || "");
@@ -304,7 +311,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   };
 
   const saveShopInfo = () =>
-    persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy, location });
+    persistSection("shop", {
+      shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy,
+      description, socialLinks, location,
+    });
   const saveCloudSync = () =>
     persistSection("cloud", { cloudSyncUrl, cloudShopSlug, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
   // Round-trip the cloud with either the typed-but-unsaved credentials or the
@@ -365,6 +375,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     address !== (currentSettings.address || "") ||
     workingHours !== (currentSettings.workingHours || "") ||
     returnPolicy !== (currentSettings.returnPolicy || "") ||
+    description !== (currentSettings.description || "") ||
+    !eq(socialLinks, currentSettings.socialLinks || {}) ||
     !eq(location, currentSettings.location ?? null);
   const cloudDirty =
     cloudSyncUrl !== (currentSettings.cloudSyncUrl || "") ||
@@ -568,6 +580,67 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   <div>
                     <label className="block text-sm font-semibold text-foreground mb-2">{t("shopReturnPolicy")}</label>
                     <textarea value={returnPolicy} onChange={(e) => setReturnPolicy(e.target.value)} rows={3} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y" placeholder={isRtl ? "سياسة الإرجاع" : "Return policy details..."} />
+                  </div>
+
+                  {/* Store description — the blurb on the cloud storefront card
+                      and at the foot of the upload page. */}
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">
+                      {isRtl ? "وصف المحل" : "Store description"}
+                    </label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
+                      rows={3}
+                      maxLength={MAX_DESCRIPTION_LENGTH}
+                      className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y"
+                      placeholder={isRtl ? "نبذة قصيرة عن المحل وخدماته" : "A short line about your shop and what it prints"}
+                    />
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {isRtl
+                          ? "يظهر على بطاقة المحل في المنصة وفي أسفل صفحة الرفع."
+                          : "Shown on your storefront card and at the bottom of the upload page."}
+                      </p>
+                      <span className="text-xs text-muted-foreground tabular-nums" dir="ltr">
+                        {description.length}/{MAX_DESCRIPTION_LENGTH}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Social links — one row per platform, all optional. Each
+                      field takes the page's own link, copied from the browser;
+                      a username is rejected rather than guessed into a URL. */}
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">
+                      {isRtl ? "روابط التواصل الاجتماعي" : "Social links"}
+                    </label>
+                    <div className="space-y-2">
+                      {SOCIAL_PLATFORMS.map((platform) => (
+                        <div key={platform.id} className="flex items-center gap-2">
+                          <span
+                            title={isRtl ? platform.labelAr : platform.label}
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                          >
+                            <SocialIcon id={platform.id} className="h-4 w-4" />
+                          </span>
+                          <Input
+                            dir="ltr"
+                            value={socialLinks[platform.id] || ""}
+                            onChange={(e) =>
+                              setSocialLinks({ ...socialLinks, [platform.id]: e.target.value })
+                            }
+                            placeholder={platform.placeholder}
+                            aria-label={isRtl ? platform.labelAr : platform.label}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {isRtl
+                        ? "الصق رابط الصفحة كاملًا (وليس اسم المستخدم). اترك الحقل فارغًا إذا لم يكن لديك حساب — تُنشر الحقول المملوءة فقط."
+                        : "Paste the full link to the page, not a username. Leave a field empty if you don't have that account — only filled ones are published."}
+                    </p>
                   </div>
 
                   {/* Currency */}

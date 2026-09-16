@@ -7,6 +7,9 @@
 export const PUBLIC_SETTINGS_KEYS = new Set([
   "shopName", "logoUrl", "pricing", "discounts",
   "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
+  // The storefront blurb and the shop's social links — both exist to be shown
+  // to customers, on the card and in the upload page footer.
+  "description", "socialLinks",
   // The map pin is public by design — it is how a customer finds the shop.
   "location",
   "currency",

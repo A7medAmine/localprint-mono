@@ -211,6 +211,10 @@ export async function syncSettings() {
     workingHours: settings.workingHours || '',
     location: settings.location || null,
     returnPolicy: settings.returnPolicy || '',
+    // Storefront blurb + social links: public profile, same as the address and
+    // hours above, so they ride the same sync and land on the cloud card.
+    description: settings.description || '',
+    socialLinks: settings.socialLinks || {},
     autoAcceptCloudJobs: settings.autoAcceptCloudJobs !== false,
   };
 
@@ -269,6 +273,13 @@ export async function syncSettings() {
       if (slug && slug !== settings.cloudShopSlug) {
         updateSetting('cloudShopSlug', slug);
         log('info', 'Cached shop slug from cloud', { slug });
+      }
+      // The logo rides along only when its fingerprint changes, so a cloud
+      // that lost the image would stay logo-less forever. Drop the fingerprint
+      // when the cloud says it has none and we do — the next sync re-uploads.
+      if (body?.hasLogo === false && logoDataUrl) {
+        setInternalState('_cloud_logo_fingerprint', '');
+        log('warn', 'Cloud has no logo — will re-upload on next sync');
       }
     } catch {
       // Older cloud builds answer with an empty body — keep whatever slug we have.

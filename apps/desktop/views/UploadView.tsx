@@ -10,6 +10,7 @@ import { Icon } from "../components/ui/icon";
 import { UploadForm } from "@atba3li/shared/components/upload/UploadForm";
 import { RecentUploads } from "@atba3li/shared/components/upload/RecentUploads";
 import { UploadDialogs } from "@atba3li/shared/components/upload/UploadDialogs";
+import { StoreFooter } from "@atba3li/shared/components/upload/StoreFooter";
 import {
   isOfficeFile,
   isOfficeType,
@@ -389,6 +390,10 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
         handlePreviewJob={handlePreviewJob}
         handleCancelJob={handleCancelJob}
       />
+
+      {/* The shop signs off the page: who they are, and where else to find
+          them. Renders nothing when neither field is set. */}
+      <StoreFooter isRtl={isRtl} shopSettings={shopSettings} />
 
       <QrPosterDialog
         open={showQrCode}

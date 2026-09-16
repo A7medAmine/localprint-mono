@@ -18,6 +18,8 @@ import {
   stripSecretSettings,
 } from "../settingsView.js";
 import { normalizeLocation, isShortMapLink, parseMapUrl } from "@atba3li/shared/geo";
+import { normalizeSocialLinks, normalizeDescription } from "@atba3li/shared/social";
+import { triggerCloudSettingsSync } from "../cloudSettings.js";
 
 export function registerSettingsRoutes(app) {
   // Get settings
@@ -230,6 +232,16 @@ export function registerSettingsRoutes(app) {
       if (req.body.returnPolicy !== undefined) {
         updateSetting('returnPolicy', req.body.returnPolicy);
       }
+      if (req.body.description !== undefined) {
+        updateSetting('description', normalizeDescription(req.body.description));
+      }
+      // Stored already normalized: whatever the operator typed (a handle, a
+      // bare domain, a full link) becomes one http(s) URL here, and anything
+      // that cannot become one is dropped rather than kept for a public page
+      // to render as an href.
+      if (req.body.socialLinks !== undefined) {
+        updateSetting('socialLinks', normalizeSocialLinks(req.body.socialLinks));
+      }
       if (req.body.currency !== undefined) {
         updateSetting('currency', String(req.body.currency || ''));
       }
@@ -324,6 +336,12 @@ export function registerSettingsRoutes(app) {
       const logoUrl = `/api/logo`;
       updateSetting('logoUrl', logoUrl);
       res.status(200).json({ success: true, logoUrl });
+
+      // The image only reaches the cloud through a settings sync, and the poll
+      // timer never runs one. Without this push a new logo stayed local until
+      // the next settings save or app restart, so every storefront kept showing
+      // the old image (or none).
+      triggerCloudSettingsSync();
     } catch (err) {
       console.error("❌ Logo upload error:", err);
       res.status(400).json({ success: false, error: err.message });

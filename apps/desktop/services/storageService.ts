@@ -1,6 +1,7 @@
 import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment } from "../types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { normalizeLocation } from "@atba3li/shared/geo";
+import { normalizeSocialLinks } from "@atba3li/shared/social";
 
 /** What the write endpoints answer with: success, plus how many rows moved. */
 export interface MutationResult {
@@ -314,6 +315,8 @@ class StorageService {
     address?: string;
     workingHours?: string;
     returnPolicy?: string;
+    description?: string;
+    socialLinks?: import("@atba3li/shared/social").SocialLinks;
     /** null clears the shop's map pin; omitted leaves it untouched. */
     location?: import("@atba3li/shared/geo").ShopLocation | null;
     currency?: string;
@@ -459,6 +462,8 @@ class StorageService {
         address: settings?.address || undefined,
         workingHours: settings?.workingHours || undefined,
         returnPolicy: settings?.returnPolicy || undefined,
+        description: settings?.description || undefined,
+        socialLinks: normalizeSocialLinks(settings?.socialLinks),
         location: normalizeLocation(settings?.location),
         currency: settings?.currency || undefined,
         cloudSyncUrl: settings?.cloudSyncUrl || undefined,
