@@ -47,7 +47,7 @@ export function registerSettingsRoutes(app) {
       if (req.body?.shopApiToken !== undefined) {
         overrides.token = req.body.shopApiToken;
       }
-      const { testConnection } = await import('./services/cloudSync.js');
+      const { testConnection } = await import('../../services/cloudSync.js');
       res.status(200).json(await testConnection(overrides));
     } catch (err) {
       console.error("❌ Cloud connection test failed:", err);
@@ -60,7 +60,7 @@ export function registerSettingsRoutes(app) {
   // the operator does not have to wait out the poll interval.
   app.post("/api/cloud/poll", requireAdmin, async (req, res) => {
     try {
-      const { pollNow, isEnabled } = await import('./services/cloudSync.js');
+      const { pollNow, isEnabled } = await import('../../services/cloudSync.js');
       if (!isEnabled()) {
         return res.status(400).json({ success: false, error: "Cloud sync is not configured" });
       }
@@ -79,7 +79,7 @@ export function registerSettingsRoutes(app) {
 
   app.get("/api/cloud/blocks", requireAdmin, async (req, res) => {
     try {
-      const { listBlockedUploaders } = await import('./services/cloudSync.js');
+      const { listBlockedUploaders } = await import('../../services/cloudSync.js');
       res.status(200).json(await listBlockedUploaders());
     } catch (err) {
       console.error("\u274c Failed to list blocked uploaders:", err);
@@ -93,7 +93,7 @@ export function registerSettingsRoutes(app) {
       return res.status(400).json({ success: false, error: "kind and value are required" });
     }
     try {
-      const { blockUploader } = await import('./services/cloudSync.js');
+      const { blockUploader } = await import('../../services/cloudSync.js');
       res.status(200).json(await blockUploader({ kind, value, reason, label }));
     } catch (err) {
       console.error("\u274c Failed to block uploader:", err);
@@ -103,7 +103,7 @@ export function registerSettingsRoutes(app) {
 
   app.delete("/api/cloud/blocks/:id", requireAdmin, async (req, res) => {
     try {
-      const { unblockUploader } = await import('./services/cloudSync.js');
+      const { unblockUploader } = await import('../../services/cloudSync.js');
       await unblockUploader(req.params.id);
       res.status(200).json({ success: true });
     } catch (err) {
@@ -222,7 +222,7 @@ export function registerSettingsRoutes(app) {
       res.status(200).json({ success: true, settings });
 
       // Restart cloud sync if config changed
-      import('./services/cloudSync.js').then(({ stopCloudSync, startCloudSync }) => {
+      import('../../services/cloudSync.js').then(({ stopCloudSync, startCloudSync }) => {
         stopCloudSync();
         startCloudSync().catch(() => {});
       }).catch(() => {});

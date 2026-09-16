@@ -350,7 +350,7 @@ export function registerJobRoutes(app) {
       // via the SSE stream. Fire-and-forget — no need to block the response.
       const cloudOrderId = updatedJob?.cloudOrderId;
       if (cloudOrderId) {
-        import('./services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
+        import('../../services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
           if (isEnabled()) {
             updateCloudStatus(cloudOrderId, status).catch(err => warnCloudSyncFailed(1, err));
           }
@@ -366,7 +366,7 @@ export function registerJobRoutes(app) {
         updatedJob?.gmailMessageId &&
         !updatedJob?.notifiedReadyAt
       ) {
-        import('./services/gmailNotifier.js')
+        import('../../services/gmailNotifier.js')
           .then(({ sendJobReadyNotification }) => sendJobReadyNotification(jobId))
           .then((r) => {
             if (r.sent) console.log(`  📧 Ready notification sent for job ${jobId}`);
@@ -383,7 +383,7 @@ export function registerJobRoutes(app) {
   // if the automatic send failed or the template was updated afterwards).
   app.post("/api/jobs/:id/notify-ready", requireAdmin, async (req, res) => {
     try {
-      const { sendJobReadyNotification } = await import('./services/gmailNotifier.js');
+      const { sendJobReadyNotification } = await import('../../services/gmailNotifier.js');
       const result = await sendJobReadyNotification(req.params.id, { force: true });
       if (result.sent) return res.json({ success: true });
       res.status(400).json({ success: false, error: result.reason });
@@ -480,7 +480,7 @@ export function registerJobRoutes(app) {
       // Ack on the cloud so it stops showing up in /api/shop/pending. If this
       // fails, the next poll cycle's dedupe check will notice the job is no
       // longer pending_review and retry the ack automatically.
-      import('./services/cloudSync.js').then(({ acknowledgeOrder }) => {
+      import('../../services/cloudSync.js').then(({ acknowledgeOrder }) => {
         acknowledgeOrder(jobId).catch(err => console.error('❌ Failed to ack accepted review job:', err.message));
       }).catch(() => {});
 
@@ -505,7 +505,7 @@ export function registerJobRoutes(app) {
       const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
       if (!job) return res.status(404).json({ success: false, error: "Job not found" });
 
-      const { rejectCloudOrder } = await import('./services/cloudSync.js');
+      const { rejectCloudOrder } = await import('../../services/cloudSync.js');
       const rejected = await rejectCloudOrder(jobId, reason, note);
       if (!rejected) {
         console.warn(`⚠️  Cloud reject failed for ${jobId} — it may reappear for review on the next poll`);
@@ -581,7 +581,7 @@ export function registerJobRoutes(app) {
 
     // Fire-and-forget cloud sync for each cloud-sourced job
     if (cloudIds.length > 0) {
-      import('./services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
+      import('../../services/cloudSync.js').then(({ updateCloudStatus, isEnabled }) => {
         if (!isEnabled()) return;
         for (const cid of cloudIds) {
           updateCloudStatus(cid, status).catch(err => warnCloudSyncFailed(cloudIds.length, err));

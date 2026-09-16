@@ -34,6 +34,15 @@ const baseHeaders = {
 
 let syncTimer = null;
 let isSyncing = false;
+// Bumped by every start/stop. A start that awaits its initial sync can be
+// superseded (settings saved twice, stop called mid-start); if the generation
+// moved on while it was awaiting, it must not arm a timer — otherwise every
+// superseded start leaves a live interval behind and the poll rate multiplies.
+let syncGeneration = 0;
+// Consecutive auth rejections (401/403). A bad token is not transient, so the
+// poller backs off instead of hammering the cloud once per interval forever.
+let authFailures = 0;
+const MAX_AUTH_FAILURES = 3;
 
 let newJobCallback = null;
 export function setNewJobCallback(fn) {
@@ -361,9 +370,17 @@ async function pollPending() {
     headers: { Authorization: `Bearer ${cfg.token}` },
   });
   if (!res || !res.ok) {
+    if (res?.status === 401 || res?.status === 403) {
+      authFailures++;
+      if (authFailures >= MAX_AUTH_FAILURES) {
+        log('error', `Cloud rejected the shop API token ${authFailures} times — polling paused. Re-enter the token in Settings.`);
+      }
+    }
     log('error', 'Failed to fetch pending orders', { status: res?.status });
     throw new Error(`Pending fetch failed with status ${res?.status || 'no response'}`);
   }
+
+  authFailures = 0;
 
   let orders;
   try {
@@ -468,6 +485,12 @@ export async function unblockUploader(id) {
 }
 
 export async function startCloudSync() {
+  // Any previous timer (and any start still awaiting its initial sync) is
+  // superseded by this call.
+  stopCloudSync();
+  const generation = ++syncGeneration;
+  authFailures = 0;
+
   if (!isEnabled()) {
     log('warn', 'Cloud sync disabled — configure Cloud Sync URL and API Token in Settings');
     return;
@@ -493,8 +516,14 @@ export async function startCloudSync() {
     log('error', 'Initial poll failed', { error: err.message });
   }
 
+  if (generation !== syncGeneration) {
+    log('info', 'Cloud sync start superseded — not arming timer');
+    return;
+  }
+
   syncTimer = setInterval(async () => {
     if (isSyncing) return;
+    if (authFailures >= MAX_AUTH_FAILURES) return;
     isSyncing = true;
     try {
       await pollPending();
@@ -507,6 +536,7 @@ export async function startCloudSync() {
 }
 
 export function stopCloudSync() {
+  syncGeneration++;
   if (syncTimer) {
     clearInterval(syncTimer);
     syncTimer = null;

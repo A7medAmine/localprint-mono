@@ -242,7 +242,7 @@ export function registerGmailRoutes(app) {
 
       const pendingId = parseInt(req.params.pendingId);
       const attachmentIndex = parseInt(req.params.attachmentIndex);
-      const { getPendingEmailById } = await import('./db.js');
+      const { getPendingEmailById } = await import('../../db.js');
       const pending = getPendingEmailById(pendingId);
       if (!pending) return res.status(404).json({ error: 'Pending email not found' });
 
@@ -266,7 +266,7 @@ export function registerGmailRoutes(app) {
         return res.send(cached);
       }
 
-      const { getGmailClient } = await import('./services/gmailService.js');
+      const { getGmailClient } = await import('../../services/gmailService.js');
       const gmail = await getGmailClient();
       const attResponse = await gmail.users.messages.attachments.get({
         userId: 'me',
