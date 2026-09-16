@@ -155,6 +155,18 @@ if (app.isPackaged) {
   }
 }
 
+// Window/taskbar icon. Packaged Windows builds inherit the icon from the exe
+// (electron-builder reads build/icon.ico), but in dev — and on Linux, where
+// the window icon is never taken from the binary — we have to pass one
+// explicitly. build/ is not shipped, so fall back to the packaged favicon.
+function appIconPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'build', 'icon.ico'),
+    path.join(__dirname, '..', 'public', 'favicon', 'android-chrome-512x512.png'),
+  ];
+  return candidates.find((p) => fs.existsSync(p));
+}
+
 // Register a custom URL scheme so the Gmail-callback success page (opened in
 // the OS browser) can pop the Electron app back to the front with a single
 // click on "Return to Atba3li". The protocol payload is discarded — we
@@ -257,12 +269,14 @@ function buildMenu() {
 }
 
 function createWindow() {
+  const icon = appIconPath();
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#f8fafc',
+    ...(icon ? { icon } : {}),
     // Show the window right away. We used to wait for `ready-to-show`, but if
     // renderer setup ever hangs (offscreen coords from a prior session, gpu
     // fallback slow to init, load stuck on a redirect) the event never fires

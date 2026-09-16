@@ -1,8 +1,13 @@
 # Build resources
 
-Drop the app icon here as **`icon.ico`** (multi-resolution `.ico`, 256×256 recommended
-as the largest embedded size). electron-builder picks it up automatically from this
-folder as configured in `package.json` → `build.win.icon`.
+`icon.ico` (multi-resolution, up to 256×256) and `icon.png` (1024×1024) are the app
+icons. electron-builder picks `icon.ico` up automatically from this folder as
+configured in `package.json` → `build.win.icon`, and uses `icon.png` for the
+Linux/macOS targets.
 
-Nothing else in this directory is required — this file exists only to document what
-belongs where.
+Both are generated from `logo.png` at the repo root, together with the web favicons
+in `apps/*/public/favicon/`. Don't hand-edit them — edit the source logo and re-run:
+
+```
+python scripts/generate-icons.py
+```
