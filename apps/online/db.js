@@ -6,6 +6,7 @@ import { checkEnv } from './checkEnv.js';
 import { makeTokenCache, isRejectedTokenError } from './utils/authCache.js';
 import { toApiOrder } from './utils/orderMapping.js';
 import { normalizeLocation } from '@atba3li/shared/geo';
+import { normalizeSocialLinks, normalizeDescription } from '@atba3li/shared/social';
 
 // db.js is the first module to require real env values. ESM evaluates imported
 // modules before the importer's body, so this is the earliest reliable point
@@ -151,7 +152,7 @@ export const listShops = async () => {
 // `logo` holds the image itself (a data URL). It is read only to know whether
 // a shop has one — the directory hands out the /api/s/:slug/logo URL instead,
 // so a page listing 40 shops stays a few KB rather than a few MB.
-const PUBLIC_DIRECTORY_SETTINGS = ['shopName', 'logo', '_logo_filename', 'phoneNumbers', 'email', 'address', 'workingHours', 'location'];
+const PUBLIC_DIRECTORY_SETTINGS = ['shopName', 'logo', '_logo_filename', 'phoneNumbers', 'email', 'address', 'workingHours', 'location', 'description', 'socialLinks'];
 
 // Public storefront directory — what the platform root lists when a customer
 // lands without a shop slug. Active shops only, and no ids/tokens/timestamps.
@@ -201,6 +202,11 @@ export const listPublicShops = async () => {
       // "nearest to me" sort reads this straight out of the payload, and a
       // half-parsed coordinate would put a shop in the wrong hemisphere.
       location: normalizeLocation(profile.location),
+      // Both re-normalized on the way out: rows written by an older build (or
+      // a hand-edited settings row) must not put an unchecked string into a
+      // card's href or an unbounded blurb into the grid.
+      description: normalizeDescription(profile.description),
+      socialLinks: normalizeSocialLinks(profile.socialLinks),
     };
   });
 };

@@ -68,6 +68,8 @@ export interface PaperType {
 
 export type { ShopLocation, LocationSource, Coordinates } from "./geo";
 import type { ShopLocation } from "./geo";
+export type { SocialLinks, SocialPlatformId, SocialPlatform } from "./social";
+import type { SocialLinks } from "./social";
 
 // ShopSettings is the desktop superset: the online app uses only the common
 // fields (shopName…returnPolicy, currency), and every desktop-only field below
@@ -87,6 +89,10 @@ export interface ShopSettings {
   address?: string;
   workingHours?: string;
   returnPolicy?: string;
+  /** Short "about the shop" blurb shown on the storefront card and the upload footer. */
+  description?: string;
+  /** Platform id → https URL. Only the platforms the shop actually filled. */
+  socialLinks?: SocialLinks;
   /**
    * Where the shop physically is, as picked on the map / parsed from a map
    * link / read off GPS. Separate from `address`, which is the human-readable

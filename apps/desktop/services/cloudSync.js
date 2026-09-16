@@ -211,6 +211,10 @@ export async function syncSettings() {
     workingHours: settings.workingHours || '',
     location: settings.location || null,
     returnPolicy: settings.returnPolicy || '',
+    // Storefront blurb + social links: public profile, same as the address and
+    // hours above, so they ride the same sync and land on the cloud card.
+    description: settings.description || '',
+    socialLinks: settings.socialLinks || {},
     autoAcceptCloudJobs: settings.autoAcceptCloudJobs !== false,
   };
 

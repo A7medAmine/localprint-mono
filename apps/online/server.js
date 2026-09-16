@@ -61,6 +61,7 @@ import {
 } from './auth/adminAuth.js';
 import { countPdfPagesFromBuffer } from '@atba3li/shared/pdf';
 import { normalizeLocation } from '@atba3li/shared/geo';
+import { normalizeSocialLinks, normalizeDescription } from '@atba3li/shared/social';
 import { calculatePrintPrice, calculateJobDiscount } from '@atba3li/shared/pricing';
 
 // ── Magic byte validation ──
@@ -82,6 +83,7 @@ const PUBLIC_SETTINGS_KEYS = new Set([
   "shopName", "logoUrl", "pricing", "discounts",
   "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
   "location",
+  "description", "socialLinks",
   "currency",
 ]);
 
@@ -1343,6 +1345,18 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
       if (typeof pricing?.[key] === 'string') {
         await updateSetting(shopId, key, pricing[key].trim());
       }
+    }
+    // The storefront blurb, capped here as well as on the desktop side — this
+    // string ends up on the public directory card.
+    if (typeof pricing?.description === 'string') {
+      await updateSetting(shopId, 'description', normalizeDescription(pricing.description));
+    }
+    // Re-normalized rather than trusted, for the same reason the pin below is:
+    // the payload comes from a desktop install and the result is rendered as an
+    // href on a public page. Only http(s) URLs survive; an empty bag clears the
+    // links, so removing an account on the shop's machine removes it here too.
+    if (pricing?.socialLinks !== undefined) {
+      await updateSetting(shopId, 'socialLinks', normalizeSocialLinks(pricing.socialLinks));
     }
     if (pricing?.shopName) {
       await updateSetting(shopId, 'shopName', String(pricing.shopName).trim());
