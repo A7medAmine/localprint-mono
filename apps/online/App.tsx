@@ -216,24 +216,13 @@ const ShopCard: React.FC<{
           </span>
         )}
 
-        {(shop.address || shop.workingHours || directions) && (
+        {(shop.address || shop.workingHours) && (
           <div className="space-y-1.5 text-xs text-muted-foreground">
             {shop.address && (
               <p className="flex items-start gap-2">
                 <Icon name="map-pin" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
                 <span dir="auto" className="line-clamp-2">{shop.address}</span>
               </p>
-            )}
-            {directions && (
-              <a
-                href={directions}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                <Icon name="link" className="h-3.5 w-3.5" />
-                {isRtl ? "الاتجاهات" : "Directions"}
-              </a>
             )}
             {shop.workingHours && (
               <p className="flex items-start gap-2">
@@ -270,13 +259,32 @@ const ShopCard: React.FC<{
           </div>
         )}
 
-        <Link
-          to={`/s/${shop.slug}/upload`}
-          className="mt-auto inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-[0.99]"
-        >
-          <Icon name="upload" className="h-4 w-4" />
-          {isRtl ? "ارفع ملفاتك" : "Upload files"}
-        </Link>
+        {/* Upload is the primary action and keeps the full-width weight; going
+            to the shop in person is the other half of the decision, so it sits
+            next to it rather than buried in the details above. It only renders
+            when the shop actually set a pin, so the row doesn't reserve space
+            for a button that will never appear. */}
+        <div className="mt-auto flex items-stretch gap-2">
+          <Link
+            to={`/s/${shop.slug}/upload`}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-[0.99]"
+          >
+            <Icon name="upload" className="h-4 w-4" />
+            {isRtl ? "ارفع ملفاتك" : "Upload files"}
+          </Link>
+          {directions && (
+            <a
+              href={directions}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={isRtl ? "الذهاب إلى المحل" : "Go to the shop"}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:hover:border-indigo-800/50 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300"
+            >
+              <Icon name="map-pin" className="h-4 w-4" />
+              <span className="hidden sm:inline">{isRtl ? "الذهاب" : "Go"}</span>
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { useAuth } from "../hooks/useAuth";
 import { Toaster } from "../components/ui/toaster";
 import { Button } from "../components/ui/button";
 import ShareQrDialog from "../components/ShareQrDialog";
+import { directionsUrl } from "@atba3li/shared/geo";
 import { Icon } from "../components/ui/icon";
 import { UploadForm } from "@atba3li/shared/components/upload/UploadForm";
 import { RecentUploads } from "@atba3li/shared/components/upload/RecentUploads";
@@ -404,6 +405,21 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
             >
               <Icon name="building" className="w-4 h-4" />
               {isRtl ? "معلومات المحل" : "Store Info"}
+            </Button>
+          )}
+          {/* The customer who would rather walk in than upload. Opens the
+              shop's position in their own maps app — Google has the better
+              road data for Algeria even though the embedded map is OSM. */}
+          {shopSettings?.location && (
+            <Button
+              variant="link"
+              className="gap-2"
+              onClick={() =>
+                window.open(directionsUrl(shopSettings.location) || "", "_blank", "noopener,noreferrer")
+              }
+            >
+              <Icon name="map-pin" className="w-4 h-4" />
+              {isRtl ? "الذهاب إلى المحل" : "Go to the shop"}
             </Button>
           )}
         </div>
