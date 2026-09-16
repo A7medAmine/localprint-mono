@@ -18,6 +18,7 @@ import {
   stripSecretSettings,
 } from "../settingsView.js";
 import { normalizeLocation, isShortMapLink, parseMapUrl } from "@atba3li/shared/geo";
+import { triggerCloudSettingsSync } from "../cloudSettings.js";
 
 export function registerSettingsRoutes(app) {
   // Get settings
@@ -324,6 +325,12 @@ export function registerSettingsRoutes(app) {
       const logoUrl = `/api/logo`;
       updateSetting('logoUrl', logoUrl);
       res.status(200).json({ success: true, logoUrl });
+
+      // The image only reaches the cloud through a settings sync, and the poll
+      // timer never runs one. Without this push a new logo stayed local until
+      // the next settings save or app restart, so every storefront kept showing
+      // the old image (or none).
+      triggerCloudSettingsSync();
     } catch (err) {
       console.error("❌ Logo upload error:", err);
       res.status(400).json({ success: false, error: err.message });
