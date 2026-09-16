@@ -2,7 +2,7 @@
  * Pure file-validation primitives: magic-byte signatures and the MIME
  * allowlist. Dependency-free (no fs, no db) so both apps' upload paths and
  * their unit tests can import it directly. Server-side code loads this via the
- * "@localprint/shared/validation" subpath, which resolves to this real .js
+ * "@atba3li/shared/validation" subpath, which resolves to this real .js
  * file — plain Node can't import the package's TypeScript index entry.
  */
 

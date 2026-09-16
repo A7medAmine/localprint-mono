@@ -9,9 +9,9 @@ const __dirname = path.dirname(__filename);
 
 // Packaged builds run this file from inside app.asar (read-only) while the
 // real uploads live in the per-user data folder, so honour the same
-// PRINTSHOP_UPLOADS_DIR override server.js and db.js use. Without it every
+// ATBA3LI_UPLOADS_DIR override server.js and db.js use. Without it every
 // downloaded cloud order failed to write and no order ever landed.
-const UPLOADS_DIR = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = process.env.ATBA3LI_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
 // Legacy rows can still hold a full storefront link (…/s/<slug>/upload); the
 // API lives at the platform root, so trim anything from /s/ onwards.

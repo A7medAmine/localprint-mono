@@ -1,5 +1,5 @@
 import { PrintJob, ShopSettings, DiscountRule, AccountProfile, AccountOrder } from "../types";
-import { readPref, writePref } from "@localprint/shared/lib/prefs";
+import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 
 class StorageService {
   private async safeFetch(url: string, options?: RequestInit) {
@@ -236,7 +236,7 @@ class StorageService {
       ];
 
       return {
-        shopName: settings?.shopName || "PrintShop Hub",
+        shopName: settings?.shopName || "Atba3li",
         logoUrl: settings?.logoUrl || null,
         pricing,
         paperTypes: Array.isArray(settings?.paperTypes) && settings.paperTypes.length > 0
@@ -249,7 +249,7 @@ class StorageService {
         returnPolicy: settings?.returnPolicy || undefined,
       };
     } catch {
-      return { shopName: "PrintShop Hub", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
+      return { shopName: "Atba3li", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
     }
   }
 

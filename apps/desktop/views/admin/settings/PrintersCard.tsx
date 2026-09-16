@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { cn } from "@localprint/shared";
+import { cn } from "@atba3li/shared";
 import { useAdmin } from "../AdminContext";
 
 export interface PrintersCardProps {

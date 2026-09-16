@@ -1,10 +1,10 @@
-# PrintShop Hub - Installation Guide
+# Atba3li - Installation Guide
 
 ## Quick Installation (Windows)
 
 ### Method 1: Automated Setup (Recommended)
 
-1. **Download or clone** the PrintShop Hub repository to your computer
+1. **Download or clone** the Atba3li repository to your computer
 2. **Run as Administrator**: Right-click `setup.bat` and select "Run as administrator"
 3. **Follow the prompts**: The script will handle everything automatically
 
@@ -17,7 +17,7 @@
 2. **Install Dependencies**
 
    ```cmd
-   cd path/to/PrintShopHub
+   cd path/to/Atba3li
    npm install
    ```
 
@@ -52,7 +52,7 @@ The `setup.bat` script automatically:
 
 ## Uninstallation
 
-To remove PrintShop Hub from your system:
+To remove Atba3li from your system:
 
 1. Navigate to the installation folder
 2. Run `uninstall.bat` as administrator
@@ -93,8 +93,8 @@ To remove PrintShop Hub from your system:
 ## File Locations After Installation
 
 - **Application**: Your chosen installation folder
-- **Startup Script**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\PrintShopHub.bat`
-- **Desktop Shortcut**: `%USERPROFILE%\Desktop\PrintShop Hub.lnk`
+- **Startup Script**: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Atba3li.bat`
+- **Desktop Shortcut**: `%USERPROFILE%\Desktop\Atba3li.lnk`
 - **Uninstall Script**: Your installation folder\uninstall.bat
 
 ## Support
@@ -107,5 +107,5 @@ For technical support or questions:
 
 ---
 
-**PrintShop Hub** - Professional Print Shop Management System  
+**Atba3li** - Professional Print Shop Management System  
 Made with ❤️ for print shop owners

@@ -1,8 +1,8 @@
 import React, { Suspense, lazy, useState, useEffect } from "react";
 import { Routes, Route, useParams, Link, useLocation } from "react-router-dom";
 import { Language, ShopSettings } from "./types";
-import { emitAppEvent } from "@localprint/shared/lib/appEvents";
-import { readPref, writePref } from "@localprint/shared/lib/prefs";
+import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
+import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
 // The upload flow pulls in pdf.js and xlsx for previews; the account page is a
@@ -73,7 +73,7 @@ const App: React.FC = () => {
   });
 
   const [settings, setSettings] = useState<ShopSettings>({
-    shopName: "PrintShop Hub",
+    shopName: "Atba3li",
     logoUrl: null,
   });
 

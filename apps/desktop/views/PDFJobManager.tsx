@@ -24,14 +24,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../components/ui/dialog";
-import { cn } from "@localprint/shared";
+import { cn } from "@atba3li/shared";
 import { storageService } from "../services/storageService";
 import { toast } from "../components/ui/use-toast";
 import { isElectron, printData } from "../lib/electronPrint";
 import type { PrintJob, PrinterJobDefaults } from "../types";
 import { Icon } from "../components/ui/icon";
-import { readPref } from "@localprint/shared/lib/prefs";
-import { errorMessage } from "@localprint/shared";
+import { readPref } from "@atba3li/shared/lib/prefs";
+import { errorMessage } from "@atba3li/shared";
 
 interface PageEntry {
   id: string;

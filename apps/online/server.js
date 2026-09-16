@@ -40,8 +40,8 @@ import supabase, {
   findUploaderBlock,
 } from './db.js';
 import { toApiOrder, fromApiOrder } from './utils/orderMapping.js';
-import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
-import { makeRateLimiter, securityHeaders } from '@localprint/shared/http';
+import { ALLOWED_MIMES, magicBytesMatch } from '@atba3li/shared/validation';
+import { makeRateLimiter, securityHeaders } from '@atba3li/shared/http';
 import {
   SESSION_COOKIE,
   readAdminCredentials,
@@ -57,11 +57,11 @@ import {
   clearedSessionCookie,
   safeEqual,
 } from './auth/adminAuth.js';
-import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
-import { calculatePrintPrice, calculateJobDiscount } from '@localprint/shared/pricing';
+import { countPdfPagesFromBuffer } from '@atba3li/shared/pdf';
+import { calculatePrintPrice, calculateJobDiscount } from '@atba3li/shared/pricing';
 
 // ── Magic byte validation ──
-// Signature table + matcher live in @localprint/shared/validation (shared, tested).
+// Signature table + matcher live in @atba3li/shared/validation (shared, tested).
 // Here we just read the file's head off disk and delegate the comparison.
 function validateMagicBytes(filePath, mimeType) {
   const buf = Buffer.alloc(16);
@@ -287,7 +287,7 @@ async function requireCustomerAuth(req, res, next) {
 }
 
 // ── Rate limiters (in-memory, per-IP) ──
-// Factory shared with the desktop app (@localprint/shared/http). Each keeps
+// Factory shared with the desktop app (@atba3li/shared/http). Each keeps
 // its own hit map + GC interval internally.
 // The upload endpoint takes ONE file per request, so a customer sending a
 // 10-file batch legitimately makes 10 calls back-to-back. The old budget of 5
@@ -313,7 +313,7 @@ const adminLoginRateLimit = makeRateLimiter({
 const deleteRateLimit = makeRateLimiter({ windowMs: 60_000, max: 20 });
 
 // ── Allowed MIME types for upload ──
-// Set lives in @localprint/shared/validation (shared, tested); imported above.
+// Set lives in @atba3li/shared/validation (shared, tested); imported above.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -329,7 +329,7 @@ const DIST_DIR = path.join(__dirname, "dist");
 // throwaway dir there. Ephemeral: files vanish after the instance is recycled,
 // so this is for previews/trials only; the VPS path (DEPLOYMENT.md) is the
 // durable one.
-const UPLOADS_DIR = isVercel ? path.join(os.tmpdir(), "localprint-uploads") : path.join(__dirname, "uploads");
+const UPLOADS_DIR = isVercel ? path.join(os.tmpdir(), "atba3li-uploads") : path.join(__dirname, "uploads");
 
 const app = express();
 
@@ -366,7 +366,7 @@ if (isDev) {
 
 // Static security headers + the pdf.js-compatible CSP. connect-src also allows
 // Supabase (customer auth + storage). Shared with the desktop app; see
-// @localprint/shared/http for the CSP rationale.
+// @atba3li/shared/http for the CSP rationale.
 // Cloudflare injects its Web Analytics beacon (static.cloudflareinsights.com)
 // into proxied responses; without these two entries the browser console fills
 // with CSP violations for a script we did not add. The injected INLINE snippet
@@ -728,7 +728,7 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
 
     // Server-side price authority. Rather than trusting the client's quoted
     // number, recompute the price here with the SAME shared calculator the
-    // client uses (@localprint/shared/pricing) against this shop's real
+    // client uses (@atba3li/shared/pricing) against this shop's real
     // settings, paper types and active discount rules. The client quote is
     // advisory only; the number we persist is ours.
     const priceSettings = await getSettings(req.shop.id);
@@ -1309,7 +1309,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 // never call listen(). Exported at the bottom for that entry point.
 if (!isVercel) {
   app.listen(PORT, HOST, () => {
-    console.log("\n🚀 LocalPrint Cloud started!");
+    console.log("\n🚀 Atba3li Cloud started!");
     console.log(`📦 Environment: ${NODE_ENV}`);
     console.log(`🌐 Server URL: http://${HOST}:${PORT}`);
     if (isDev) {

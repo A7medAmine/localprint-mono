@@ -1,6 +1,6 @@
-// Shared types live in @localprint/shared/types. Only online-specific types
+// Shared types live in @atba3li/shared/types. Only online-specific types
 // (customer accounts — the desktop app has no logged-in end users) are here.
-export * from "@localprint/shared/types";
+export * from "@atba3li/shared/types";
 
 export interface AccountProfile {
   id: string;

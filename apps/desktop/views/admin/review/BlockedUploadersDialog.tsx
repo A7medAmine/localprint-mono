@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 type BlockKind = BlockedUploader["kind"];
 

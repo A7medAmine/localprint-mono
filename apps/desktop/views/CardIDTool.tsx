@@ -23,7 +23,7 @@ import {
   DialogFooter,
 } from "../components/ui/dialog";
 import { Icon } from "../components/ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 const MM_TO_PT = 2.83465;
 const SCALE = 0.45;

@@ -5,7 +5,7 @@ import {
   ONLINE_ORDER_COLUMNS,
   DESKTOP_ORDER_COLUMNS,
   makeOrderMappers,
-} from "@localprint/shared/orderShape";
+} from "@atba3li/shared/orderShape";
 
 // This round-trip is load-bearing: Phase 4.3 replaces the hand-built order
 // serializers in server.js with these mappers, so the camelCase <-> column
@@ -66,7 +66,7 @@ describe("order field mapping", () => {
   });
 });
 
-// Phase 4.3: the canonical mappers now live in @localprint/shared/orderShape and
+// Phase 4.3: the canonical mappers now live in @atba3li/shared/orderShape and
 // each app's db.js builds its toApi/fromApi from a column map. Guarantee the
 // lossless round-trip for BOTH backends (online lowercase columns, desktop
 // camelCase columns) and that neither map invents a field outside the canonical

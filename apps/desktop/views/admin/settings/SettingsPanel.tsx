@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { DiscountRule, DiscountType, ConditionType, PaperType, ShopSettings } from "../../../types";
 import { storageService } from "../../../services/storageService";
-import { cn } from "@localprint/shared";
+import { cn } from "@atba3li/shared";
 import { toast } from "../../../components/ui/use-toast";
 import {
   AlertDialog,
@@ -30,7 +30,7 @@ import { PasswordCard } from "./PasswordCard";
 import { BackupCard } from "./BackupCard";
 import { PrintersCard } from "./PrintersCard";
 import { Icon } from "../../../components/ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface JobStats {
   pending: number;
@@ -328,7 +328,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
           unreachable: { en: "Could not reach that address — check the store link.", ar: "تعذّر الوصول إلى العنوان — تحقق من رابط المتجر." },
           bad_token: { en: "The API token was rejected.", ar: "تم رفض رمز API." },
           shop_deactivated: { en: "This shop is deactivated on the cloud.", ar: "هذا المتجر معطّل على السحابة." },
-          bad_response: { en: "The address answered, but not like a LocalPrint cloud.", ar: "استجاب العنوان لكن ليس كخادم LocalPrint." },
+          bad_response: { en: "The address answered, but not like an Atba3li cloud.", ar: "استجاب العنوان لكن ليس كخادم أطبعلي." },
         };
         const known = result.error ? reasons[result.error] : undefined;
         const text = known

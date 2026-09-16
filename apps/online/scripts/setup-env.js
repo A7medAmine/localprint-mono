@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Interactive .env generator for both LocalPrint apps.
+// Interactive .env generator for both Atba3li apps.
 //
 //   node apps/online/scripts/setup-env.js            # asks about both apps
 //   node apps/online/scripts/setup-env.js --online   # cloud app only
@@ -294,7 +294,7 @@ async function configure(label, dir, fields) {
   if (skipped.length) console.log(`   skipped: ${skipped.join(', ')}`);
 }
 
-console.log('\nLocalPrint environment setup');
+console.log('\nAtba3li environment setup');
 console.log('Answers are validated as you go; press Enter to take the [default].');
 if (printOnly) console.log('--print: nothing will be written to disk.');
 
@@ -310,7 +310,7 @@ try {
   console.log('  1. Apply the schema:  supabase db push');
   console.log('     (or paste apps/online/supabase/migrations/001_initial_schema.sql into the SQL editor)');
   console.log('  2. Create a shop:     node apps/online/scripts/create-shop.js "Shop Name"');
-  console.log('  3. Start the server:  npm run dev -w @localprint/online\n');
+  console.log('  3. Start the server:  npm run dev -w @atba3li/online\n');
 } finally {
   rl.close();
 }

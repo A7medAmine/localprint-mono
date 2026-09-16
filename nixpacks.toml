@@ -1,5 +1,5 @@
 # Nixpacks build for apps/online (Dockploy). Root directory in Dockploy must
-# be the monorepo root — the online server imports @localprint/shared, which
+# be the monorepo root — the online server imports @atba3li/shared, which
 # only resolves as an npm workspace. Do NOT point Dockploy's root at
 # apps/online alone.
 #
@@ -14,11 +14,11 @@ nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = [
-  "npm ci --workspace @localprint/online --workspace @localprint/shared"
+  "npm ci --workspace @atba3li/online --workspace @atba3li/shared"
 ]
 
 [phases.build]
-cmds = ["npm run build -w @localprint/online"]
+cmds = ["npm run build -w @atba3li/online"]
 
 [start]
-cmd = "npm start -w @localprint/online"
+cmd = "npm start -w @atba3li/online"

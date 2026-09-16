@@ -18,7 +18,7 @@ const IMAGE_PDF_MARGIN_PT = (8 * 72) / 25.4; // 8mm
 const A4_WIDTH_PT = 595.28;
 const A4_HEIGHT_PT = 841.89;
 
-export function tmpPdfPath(prefix = 'printshop-print') {
+export function tmpPdfPath(prefix = 'atba3li-print') {
   return path.join(os.tmpdir(), `${prefix}-${crypto.randomBytes(8).toString('hex')}.pdf`);
 }
 
@@ -72,7 +72,7 @@ export async function makeImagePrintPdf(imagePath, fileType) {
     height: drawH,
   });
 
-  const pdfPath = tmpPdfPath('printshop-image');
+  const pdfPath = tmpPdfPath('atba3li-image');
   fs.writeFileSync(pdfPath, Buffer.from(await doc.save()));
   return pdfPath;
 }
@@ -102,7 +102,7 @@ export async function makeUncollatedPdf(pdfPath, copies) {
     for (let i = 0; i < n; i += 1) out.addPage(page);
   }
 
-  const outPath = tmpPdfPath('printshop-uncollated');
+  const outPath = tmpPdfPath('atba3li-uncollated');
   fs.writeFileSync(outPath, Buffer.from(await out.save()));
   return outPath;
 }

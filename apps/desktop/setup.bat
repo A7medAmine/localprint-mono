@@ -1,12 +1,12 @@
 @echo off
-title PrintShop Hub Setup
+title Atba3li Setup
 color 0A
 
 :: Enhanced installation script with better error handling
 cls
 echo.
 echo  ╔════════════════════════════════════════════════════════════════╗
-echo  ║                PrintShop Hub Installation Wizard                ║
+echo  ║                Atba3li Installation Wizard                ║
 echo  ║                     Print Shop Management System                 ║
 echo  ╚════════════════════════════════════════════════════════════════╝
 echo.
@@ -72,13 +72,13 @@ echo.
 
 :: Create startup script
 echo  🚀 Creating startup script...
-set STARTUP_SCRIPT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\PrintShopHub.bat
+set STARTUP_SCRIPT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Atba3li.bat
 
 (
 echo @echo off
-echo title PrintShop Hub
+echo title Atba3li
 echo cd /d "%INSTALL_DIR%"
-echo echo Starting PrintShop Hub...
+echo echo Starting Atba3li...
 echo start /min cmd /c "npm run dev"
 echo timeout /t 5 /nobreak ^>nul
 echo start http://localhost:3000
@@ -89,9 +89,9 @@ echo.
 
 :: Create desktop shortcut
 echo  🖥️  Creating desktop shortcut...
-set DESKTOP_SHORTCUT=%USERPROFILE%\Desktop\PrintShop Hub.lnk
+set DESKTOP_SHORTCUT=%USERPROFILE%\Desktop\Atba3li.lnk
 
-powershell -Command "& {$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%DESKTOP_SHORTCUT%'); $Shortcut.TargetPath = '%STARTUP_SCRIPT%'; $Shortcut.WorkingDirectory = '%INSTALL_DIR%'; $Shortcut.Description = 'PrintShop Hub - Print Shop Management System'; $Shortcut.Save();}" 2>nul
+powershell -Command "& {$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%DESKTOP_SHORTCUT%'); $Shortcut.TargetPath = '%STARTUP_SCRIPT%'; $Shortcut.WorkingDirectory = '%INSTALL_DIR%'; $Shortcut.Description = 'Atba3li - Print Shop Management System'; $Shortcut.Save();}" 2>nul
 
 if %errorLevel% == 0 (
     echo  ✅ Desktop shortcut created
@@ -106,12 +106,12 @@ set UNINSTALL_SCRIPT=%INSTALL_DIR%\uninstall.bat
 
 (
 echo @echo off
-echo title PrintShop Hub Uninstall
+echo title Atba3li Uninstall
 echo color 0C
 echo cls
 echo echo.
 echo echo  ╔════════════════════════════════════════════════════════════════╗
-echo echo  ║                PrintShop Hub Uninstall Wizard                  ║
+echo echo  ║                Atba3li Uninstall Wizard                  ║
 echo echo  ╚════════════════════════════════════════════════════════════════╝
 echo echo.
 echo echo  🗑️  Removing startup script...
@@ -120,7 +120,7 @@ echo echo.
 echo echo  🗑️  Removing desktop shortcut...
 echo del "%DESKTOP_SHORTCUT%" 2^>nul
 echo echo.
-echo echo  ✅ PrintShop Hub has been uninstalled from startup
+echo echo  ✅ Atba3li has been uninstalled from startup
 echo echo.
 echo echo  You can safely delete this folder: %INSTALL_DIR%
 echo echo.
@@ -131,7 +131,7 @@ echo  ✅ Uninstall script created
 echo.
 
 :: Start the application
-echo  🚀 Starting PrintShop Hub...
+echo  🚀 Starting Atba3li...
 cd /d "%INSTALL_DIR%"
 start /min cmd /c "npm run dev"
 
@@ -159,7 +159,7 @@ echo  ╔═══════════════════════�
 echo  ║                    INSTALLATION COMPLETE!                     ║
 echo  ╚════════════════════════════════════════════════════════════════╝
 echo.
-echo  🎉 PrintShop Hub has been successfully installed!
+echo  🎉 Atba3li has been successfully installed!
 echo.
 echo  📋 What was installed:
 echo     • Application dependencies
@@ -174,13 +174,13 @@ echo  🌐  Or visit: http://localhost:3000
 echo.
 echo  🗑️  To uninstall: Run uninstall.bat from this folder
 echo.
-echo  Press any key to open PrintShop Hub in your browser...
+echo  Press any key to open Atba3li in your browser...
 pause >nul
 
 start http://localhost:3000
 
 echo.
-echo  🎯 Setup complete! PrintShop Hub is now running.
+echo  🎯 Setup complete! Atba3li is now running.
 echo.
 echo  💡 Tips:
 echo     • The application runs in the background

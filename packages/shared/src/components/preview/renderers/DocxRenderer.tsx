@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { sanitizeHtml } from "../../../utils/filePreview";
 import { Icon } from "../../ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface DocxRendererProps {
   src: string;

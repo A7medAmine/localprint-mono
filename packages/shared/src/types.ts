@@ -1,7 +1,7 @@
 // Types shared by both apps. App-specific types stay in each app's local
 // types.ts, which re-exports everything here. Client/TypeScript-only (never
 // imported by the plain-Node servers), so this is a .ts module reached via the
-// package's root specifier / the "@localprint/shared/types" path.
+// package's root specifier / the "@atba3li/shared/types" path.
 
 export enum PrintStatus {
   PENDING = "PENDING",

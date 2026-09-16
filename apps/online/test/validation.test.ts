@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAllowedMime, magicBytesMatch } from "@localprint/shared/validation";
+import { isAllowedMime, magicBytesMatch } from "@atba3li/shared/validation";
 
 describe("isAllowedMime", () => {
   it("accepts known upload types", () => {

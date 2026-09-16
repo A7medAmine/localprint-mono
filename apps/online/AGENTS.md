@@ -1,19 +1,19 @@
-# LocalPrint Cloud (online) — Agent Guide
+# Atba3li Cloud (online) — Agent Guide
 
 Multi-tenant cloud upload portal: customers upload print jobs to a shop's page,
-the desktop app syncs them down. Part of the LocalPrint monorepo — see the root
-`AGENTS.md` for workspace-wide rules (install from root, `@localprint/shared`,
+the desktop app syncs them down. Part of the Atba3li monorepo — see the root
+`AGENTS.md` for workspace-wide rules (install from root, `@atba3li/shared`,
 etc.).
 
 ## Quick start
 ```bash
 # from the monorepo root: npm install   (never install inside this app)
-npm run dev       -w @localprint/online   # Vite (5000) + Express (5001) concurrently
-npm run build     -w @localprint/online   # Vite build to dist/
-npm start         -w @localprint/online   # production: serves dist/ + API on port 3000
-npm run typecheck -w @localprint/online
-npm run lint      -w @localprint/online
-npm run test      -w @localprint/online   # vitest
+npm run dev       -w @atba3li/online   # Vite (5000) + Express (5001) concurrently
+npm run build     -w @atba3li/online   # Vite build to dist/
+npm start         -w @atba3li/online   # production: serves dist/ + API on port 3000
+npm run typecheck -w @atba3li/online
+npm run lint      -w @atba3li/online
+npm run test      -w @atba3li/online   # vitest
 ```
 
 ## Architecture
@@ -54,5 +54,5 @@ changes as `002_…` onward.
 - **File uploads**: Multer; magic-byte validation via `utils/fileValidation.js`;
   server-side PDF page counting via `utils/pdfPageCount.js` (pdf-lib).
 - **Deploy**: multi-stage Dockerfile built from the repo ROOT (the server
-  imports `@localprint/shared`, which only resolves as a workspace). See
+  imports `@atba3li/shared`, which only resolves as a workspace). See
   `DEPLOYMENT.md`.

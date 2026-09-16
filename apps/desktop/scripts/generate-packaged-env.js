@@ -68,7 +68,7 @@ if (missing.length) {
   console.error(`Missing: ${missing.join(', ')}\n`);
   console.error('Set them as repository secrets (CI) or in apps/desktop/.env (local),');
   console.error('then run the build again. Values come from the Google Cloud Console');
-  console.error('OAuth client for PrintShop Hub.\n');
+  console.error('OAuth client for Atba3li.\n');
   process.exit(1);
 }
 

@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ALLOWED_MIMES, magicBytesMatch } from '@localprint/shared/validation';
+import { ALLOWED_MIMES, magicBytesMatch } from '@atba3li/shared/validation';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Same PRINTSHOP_UPLOADS_DIR override as server.js/db.js — in a packaged app
+// Same ATBA3LI_UPLOADS_DIR override as server.js/db.js — in a packaged app
 // __dirname sits inside the read-only asar archive.
-const UPLOADS_BASE = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+const UPLOADS_BASE = process.env.ATBA3LI_UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
 // Gmail itself caps attachments at 25MB; enforce the same bound locally so a
 // hostile/oversized payload is never decoded into memory.

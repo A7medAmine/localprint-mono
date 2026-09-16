@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { PrintJob } from "../types";
 import { useLanguage } from "../lib/useLanguage";
 import { Icon } from "./ui/icon";
-import { readPref } from "@localprint/shared/lib/prefs";
+import { readPref } from "@atba3li/shared/lib/prefs";
 
 interface PhotoSourceModalProps {
   isOpen: boolean;

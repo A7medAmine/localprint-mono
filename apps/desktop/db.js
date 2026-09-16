@@ -11,10 +11,10 @@ checkEnv();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// PRINTSHOP_DB_PATH is set by the Electron main process for packaged builds
-// (so the DB lives under %APPDATA%\PrintShop Hub\ instead of Program Files).
+// ATBA3LI_DB_PATH is set by the Electron main process for packaged builds
+// (so the DB lives under %APPDATA%\Atba3li\ instead of Program Files).
 // Falls back to the repo-relative file for `npm run dev` / plain node.
-const dbPath = process.env.PRINTSHOP_DB_PATH || path.join(__dirname, 'database.sqlite');
+const dbPath = process.env.ATBA3LI_DB_PATH || path.join(__dirname, 'database.sqlite');
 let db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -121,7 +121,7 @@ runMigrations(db);
 // Clean up ghost rows from the old client-supplied-id bug (see Phase 2.1):
 // a row with a NULL id is unreachable from the admin UI. Remove their files too.
 try {
-  const uploadsDir = process.env.PRINTSHOP_UPLOADS_DIR || path.join(__dirname, 'uploads');
+  const uploadsDir = process.env.ATBA3LI_UPLOADS_DIR || path.join(__dirname, 'uploads');
   const orphans = db.prepare(`SELECT serverFileName FROM jobs WHERE id IS NULL`).all();
   for (const row of orphans) {
     if (!row.serverFileName) continue;

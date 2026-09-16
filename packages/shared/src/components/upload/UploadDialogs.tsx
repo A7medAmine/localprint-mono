@@ -162,7 +162,7 @@ export const UploadDialogs: React.FC<UploadDialogsProps> = ({
       <Dialog open={storeInfoOpen} onOpenChange={setStoreInfoOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{shopSettings?.shopName || "PrintShop Hub"}</DialogTitle>
+            <DialogTitle>{shopSettings?.shopName || "Atba3li"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {shopSettings?.phoneNumbers && shopSettings.phoneNumbers.length > 0 && (

@@ -1,4 +1,4 @@
--- LocalPrint-online — complete baseline schema.
+-- Atba3li-online — complete baseline schema.
 --
 -- This single migration creates the entire public schema from nothing. It
 -- replaces the old 001..007 chain, which assumed the four base tables

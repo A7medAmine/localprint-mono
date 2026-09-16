@@ -1,4 +1,4 @@
-# Security model — LocalPrint desktop
+# Security model — Atba3li desktop
 
 The desktop app is an Electron shell around an Express server (`server.js`) and a
 local SQLite database. It runs on one machine in the print shop and is reachable

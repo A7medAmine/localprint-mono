@@ -1,6 +1,6 @@
-# LocalPrint Cloud
+# Atba3li Cloud
 
-A small public-facing service for customer upload intake + order status lookup. The actual admin dashboard and printing happen in the desktop LocalPrint app, which syncs with this cloud service over a token-authenticated API.
+A small public-facing service for customer upload intake + order status lookup. The actual admin dashboard and printing happen in the desktop Atba3li app, which syncs with this cloud service over a token-authenticated API.
 
 ## Quick start
 

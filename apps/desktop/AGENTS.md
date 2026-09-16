@@ -1,19 +1,19 @@
-# PrintShop Hub (desktop) — Agent Guide
+# Atba3li (desktop) — Agent Guide
 
 Electron desktop app for a print shop: job intake (QR upload, Gmail), native
-printing, and admin management. Part of the LocalPrint monorepo — see the root
-`AGENTS.md` for workspace-wide rules (install from root, `@localprint/shared`,
+printing, and admin management. Part of the Atba3li monorepo — see the root
+`AGENTS.md` for workspace-wide rules (install from root, `@atba3li/shared`,
 etc.).
 
 ## Quick start
 ```bash
 # from the monorepo root: npm install   (never install inside this app)
-npm run electron:dev -w @localprint/desktop   # Electron + Vite, hot reload
-npm run dev          -w @localprint/desktop   # browser-only: Vite + plain node server
-npm run build        -w @localprint/desktop   # Vite build to dist/
-npm run typecheck -w @localprint/desktop
-npm run lint      -w @localprint/desktop
-npm run test      -w @localprint/desktop      # vitest
+npm run electron:dev -w @atba3li/desktop   # Electron + Vite, hot reload
+npm run dev          -w @atba3li/desktop   # browser-only: Vite + plain node server
+npm run build        -w @atba3li/desktop   # Vite build to dist/
+npm run typecheck -w @atba3li/desktop
+npm run lint      -w @atba3li/desktop
+npm run test      -w @atba3li/desktop      # vitest
 ```
 
 ## Architecture

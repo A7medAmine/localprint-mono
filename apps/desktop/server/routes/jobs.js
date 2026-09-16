@@ -6,7 +6,7 @@ import { randomBytes, randomUUID, createHash } from "crypto";
 import db from "../../db.js";
 import { UPLOADS_DIR } from "../config.js";
 import { requireAdmin, isValidAdminToken } from "../adminAuth.js";
-import { makeRateLimiter } from "@localprint/shared/http";
+import { makeRateLimiter } from "@atba3li/shared/http";
 import { computePageCount, upload, uploadLimit, validateMagicBytes } from "../uploads.js";
 import { broadcastEvent } from "../events.js";
 import { applyAutoDeductForJob } from "../inventory.js";

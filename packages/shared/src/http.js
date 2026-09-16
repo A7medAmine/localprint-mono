@@ -1,6 +1,6 @@
 // HTTP middleware shared by both apps' servers. Plain .js (no TypeScript): the
 // servers run under plain Node, which cannot import .ts — so this is consumed
-// via the "@localprint/shared/http" subpath export, alongside validation.js
+// via the "@atba3li/shared/http" subpath export, alongside validation.js
 // and pdf.js.
 
 // ── Generic sliding-window rate limiter (per-IP) ──

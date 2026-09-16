@@ -15,8 +15,8 @@ import { buildPhotoPdf } from "../lib/photoPdf";
 import { setPhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType } from "../types";
 import { Icon } from "./ui/icon";
-import { readPref } from "@localprint/shared/lib/prefs";
-import { errorMessage } from "@localprint/shared";
+import { readPref } from "@atba3li/shared/lib/prefs";
+import { errorMessage } from "@atba3li/shared";
 
 const ACCEPT = ALLOWED_TYPES.join(",");
 

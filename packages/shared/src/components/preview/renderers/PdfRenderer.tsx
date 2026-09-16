@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getPdfjs, PDF_DOC_OPTIONS } from "../../../lib/pdfRender";
 import { Icon } from "../../ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface PdfRendererProps {
   src: string;

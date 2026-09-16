@@ -11,7 +11,7 @@ export default defineConfig({
     alias: {
       // Phase 4.2 populates packages/shared; this alias lets Vite bundle its TS
       // source directly, no separate build step.
-      "@localprint/shared": path.resolve(__dirname, "../../packages/shared/src"),
+      "@atba3li/shared": path.resolve(__dirname, "../../packages/shared/src"),
     },
   },
   server: {

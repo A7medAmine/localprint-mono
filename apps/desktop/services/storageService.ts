@@ -1,5 +1,5 @@
 import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment } from "../types";
-import { emitAppEvent } from "@localprint/shared/lib/appEvents";
+import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 
 /** What the write endpoints answer with: success, plus how many rows moved. */
 export interface MutationResult {
@@ -445,7 +445,7 @@ class StorageService {
       ];
 
       return {
-        shopName: settings?.shopName || "PrintShop Hub",
+        shopName: settings?.shopName || "Atba3li",
         logoUrl: settings?.logoUrl || null,
         pricing,
         paperTypes: Array.isArray(settings?.paperTypes) && settings.paperTypes.length > 0
@@ -469,7 +469,7 @@ class StorageService {
           : {},
       };
     } catch {
-      return { shopName: "PrintShop Hub", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
+      return { shopName: "Atba3li", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
     }
   }
 
@@ -747,7 +747,7 @@ class StorageService {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `printshop-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    a.download = `atba3li-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

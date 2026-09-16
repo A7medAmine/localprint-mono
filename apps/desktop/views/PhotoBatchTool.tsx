@@ -20,7 +20,7 @@ import { consumePhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType, PrinterJobDefaults, ShopSettings } from "../types";
 import { formatPrice } from "../utils/pricingUtils";
 import { Icon } from "../components/ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface BatchItem {
   id: string;

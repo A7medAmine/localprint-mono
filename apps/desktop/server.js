@@ -5,7 +5,7 @@ import path from "path";
 
 
 import db from './db.js';
-import { securityHeaders } from '@localprint/shared/http';
+import { securityHeaders } from '@atba3li/shared/http';
 import {
   APP_ROOT,
   DEV_ORIGIN,
@@ -36,7 +36,7 @@ import { registerSettingsRoutes } from './server/routes/settings.js';
 
 
 // ── Allowed MIME types for upload ──
-// ALLOWED_MIMES is imported from @localprint/shared/validation (shared with the
+// ALLOWED_MIMES is imported from @atba3li/shared/validation (shared with the
 // magic-byte matcher and covered by the validation test suite).
 
 
@@ -79,7 +79,7 @@ if (isDev) {
 }
 
 // Security headers middleware — static headers + the pdf.js-compatible CSP.
-// Shared with the online app; see @localprint/shared/http for the CSP rationale.
+// Shared with the online app; see @atba3li/shared/http for the CSP rationale.
 app.use(securityHeaders());
 
 ensureDirs();

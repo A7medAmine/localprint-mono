@@ -1,6 +1,6 @@
-# LocalPrint monorepo — Agent Guide
+# Atba3li monorepo — Agent Guide
 
-npm-workspaces monorepo holding both LocalPrint apps plus their shared code.
+npm-workspaces monorepo holding both Atba3li apps plus their shared code.
 
 ## Layout
 ```
@@ -17,7 +17,7 @@ working inside an app.
 - **Install once, from the root** (`npm install`). Deps hoist to the root
   `node_modules`; there are no per-app lockfiles. Running `npm install` inside an
   app is wrong — it builds an un-hoisted tree.
-- Shared code is imported as `@localprint/shared`. Both apps map that specifier
+- Shared code is imported as `@atba3li/shared`. Both apps map that specifier
   to `packages/shared/src` in their `tsconfig.json` (`paths`) and `vite.config.ts`
   (`resolve.alias`), so Vite bundles the shared TypeScript source directly — no
   separate build step.
@@ -29,8 +29,8 @@ npm run lint         # eslint across workspaces
 npm run test         # vitest run across workspaces
 npm run build        # vite build across workspaces
 ```
-Run an app's script alone with `npm run <script> -w @localprint/desktop`
-(or `-w @localprint/online`).
+Run an app's script alone with `npm run <script> -w @atba3li/desktop`
+(or `-w @atba3li/online`).
 
 ## Shared config
 - `tsconfig.base.json` — common compiler options; each app's tsconfig extends it.

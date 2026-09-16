@@ -1,6 +1,6 @@
 @echo off
 echo ============================================
-echo PrintShop Hub Installation Script
+echo Atba3li Installation Script
 echo ============================================
 echo.
 
@@ -51,7 +51,7 @@ echo.
 
 :: Create startup script
 echo Creating startup script...
-set STARTUP_SCRIPT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\PrintShopHub.bat
+set STARTUP_SCRIPT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Atba3li.bat
 
 (
 echo @echo off
@@ -70,7 +70,7 @@ echo.
 
 :: Create desktop shortcut
 echo Creating desktop shortcut...
-set DESKTOP_SHORTCUT=%USERPROFILE%\Desktop\PrintShop Hub.lnk
+set DESKTOP_SHORTCUT=%USERPROFILE%\Desktop\Atba3li.lnk
 
 powershell -Command "
 $WshShell = New-Object -comObject WScript.Shell;
@@ -78,7 +78,7 @@ $Shortcut = $WshShell.CreateShortcut('%DESKTOP_SHORTCUT%');
 $Shortcut.TargetPath = '%STARTUP_SCRIPT%';
 $Shortcut.WorkingDirectory = '%INSTALL_DIR%';
 $Shortcut.IconLocation = '%INSTALL_DIR%\public\icon.ico';
-$Shortcut.Description = 'PrintShop Hub - Print Shop Management System';
+$Shortcut.Description = 'Atba3li - Print Shop Management System';
 $Shortcut.Save();
 "
 
@@ -96,7 +96,7 @@ set UNINSTALL_SCRIPT=%INSTALL_DIR%\uninstall.bat
 (
 echo @echo off
 echo echo ============================================
-echo echo PrintShop Hub Uninstallation Script
+echo echo Atba3li Uninstallation Script
 echo echo ============================================
 echo echo.
 echo echo Removing startup script...
@@ -105,7 +105,7 @@ echo echo.
 echo echo Removing desktop shortcut...
 echo del "%DESKTOP_SHORTCUT%" 2>nul
 echo echo.
-echo echo PrintShop Hub has been uninstalled from startup.
+echo echo Atba3li has been uninstalled from startup.
 echo echo You can safely delete this folder: %INSTALL_DIR%
 echo echo.
 echo pause
@@ -142,7 +142,7 @@ echo ============================================
 echo INSTALLATION COMPLETED!
 echo ============================================
 echo.
-echo PrintShop Hub has been installed and configured to start automatically.
+echo Atba3li has been installed and configured to start automatically.
 echo.
 echo What was installed:
 echo - Dependencies installed

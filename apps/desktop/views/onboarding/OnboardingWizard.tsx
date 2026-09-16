@@ -15,8 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { writePref } from "@localprint/shared/lib/prefs";
-import { errorMessage } from "@localprint/shared";
+import { writePref } from "@atba3li/shared/lib/prefs";
+import { errorMessage } from "@atba3li/shared";
 
 const DEFAULT_PASSWORD = "admin123";
 

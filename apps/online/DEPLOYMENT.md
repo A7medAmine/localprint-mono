@@ -1,4 +1,4 @@
-# DEPLOYMENT — LocalPrint Cloud (online)
+# DEPLOYMENT — Atba3li Cloud (online)
 
 Multi-tenant SaaS. **One** Node server instance serves every shop
 (`shopSlug`-scoped). Uploaded files live on the box's disk (persistent volume),
@@ -20,7 +20,7 @@ Headroom: move Supabase to Pro ($25) if MAU/DB outgrow Free.
 
 These are correct **because there is exactly one server instance**:
 
-- in-memory rate limiter (`@localprint/shared/http`)
+- in-memory rate limiter (`@atba3li/shared/http`)
 - SSE/`ws` subscriber map keyed by orderId (`statusSubscribers`)
 - `setInterval` cleanup jobs (`cleanupOldOrders`)
 
@@ -62,10 +62,10 @@ Deploy the code (from the monorepo root on your machine):
 
 ```bash
 # on the VPS, as deploy:
-git clone <repo-url> localprint-mono
-cd localprint-mono
-npm ci --workspace @localprint/online --workspace @localprint/shared
-npm run build -w @localprint/online
+git clone <repo-url> atba3li-mono
+cd atba3li-mono
+npm ci --workspace @atba3li/online --workspace @atba3li/shared
+npm run build -w @atba3li/online
 mkdir -p apps/online/uploads
 ```
 
@@ -127,17 +127,17 @@ your-domain.com {
 Caddy auto-obtains/renews the TLS cert. Keep DNS **proxied** through Cloudflare
 (orange cloud) so the origin IP stays hidden; Caddy handles TLS origin-side.
 
-## 5. systemd unit (`/etc/systemd/system/localprint.service`)
+## 5. systemd unit (`/etc/systemd/system/atba3li.service`)
 
 ```ini
 [Unit]
-Description=LocalPrint Cloud (online)
+Description=Atba3li Cloud (online)
 After=network.target
 
 [Service]
 User=deploy
-WorkingDirectory=/opt/localprint-mono/apps/online
-EnvironmentFile=/opt/localprint-mono/apps/online/.env
+WorkingDirectory=/opt/atba3li-mono/apps/online
+EnvironmentFile=/opt/atba3li-mono/apps/online/.env
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=3
@@ -148,8 +148,8 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now localprint
-sudo systemctl status localprint
+sudo systemctl enable --now atba3li
+sudo systemctl status atba3li
 ```
 
 ## 6. Nightly backup (non-optional — files are on a pet box)
@@ -158,8 +158,8 @@ sudo systemctl status localprint
 Cloudflare R2 (free) or Backblaze B2:
 
 ```bash
-sudo tee /etc/cron.d/localprint-backup <<'EOF'
-30 2 * * * deploy /opt/localprint-mono/scripts/backup.sh >>/var/log/localprint-backup.log 2>&1
+sudo tee /etc/cron.d/atba3li-backup <<'EOF'
+30 2 * * * deploy /opt/atba3li-mono/scripts/backup.sh >>/var/log/atba3li-backup.log 2>&1
 EOF
 ```
 
@@ -169,19 +169,19 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 DATE=$(date +%F)
-DEST="r2:bucket/localprint/$DATE"
+DEST="r2:bucket/atba3li/$DATE"
 
 # Postgres (Supabase) logical dump
-pg_dump "$SUPABASE_DB_URL" -f "/tmp/localprint-$DATE.sql"
+pg_dump "$SUPABASE_DB_URL" -f "/tmp/atba3li-$DATE.sql"
 
 # uploads tarball
-tar -C /opt/localprint-mono/apps/online -czf "/tmp/localprint-uploads-$DATE.tar.gz" uploads
+tar -C /opt/atba3li-mono/apps/online -czf "/tmp/atba3li-uploads-$DATE.tar.gz" uploads
 
-rclone copy /tmp/localprint-$DATE.sql "$DEST/" && rm /tmp/localprint-$DATE.sql
-rclone copy /tmp/localprint-uploads-$DATE.tar.gz "$DEST/" && rm /tmp/localprint-uploads-$DATE.tar.gz
+rclone copy /tmp/atba3li-$DATE.sql "$DEST/" && rm /tmp/atba3li-$DATE.sql
+rclone copy /tmp/atba3li-uploads-$DATE.tar.gz "$DEST/" && rm /tmp/atba3li-uploads-$DATE.tar.gz
 
 # retention: keep 30 days
-rclone delete --min-age 30d "r2:bucket/localprint"
+rclone delete --min-age 30d "r2:bucket/atba3li"
 ```
 
 `SUPABASE_DB_URL` comes from Supabase → Project Settings → Database →
@@ -200,11 +200,11 @@ Connection string. Test a restore at least once before go-live.
 user, `VOLUME /app/apps/online/uploads`) for a containerized alternative:
 
 ```bash
-docker build -f apps/online/Dockerfile -t localprint/online .
-docker run -d --name localprint-online -p 3000:3000 \
-  -v localprint-uploads:/app/apps/online/uploads \
+docker build -f apps/online/Dockerfile -t atba3li/online .
+docker run -d --name atba3li-online -p 3000:3000 \
+  -v atba3li-uploads:/app/apps/online/uploads \
   --env-file apps/online/.env \
-  localprint/online
+  atba3li/online
 ```
 
 Either bare-VPS (sections 1–7, the recommended $6–10/mo path) or Docker
@@ -242,8 +242,8 @@ Config lives at the repo root (`vercel.json`):
 
 - `rootDirectory: "apps/online"`, `buildCommand: "npm run build"`,
   `outputDirectory: "dist"` — Vercel serves the built SPA statically.
-- `installCommand: "npm ci --workspace @localprint/online --workspace
-  @localprint/shared"` — deliberately skips the desktop workspace so its
+- `installCommand: "npm ci --workspace @atba3li/online --workspace
+  @atba3li/shared"` — deliberately skips the desktop workspace so its
   Electron `postinstall` never runs on Vercel.
 - `apps/online/api/index.js` exports the Express app; `server.js` skips
   `app.listen()` when `process.env.VERCEL === "1"` and points `UPLOADS_DIR` at

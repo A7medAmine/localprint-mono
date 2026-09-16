@@ -7,8 +7,8 @@ import { isNativePrintActive } from "./lib/electronPrint";
 import LanguageToggle from "./components/LanguageToggle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./components/LoginPage";
-import { clearPref, readEnumPref, readPref, writePref } from "@localprint/shared/lib/prefs";
-import { emitAppEvent, onAppEvent } from "@localprint/shared/lib/appEvents";
+import { clearPref, readEnumPref, readPref, writePref } from "@atba3li/shared/lib/prefs";
+import { emitAppEvent, onAppEvent } from "@atba3li/shared/lib/appEvents";
 import { Icon } from "./components/ui/icon";
 
 // Each route is its own chunk. The admin views drag in pdf-lib, pdf.js, xlsx
@@ -48,7 +48,7 @@ const App: React.FC = () => {
   });
 
   const [settings, setSettings] = useState<ShopSettings>({
-    shopName: "PrintShop Hub",
+    shopName: "Atba3li",
     logoUrl: null,
   });
 

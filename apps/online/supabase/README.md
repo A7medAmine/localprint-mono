@@ -9,7 +9,7 @@ a new numbered `.sql` migration here, applied in order.
 | File | Purpose |
 |---|---|
 | `migrations/001_initial_schema.sql` | The complete schema, from nothing. Idempotent — safe to re-run. |
-| `reset.sql` | **Destructive.** Drops every LocalPrint table and its data. Never run by `db push`; run it by hand only to wipe a project. |
+| `reset.sql` | **Destructive.** Drops every Atba3li table and its data. Never run by `db push`; run it by hand only to wipe a project. |
 
 `001_initial_schema.sql` replaced the old `001…007` chain. That chain could not
 bootstrap a fresh project: the four base tables (`orders`, `settings`,

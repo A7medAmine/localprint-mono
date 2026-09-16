@@ -1,2 +1,2 @@
-// Re-export shim. Real module lives in @localprint/shared (packages/shared/src/components/ui/label).
-export * from "@localprint/shared/components/ui/label";
+// Re-export shim. Real module lives in @atba3li/shared (packages/shared/src/components/ui/label).
+export * from "@atba3li/shared/components/ui/label";

@@ -13,7 +13,7 @@ export function registerFileRoutes(app) {
     if (!fs.existsSync(DB_PATH)) {
       return res.status(404).json({ success: false, error: "Database not found" });
     }
-    res.download(DB_PATH, `printshop-backup-${new Date().toISOString().slice(0, 10)}.sqlite`);
+    res.download(DB_PATH, `atba3li-backup-${new Date().toISOString().slice(0, 10)}.sqlite`);
   });
 
   // Database backup restore
@@ -37,7 +37,7 @@ export function registerFileRoutes(app) {
         const hasJobs = probe.prepare(
           "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'"
         ).get();
-        if (!hasJobs) throw new Error("not a PrintShop backup (no 'jobs' table)");
+        if (!hasJobs) throw new Error("not an Atba3li backup (no 'jobs' table)");
       } finally {
         probe.close();
       }

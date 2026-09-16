@@ -4,7 +4,7 @@ import { Language, AccountProfile, AccountOrder, ShopSettings, PrintJob, PrintSt
 import { storageService } from "../services/storageService";
 import { calculatePrintPrice, formatPrice } from "../utils/pricingUtils";
 import { useAuth } from "../hooks/useAuth";
-import { readPref } from "@localprint/shared/lib/prefs";
+import { readPref } from "@atba3li/shared/lib/prefs";
 import { isCustomerAuthConfigured } from "../services/supabaseClient";
 import AuthPanel from "../components/auth/AuthPanel";
 import { Button } from "../components/ui/button";

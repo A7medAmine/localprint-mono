@@ -4,7 +4,7 @@ import { Language } from "../types";
 import { TRANSLATIONS } from "../constants";
 import { storageService } from "../services/storageService";
 import { Icon } from "./ui/icon";
-import { writePref } from "@localprint/shared/lib/prefs";
+import { writePref } from "@atba3li/shared/lib/prefs";
 
 interface LoginPageProps {
   lang: Language;

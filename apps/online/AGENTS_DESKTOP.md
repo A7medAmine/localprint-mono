@@ -1,7 +1,7 @@
-# LocalPrint Desktop — Cloud Sync Agent Brief
+# Atba3li Desktop — Cloud Sync Agent Brief
 
 ## Goal
-Add a `cloudSync.js` module (or similar) to the desktop LocalPrint app that periodically syncs with the cloud app's shop-sync API. This is the only new feature — do not change any existing UI or admin logic.
+Add a `cloudSync.js` module (or similar) to the desktop Atba3li app that periodically syncs with the cloud app's shop-sync API. This is the only new feature — do not change any existing UI or admin logic.
 
 ## Shop token
 Each shop has its own 64-char hex token, minted on the cloud side by

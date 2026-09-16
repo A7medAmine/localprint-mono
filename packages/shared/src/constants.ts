@@ -4,7 +4,7 @@ import { Translations } from "./types";
 // adds the PDF-Studio sidebar keys (studio*), which the online app simply never
 // looks up. Client/TypeScript-only — the plain-Node servers never import this.
 export const TRANSLATIONS: Translations = {
-  appTitle: { en: "PrintShop Hub", ar: "مركز خدمات الطباعة" },
+  appTitle: { en: "Atba3li", ar: "مركز خدمات الطباعة" },
   uploadTitle: { en: "Upload Your Documents", ar: "ارفع ملفاتك للطباعة" },
   uploadSub: {
     en: "Quick, easy, and secure document printing.",
@@ -246,7 +246,7 @@ export const TRANSLATIONS: Translations = {
 };
 
 // Client-side <input accept> allow-list. Distinct from the server's
-// ALLOWED_MIMES magic-byte gate in @localprint/shared/validation.
+// ALLOWED_MIMES magic-byte gate in @atba3li/shared/validation.
 export const ALLOWED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

@@ -1,2 +1,2 @@
-// Re-export shim. Real module lives in @localprint/shared (packages/shared/src/components/preview/PreviewModal).
-export { default } from "@localprint/shared/components/preview/PreviewModal";
+// Re-export shim. Real module lives in @atba3li/shared (packages/shared/src/components/preview/PreviewModal).
+export { default } from "@atba3li/shared/components/preview/PreviewModal";

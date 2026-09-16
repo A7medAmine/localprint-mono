@@ -1,4 +1,4 @@
-# Security model — LocalPrint online
+# Security model — Atba3li online
 
 Multi-tenant Express service (`server.js`) backed by Supabase (Postgres + Auth).
 Each shop is a tenant keyed by `shopSlug`. Customers upload files from their

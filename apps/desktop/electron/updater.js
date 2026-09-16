@@ -63,7 +63,7 @@ export function initAutoUpdater() {
       dialog.showMessageBox(focusedWindow(), {
         type: 'info',
         title: 'Update found',
-        message: `Downloading PrintShop Hub ${info.version}…`,
+        message: `Downloading Atba3li ${info.version}…`,
         detail: 'You will be prompted to restart once the download finishes.',
       });
     }
@@ -82,7 +82,7 @@ export function initAutoUpdater() {
       buttons: ['Restart now', 'Later'],
       defaultId: 0,
       title: 'Update ready',
-      message: `PrintShop Hub ${info.version} downloaded.`,
+      message: `Atba3li ${info.version} downloaded.`,
       detail: 'Restart to install the update. It will also install automatically the next time the app quits.',
     });
     if (response === 0) autoUpdater.quitAndInstall();

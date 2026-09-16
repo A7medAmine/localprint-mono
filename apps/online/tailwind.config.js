@@ -1,4 +1,4 @@
-import preset from "@localprint/shared/tailwind-preset";
+import preset from "@atba3li/shared/tailwind-preset";
 
 /** @type {import('tailwindcss').Config} */
 export default {

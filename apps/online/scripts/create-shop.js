@@ -25,7 +25,7 @@ console.log(`  Slug:  ${shop.slug}`);
 console.log(`  Token: ${shop.token}`);
 console.log('\n⚠️  This token is shown once — store it now.\n');
 
-console.log('Paste into the shop\'s LocalPrint Admin -> Cloud Sync settings:');
+console.log('Paste into the shop\'s Atba3li Admin -> Cloud Sync settings:');
 console.log(`  Cloud URL:  ${host || '<your cloud host, e.g. https://cloud.example.com>'}`);
 console.log(`  API Token:  ${shop.token}`);
 

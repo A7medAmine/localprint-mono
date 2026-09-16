@@ -1,10 +1,10 @@
 /**
  * Pure discount math shared by the React clients and the Node servers.
  * Kept in .js (not .ts) so services/*.js and server.js can import it directly —
- * consumed via the "@localprint/shared/discountLogic" subpath export.
+ * consumed via the "@atba3li/shared/discountLogic" subpath export.
  *
  * This is the 3-arg canonical core. The typed 4-arg wrapper (which also takes
- * the job, currently unused) lives in @localprint/shared/pricing.
+ * the job, currently unused) lives in @atba3li/shared/pricing.
  */
 
 export function calculateJobDiscount(originalPrice, pageCount, rules) {

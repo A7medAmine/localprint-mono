@@ -5,7 +5,7 @@ import { storageService } from "../../../services/storageService";
 import { isElectron, printFile, getPrinters, PrinterInfo } from "../../../lib/electronPrint";
 import { toast } from "../../../components/ui/use-toast";
 import { openAdminEventSource } from "../../../utils/adminEvents";
-import { readPref } from "@localprint/shared/lib/prefs";
+import { readPref } from "@atba3li/shared/lib/prefs";
 
 export interface CustomerGroup {
   key: string;

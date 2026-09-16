@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 # ─────────────────────────────────────────────────────────────────────────────
 # Monorepo build. The build context is the repo ROOT, not apps/online — the
-# online server imports @localprint/shared, which only resolves as a workspace.
+# online server imports @atba3li/shared, which only resolves as a workspace.
 #
-#   docker build -f apps/online/Dockerfile -t localprint/online .
+#   docker build -f apps/online/Dockerfile -t atba3li/online .
 #
 # Workspaces are installed selectively (--workspace) so the desktop app's
 # Electron/native postinstall never runs inside the container.
@@ -24,11 +24,11 @@ COPY package.json package-lock.json ./
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/online/package.json ./apps/online/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
-RUN npm ci --workspace @localprint/online --workspace @localprint/shared
+RUN npm ci --workspace @atba3li/online --workspace @atba3li/shared
 
 COPY packages/shared ./packages/shared
 COPY apps/online ./apps/online
-RUN npm run build -w @localprint/online
+RUN npm run build -w @atba3li/online
 
 # ---- runtime stage: slim, non-root, uploads as a volume ---------------------
 FROM node:22-alpine
@@ -44,7 +44,7 @@ COPY package.json package-lock.json ./
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/online/package.json ./apps/online/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
-RUN npm ci --omit=dev --workspace @localprint/online --workspace @localprint/shared \
+RUN npm ci --omit=dev --workspace @atba3li/online --workspace @atba3li/shared \
   && npm cache clean --force
 
 # Shared workspace source (server imports its .js modules) + the server itself.

@@ -31,7 +31,7 @@ import {
 } from "./ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Icon } from "./ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface InventorySectionProps {
   lang: Language;

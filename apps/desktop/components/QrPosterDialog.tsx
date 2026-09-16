@@ -345,7 +345,7 @@ const escapeHtml = (s: string) =>
 
 const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps) => {
   const isRtl = lang === "ar";
-  const shopName = shopSettings?.shopName || "PrintShop Hub";
+  const shopName = shopSettings?.shopName || "Atba3li";
   const logo = shopSettings?.logoUrl || "";
   const phones = shopSettings?.phoneNumbers?.filter(Boolean) || [];
   const email = shopSettings?.email || "";

@@ -1,4 +1,4 @@
-# PrintShop Hub
+# Atba3li
 
 A complete print shop management system that runs on your local network. Customers can upload documents from their phones or laptops, and the shop owner manages everything from a single dashboard.
 
@@ -6,7 +6,7 @@ A complete print shop management system that runs on your local network. Custome
 
 ## What It Does
 
-PrintShop Hub replaces the traditional "send me the file on WhatsApp" workflow with a streamlined, organized system.
+Atba3li replaces the traditional "send me the file on WhatsApp" workflow with a streamlined, organized system.
 
 **For customers:**
 - Open the shop's webpage on your phone (via QR code or link)

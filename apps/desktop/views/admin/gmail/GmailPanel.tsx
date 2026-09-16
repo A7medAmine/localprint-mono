@@ -28,7 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../..
 import { Icon, fileTypeIcon } from "../../../components/ui/icon";
 import { useAdmin } from "../AdminContext";
 import { openAdminEventSource } from "../../../utils/adminEvents";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 
 /** Per-attachment print settings the operator picks in the review dialog. */

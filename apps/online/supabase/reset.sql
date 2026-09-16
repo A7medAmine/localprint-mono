@@ -1,4 +1,4 @@
--- DESTRUCTIVE — drops every LocalPrint table in the `public` schema and all
+-- DESTRUCTIVE — drops every Atba3li table in the `public` schema and all
 -- of its data, so the baseline migration can be applied to a clean slate.
 --
 -- Not a migration. It is never run by `supabase db push`; run it by hand only

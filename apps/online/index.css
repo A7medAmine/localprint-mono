@@ -2,7 +2,7 @@
    desktop app so the two never drift. App-local additions only below.
    `@import` must stay above the @tailwind directives: CSS requires imports
    first, and Vite inlines this before PostCSS/Tailwind runs. */
-@import "@localprint/shared/styles/base.css";
+@import "@atba3li/shared/styles/base.css";
 
 @tailwind base;
 @tailwind components;

@@ -3,7 +3,7 @@
  * Node servers so the client quote and the server-authoritative recompute are
  * literally the same code. Kept in .js (not .ts) so server.js can import it;
  * TypeScript consumers get types from the co-located pricing.d.ts. Consumed via
- * the "@localprint/shared/pricing" subpath export.
+ * the "@atba3li/shared/pricing" subpath export.
  *
  * The page-count heuristics (countPdfPages / countWordPages / getActualPageCount)
  * use the browser File API and only run client-side; they are safe to import in

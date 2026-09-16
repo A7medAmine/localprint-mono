@@ -1,8 +1,8 @@
-# PrintShop Hub - Project Structure
+# Atba3li - Project Structure
 
 ## Overview
 
-PrintShop Hub is a full-stack React application with Express backend for document printing services. The project has been converted from ESM CDN imports to a local development setup using Vite and npm.
+Atba3li is a full-stack React application with Express backend for document printing services. The project has been converted from ESM CDN imports to a local development setup using Vite and npm.
 
 ## Development Setup
 
@@ -38,7 +38,7 @@ npm run preview      # Preview production build locally
 ## Project Structure
 
 ```
-printshop-hub/
+atba3li/
 ├── public/                 # Static assets
 ├── src/                    # React application source (recommended structure)
 │   ├── components/         # Reusable React components

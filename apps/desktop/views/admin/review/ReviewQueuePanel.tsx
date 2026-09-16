@@ -24,7 +24,7 @@ import { useAdmin } from "../AdminContext";
 import BlockUploaderDialog from "./BlockUploaderDialog";
 import BlockedUploadersDialog from "./BlockedUploadersDialog";
 import { Icon } from "../../../components/ui/icon";
-import { errorMessage } from "@localprint/shared";
+import { errorMessage } from "@atba3li/shared";
 
 interface ReviewQueuePanelProps {
   reviewJobs: PrintJob[];

@@ -8,15 +8,15 @@ import { Toaster } from "../components/ui/toaster";
 import { Button } from "../components/ui/button";
 import ShareQrDialog from "../components/ShareQrDialog";
 import { Icon } from "../components/ui/icon";
-import { UploadForm } from "@localprint/shared/components/upload/UploadForm";
-import { RecentUploads } from "@localprint/shared/components/upload/RecentUploads";
-import { UploadDialogs } from "@localprint/shared/components/upload/UploadDialogs";
+import { UploadForm } from "@atba3li/shared/components/upload/UploadForm";
+import { RecentUploads } from "@atba3li/shared/components/upload/RecentUploads";
+import { UploadDialogs } from "@atba3li/shared/components/upload/UploadDialogs";
 import {
   isOfficeFile,
   isOfficeType,
   makeFilePriceCalculator,
   usePageCounts,
-} from "@localprint/shared/lib/useUploadPricing";
+} from "@atba3li/shared/lib/useUploadPricing";
 
 interface UploadViewProps {
   lang: Language;

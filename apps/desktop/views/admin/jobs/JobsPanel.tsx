@@ -30,7 +30,7 @@ import PrintOptionsDialog from "./PrintOptionsDialog";
 import { formatRelativeTime } from "../../../utils/timeUtils";
 import { StatusBadge, PaymentBadge } from "./JobBadges";
 import { makeJobCells } from "./JobCells";
-import { readPref, writePref } from "@localprint/shared/lib/prefs";
+import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import NewJobDialog from "../../../components/NewJobDialog";
 import { Icon } from "../../../components/ui/icon";
 

@@ -6,7 +6,7 @@ import { PDFDocument } from "pdf-lib";
 // metadata. Throws on unreadable bytes — callers catch and fall back.
 //
 // Server-consumed, so this is a real .js file reached via the
-// "@localprint/shared/pdf" subpath (plain Node can't import the TS index entry).
+// "@atba3li/shared/pdf" subpath (plain Node can't import the TS index entry).
 export async function countPdfPagesFromBuffer(buffer) {
   const pdfDoc = await PDFDocument.load(buffer, {
     ignoreEncryption: true,

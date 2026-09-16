@@ -88,7 +88,7 @@ export function registerGmailRoutes(app) {
       startPolling(30_000);
 
       const safeEmail = escapeHtml(email);
-      res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Gmail connected — PrintShop Hub</title><style>
+      res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Gmail connected — Atba3li</title><style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(1200px 800px at 20% 0%,#eef2ff 0%,transparent 60%),radial-gradient(1000px 700px at 100% 100%,#ecfdf5 0%,transparent 55%),#f8fafc;color:#0f172a}
@@ -112,9 +112,9 @@ export function registerGmailRoutes(app) {
     <div class="icon"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
     <h1>Gmail connected</h1>
     <span class="email">${safeEmail}</span>
-    <p class="sub">PrintShop Hub will now pull print jobs from this inbox automatically. You can head back to the app.</p>
+    <p class="sub">Atba3li will now pull print jobs from this inbox automatically. You can head back to the app.</p>
     <div class="actions">
-      <a class="btn btn-primary" href="printshop-hub://return" id="returnBtn">Return to PrintShop Hub</a>
+      <a class="btn btn-primary" href="atba3li://return" id="returnBtn">Return to Atba3li</a>
       <button class="btn btn-ghost" id="closeBtn" type="button">Close this tab</button>
     </div>
     <p class="hint">This tab will close automatically in a few seconds.</p>

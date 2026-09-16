@@ -30,11 +30,11 @@ const __dirname = path.dirname(__filename);
 function crashHandler(err) {
   const msg = (err && err.stack) || String(err);
   try {
-    const logDir = app.isReady() ? app.getPath('userData') : path.join(process.env.APPDATA || __dirname, 'printshop-hub');
+    const logDir = app.isReady() ? app.getPath('userData') : path.join(process.env.APPDATA || __dirname, 'atba3li');
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     fs.appendFileSync(path.join(logDir, 'main-error.log'), `[${new Date().toISOString()}]\n${msg}\n\n`);
   } catch { /* logging is best-effort */ }
-  try { dialog.showErrorBox('PrintShop Hub — startup error', msg); } catch { /* pre-ready */ }
+  try { dialog.showErrorBox('Atba3li — startup error', msg); } catch { /* pre-ready */ }
 }
 process.on('uncaughtException', crashHandler);
 process.on('unhandledRejection', crashHandler);
@@ -124,7 +124,7 @@ if (app.isPackaged && !process.env.NODE_ENV) {
 
 // In a packaged install the app dir is read-only under Program Files, so the
 // SQLite file + uploads/ can't live next to the code. Redirect them to the
-// per-user userData folder (e.g. %APPDATA%\PrintShop Hub\). server.js and db.js
+// per-user userData folder (e.g. %APPDATA%\Atba3li\). server.js and db.js
 // pick these up via env vars — set them BEFORE importing server.js.
 //
 // In dev (unpackaged) we leave the env vars unset so the existing repo-relative
@@ -134,8 +134,8 @@ if (app.isPackaged) {
   const dbPath = path.join(userData, 'database.sqlite');
   const uploadsDir = path.join(userData, 'uploads');
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-  process.env.PRINTSHOP_DB_PATH = dbPath;
-  process.env.PRINTSHOP_UPLOADS_DIR = uploadsDir;
+  process.env.ATBA3LI_DB_PATH = dbPath;
+  process.env.ATBA3LI_UPLOADS_DIR = uploadsDir;
 
   // db.js hard-requires TOKEN_ENCRYPTION_KEY (used to encrypt Gmail OAuth
   // tokens at rest). In dev this comes from .env; when packaged there's no
@@ -157,9 +157,9 @@ if (app.isPackaged) {
 
 // Register a custom URL scheme so the Gmail-callback success page (opened in
 // the OS browser) can pop the Electron app back to the front with a single
-// click on "Return to PrintShop Hub". The protocol payload is discarded — we
+// click on "Return to Atba3li". The protocol payload is discarded — we
 // use it as a focus signal, not a router.
-const PROTOCOL = 'printshop-hub';
+const PROTOCOL = 'atba3li';
 if (process.defaultApp && process.argv.length >= 2) {
   // In dev, `electron .` needs the script path passed through for the
   // registered handler to relaunch correctly.
@@ -170,7 +170,7 @@ if (process.defaultApp && process.argv.length >= 2) {
 
 // Second launch focuses the existing window instead of starting a second server
 // on an already-bound port. Also handles the case where Windows re-launches
-// the app because the OS browser opened a printshop-hub:// URL.
+// the app because the OS browser opened an atba3li:// URL.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
@@ -320,7 +320,7 @@ function createWindow() {
   // Render an inline error page they can screenshot and open DevTools from.
   mainWindow.webContents.on('did-fail-load', (_e, code, description, validatedURL) => {
     if (code === -3) return; // aborted (usually because we navigated away)
-    const html = `<!doctype html><meta charset="utf-8"><title>PrintShop Hub — load failed</title>
+    const html = `<!doctype html><meta charset="utf-8"><title>Atba3li — load failed</title>
       <body style="font:14px/1.5 -apple-system,Segoe UI,sans-serif;padding:32px;color:#111;background:#f8fafc">
         <h1 style="margin:0 0 8px">Couldn't load the app</h1>
         <p style="color:#555">The embedded server is running but the window failed to load its page.</p>
@@ -593,7 +593,7 @@ ipcMain.handle('print-data', async (_event, payload) => {
   }
   const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
   const ext = extension && /^\.[a-z0-9]+$/i.test(extension) ? extension : '.pdf';
-  const tmpPath = path.join(os.tmpdir(), `printshop-${crypto.randomBytes(8).toString('hex')}${ext}`);
+  const tmpPath = path.join(os.tmpdir(), `atba3li-${crypto.randomBytes(8).toString('hex')}${ext}`);
   fs.writeFileSync(tmpPath, buf);
   const cleanup = () => { try { fs.unlinkSync(tmpPath); } catch { /* already gone */ } };
   try {

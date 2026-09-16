@@ -1,4 +1,4 @@
-import { readPref } from "@localprint/shared/lib/prefs";
+import { readPref } from "@atba3li/shared/lib/prefs";
 /**
  * Open the admin SSE stream (`/api/events`).
  *

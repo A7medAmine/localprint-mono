@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { countPdfPagesFromBuffer } from '@localprint/shared/pdf';
+import { countPdfPagesFromBuffer } from '@atba3li/shared/pdf';
 
 async function countPdfPages(fullPath) {
   const bytes = fs.readFileSync(fullPath);

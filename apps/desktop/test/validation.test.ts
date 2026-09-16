@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { magicBytesMatch, isAllowedMime, ALLOWED_MIMES } from "@localprint/shared/validation";
+import { magicBytesMatch, isAllowedMime, ALLOWED_MIMES } from "@atba3li/shared/validation";
 import { attachmentRejectReason, MAX_ATTACHMENT_SIZE } from "../services/attachmentService.js";
 
 // Contract for Phase 4.2's packages/shared/src/validation.ts: the magic-byte

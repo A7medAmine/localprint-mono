@@ -1,2 +1,2 @@
-// Re-export shim. Real module lives in @localprint/shared (packages/shared/src/lib/useLanguage).
-export * from "@localprint/shared/lib/useLanguage";
+// Re-export shim. Real module lives in @atba3li/shared (packages/shared/src/lib/useLanguage).
+export * from "@atba3li/shared/lib/useLanguage";

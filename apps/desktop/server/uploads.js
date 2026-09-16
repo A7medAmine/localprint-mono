@@ -5,12 +5,12 @@ import path from "path";
 import fs from "fs";
 import { randomBytes } from "crypto";
 import { PDFDocument } from "pdf-lib";
-import { ALLOWED_MIMES, magicBytesMatch } from "@localprint/shared/validation";
-import { makeRateLimiter } from "@localprint/shared/http";
+import { ALLOWED_MIMES, magicBytesMatch } from "@atba3li/shared/validation";
+import { makeRateLimiter } from "@atba3li/shared/http";
 import db from "../db.js";
 import { UPLOADS_DIR } from "./config.js";
 
-// Signatures + the pure matcher live in @localprint/shared/validation
+// Signatures + the pure matcher live in @atba3li/shared/validation
 // (importable + tested); this wrapper does the disk read the server needs.
 export function validateMagicBytes(filePath, mimeType) {
   const buf = Buffer.alloc(16);
