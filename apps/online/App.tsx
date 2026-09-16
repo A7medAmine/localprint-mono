@@ -104,16 +104,21 @@ const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
 const ShopCard: React.FC<{ shop: PublicShop; isRtl: boolean }> = ({ shop, isRtl }) => {
   const phones = (shop.phoneNumbers || []).filter(Boolean);
   const hasContact = phones.length > 0 || !!shop.email;
+  // A shop can have a logo recorded but the image fail to load (mid-sync, or a
+  // stale record). Fall back to the lettermark rather than a broken-image icon.
+  const [logoBroken, setLogoBroken] = useState(false);
+  const showLogo = !!shop.logoUrl && !logoBroken;
 
   return (
     <div className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg dark:hover:border-indigo-800/50">
       <Link to={`/s/${shop.slug}/upload`} className="block">
         <div className="relative flex h-28 items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-indigo-100/70 dark:from-indigo-950/40 dark:via-gray-900 dark:to-indigo-900/20">
-          {shop.logoUrl ? (
+          {showLogo ? (
             <img
-              src={shop.logoUrl}
+              src={shop.logoUrl as string}
               alt=""
               loading="lazy"
+              onError={() => setLogoBroken(true)}
               className="max-h-20 max-w-[70%] object-contain drop-shadow-sm transition-transform duration-300 group-hover:scale-105"
             />
           ) : (

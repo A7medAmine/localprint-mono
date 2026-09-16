@@ -91,10 +91,12 @@ export const listShops = async () => {
   return data || [];
 };
 
-// The public profile fields the directory shows next to each shop. Anything
-// outside this list stays private — the `settings` bag also holds pricing,
-// tokens and internal keys like `_logo_filename`.
-const PUBLIC_DIRECTORY_SETTINGS = ['logoUrl', 'phoneNumbers', 'email', 'address', 'workingHours'];
+// The settings the directory reads for each shop. Anything outside this list
+// stays private — the `settings` bag also holds pricing and tokens.
+// `logo` holds the image itself (a data URL). It is read only to know whether
+// a shop has one — the directory hands out the /api/s/:slug/logo URL instead,
+// so a page listing 40 shops stays a few KB rather than a few MB.
+const PUBLIC_DIRECTORY_SETTINGS = ['shopName', 'logo', '_logo_filename', 'phoneNumbers', 'email', 'address', 'workingHours'];
 
 // Public storefront directory — what the platform root lists when a customer
 // lands without a shop slug. Active shops only, and no ids/tokens/timestamps.
@@ -132,8 +134,10 @@ export const listPublicShops = async () => {
     const profile = byShop.get(id) || {};
     return {
       slug,
-      name,
-      logoUrl: profile.logoUrl || null,
+      // `shops.name` is the name the shop was registered under; `shopName` is
+      // what the owner set in the app and what customers actually know it by.
+      name: (typeof profile.shopName === 'string' && profile.shopName.trim()) || name,
+      logoUrl: (profile.logo || profile._logo_filename) ? `/api/s/${slug}/logo` : null,
       phoneNumbers: Array.isArray(profile.phoneNumbers) ? profile.phoneNumbers : [],
       email: profile.email || null,
       address: profile.address || null,

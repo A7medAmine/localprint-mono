@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomBytes } from 'crypto';
-import db, { getSettings, getPaperTypes, getDiscountRules, updateSetting } from '../db.js';
+import { randomBytes, createHash } from 'crypto';
+import db, { getSettings, getPaperTypes, getDiscountRules, updateSetting, getInternalState, setInternalState } from '../db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,6 +149,50 @@ async function fetchWithRetry(url, options = {}, retries = 3, baseDelay = 1000) 
   return null;
 }
 
+// The logo lives on this machine as a file under UPLOADS_DIR, and the local
+// `logoUrl` setting is `/api/logo` — a path that only resolves against the
+// desktop server. Sending that string to the cloud is what left every
+// storefront and the public directory with a broken image. Send the bytes
+// instead, as a data URL the cloud can store and re-serve.
+const MAX_SYNCED_LOGO_BYTES = 256 * 1024;
+
+const LOGO_MIME_BY_EXT = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+};
+
+/**
+ * The current logo as a data URL, or null when the shop has none.
+ * Returns undefined when the file is unreadable or too big — the caller then
+ * leaves the cloud copy alone rather than clearing a logo over a read error.
+ */
+function readLocalLogo() {
+  const filename = getInternalState('_logo_filename');
+  if (!filename) return null;
+  const filePath = path.resolve(path.join(UPLOADS_DIR, String(filename)));
+  if (!filePath.startsWith(path.resolve(UPLOADS_DIR)) || !fs.existsSync(filePath)) return null;
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_SYNCED_LOGO_BYTES) {
+      log('warn', 'Logo too large to sync — skipping', { bytes: stat.size, max: MAX_SYNCED_LOGO_BYTES });
+      return undefined;
+    }
+    const mime = LOGO_MIME_BY_EXT[path.extname(filePath).toLowerCase()];
+    if (!mime) {
+      log('warn', 'Unsupported logo file type — skipping', { file: path.extname(filePath) });
+      return undefined;
+    }
+    return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`;
+  } catch (err) {
+    log('warn', 'Could not read logo for sync', { error: err.message });
+    return undefined;
+  }
+}
+
 export async function syncSettings() {
   const cfg = getConfig();
   const settings = getSettings();
@@ -169,8 +213,19 @@ export async function syncSettings() {
     autoAcceptCloudJobs: settings.autoAcceptCloudJobs !== false,
   };
 
+  // Settings sync runs on every save and on a timer; re-uploading the same
+  // ~100KB image each time would be pure waste, so the logo rides along only
+  // when it actually changed since the last accepted sync.
+  const logoDataUrl = readLocalLogo();
+  const logoFingerprint = logoDataUrl === undefined
+    ? undefined
+    : (logoDataUrl === null ? 'none' : createHash('sha256').update(logoDataUrl).digest('hex'));
+  const logoChanged = logoFingerprint !== undefined
+    && logoFingerprint !== getInternalState('_cloud_logo_fingerprint');
+
   const payload = {
     pricing,
+    ...(logoChanged ? { logo: logoDataUrl } : {}),
     paperTypes: paperTypes.map(pt => ({
       id: pt.id,
       name: pt.name,
@@ -199,6 +254,11 @@ export async function syncSettings() {
 
   if (res && res.ok) {
     log('info', 'Settings synced to cloud');
+    if (logoChanged) {
+      // Only after the cloud accepted it — a failed sync must retry the upload.
+      setInternalState('_cloud_logo_fingerprint', logoFingerprint);
+      log('info', 'Logo pushed to cloud', { cleared: logoDataUrl === null });
+    }
     // The cloud owns the shop slug; cache it locally so the QR poster can
     // link to this shop's storefront (/s/<slug>/upload) instead of the
     // platform root.

@@ -73,7 +73,7 @@ function validateMagicBytes(filePath, mimeType) {
 }
 
 // ── Settings exposure control ──
-// The per-shop `settings` KV bag also holds internal keys (`_logo_filename`,
+// The per-shop `settings` KV bag also holds internal keys (`logo`, `_logo_filename`,
 // cached tokens, ...). The public price-calculator endpoint gets an allowlist
 // only; the shop's own desktop app pulls the full set over its shop token.
 const PUBLIC_SETTINGS_KEYS = new Set([
@@ -351,7 +351,15 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "256kb" }));
+// 256kb is plenty for every request except the shop settings sync, which
+// carries the shop's logo inline as a data URL (up to 256KB of image, ~342KB
+// once base64-encoded). Give that one route its own ceiling instead of raising
+// the limit for every unauthenticated endpoint.
+const jsonParser = express.json({ limit: "256kb" });
+const settingsSyncJsonParser = express.json({ limit: "1mb" });
+app.use((req, res, next) =>
+  (req.path === "/api/shop/settings-sync" ? settingsSyncJsonParser : jsonParser)(req, res, next),
+);
 app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
 if (isDev) {
@@ -922,9 +930,45 @@ app.get("/api/s/:shopSlug/files/public/:id", resolveShopBySlug, async (req, res)
   }
 });
 
-// Public logo access
+// Accepted logo formats, and the ceiling the desktop app already enforces on
+// its side. Kept in sync with MAX_SYNCED_LOGO_BYTES in apps/desktop/services/cloudSync.js.
+const LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]);
+const MAX_LOGO_BYTES = 256 * 1024;
+
+/** Validate a `data:image/...;base64,...` URL and return its decoded bytes. */
+function parseLogoDataUrl(dataUrl) {
+  const match = /^data:([\w/+.-]+);base64,([\s\S]+)$/.exec(String(dataUrl || ""));
+  if (!match || !LOGO_MIME_TYPES.has(match[1])) return null;
+  let buffer;
+  try {
+    buffer = Buffer.from(match[2], "base64");
+  } catch {
+    return null;
+  }
+  if (buffer.length === 0 || buffer.length > MAX_LOGO_BYTES) return null;
+  return { contentType: match[1], buffer };
+}
+
+// Public logo access. The image is stored as a data URL in the shop's settings
+// (pushed by the desktop app) rather than on disk: this runs on Vercel, where
+// the filesystem is a per-invocation tmpdir and any uploaded file is gone by
+// the next request. It is still served as a real image response so the
+// directory and storefront pages carry a URL, not a megabyte of base64.
 app.get("/api/s/:shopSlug/logo", resolveShopBySlug, async (req, res) => {
   const settings = await getSettings(req.shop.id);
+
+  const logo = parseLogoDataUrl(settings.logo);
+  if (logo) {
+    const etag = `"${createHash("sha256").update(logo.buffer).digest("hex").slice(0, 32)}"`;
+    res.set("Content-Type", logo.contentType);
+    res.set("Cache-Control", "public, max-age=300");
+    res.set("ETag", etag);
+    if (req.headers["if-none-match"] === etag) return res.status(304).end();
+    return res.send(logo.buffer);
+  }
+
+  // Self-hosted deployments with a durable disk can still have the older
+  // file-backed logo.
   const filename = settings._logo_filename;
   if (!filename) return res.status(404).json({ error: "No logo" });
   const filePath = path.resolve(path.join(UPLOADS_DIR, filename));
@@ -946,7 +990,12 @@ app.get("/api/shops", async (req, res) => {
 });
 
 app.get("/api/s/:shopSlug/settings", resolveShopBySlug, async (req, res) => {
-  const settings = pickPublicSettings(await getSettings(req.shop.id));
+  const raw = await getSettings(req.shop.id);
+  const settings = pickPublicSettings(raw);
+  // Never hand the browser whatever `logoUrl` happens to be stored: shops
+  // synced by an older desktop build have "/api/logo", which resolves only on
+  // the shop's own machine. The logo is always served from this one route.
+  settings.logoUrl = (raw.logo || raw._logo_filename) ? `/api/s/${req.shop.slug}/logo` : null;
   settings.paperTypes = await getPaperTypes(req.shop.id);
   res.status(200).json(settings);
 });
@@ -1211,8 +1260,19 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
     if (pricing?.returnPolicy) {
       await updateSetting(shopId, 'returnPolicy', pricing.returnPolicy);
     }
-    if (pricing?.logoUrl) {
-      await updateSetting(shopId, 'logoUrl', pricing.logoUrl);
+    // `logo` is a data URL pushed by the desktop app whenever the image
+    // changes. It used to send `pricing.logoUrl`, which was the string
+    // "/api/logo" — a path that only resolves on the shop's own machine, so
+    // every cloud storefront rendered a broken image. Store the bytes; the
+    // browser gets them from /api/s/:slug/logo, never the data URL itself.
+    if (typeof req.body.logo === 'string') {
+      const logo = parseLogoDataUrl(req.body.logo);
+      if (!logo) return res.status(400).json({ error: 'Invalid logo' });
+      await updateSetting(shopId, 'logo', req.body.logo);
+      await updateSetting(shopId, 'logoUrl', `/api/s/${req.shop.slug}/logo`);
+    } else if (req.body.logo === null) {
+      await updateSetting(shopId, 'logo', '');
+      await updateSetting(shopId, 'logoUrl', '');
     }
     if (typeof pricing?.autoAcceptCloudJobs === 'boolean') {
       await updateSetting(shopId, 'autoAcceptCloudJobs', pricing.autoAcceptCloudJobs);
