@@ -1,5 +1,6 @@
 import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment } from "../types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
+import { normalizeLocation } from "@atba3li/shared/geo";
 
 /** What the write endpoints answer with: success, plus how many rows moved. */
 export interface MutationResult {
@@ -313,6 +314,8 @@ class StorageService {
     address?: string;
     workingHours?: string;
     returnPolicy?: string;
+    /** null clears the shop's map pin; omitted leaves it untouched. */
+    location?: import("@atba3li/shared/geo").ShopLocation | null;
     currency?: string;
     cloudSyncUrl?: string;
     cloudShopSlug?: string;
@@ -456,6 +459,7 @@ class StorageService {
         address: settings?.address || undefined,
         workingHours: settings?.workingHours || undefined,
         returnPolicy: settings?.returnPolicy || undefined,
+        location: normalizeLocation(settings?.location),
         currency: settings?.currency || undefined,
         cloudSyncUrl: settings?.cloudSyncUrl || undefined,
         cloudShopSlug: settings?.cloudShopSlug || undefined,
@@ -471,6 +475,21 @@ class StorageService {
     } catch {
       return { shopName: "Atba3li", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
     }
+  }
+
+  /**
+   * Turn a short map link into coordinates. The server does the redirect
+   * follow — the renderer can't, because the map hosts don't send CORS headers
+   * for a cross-origin read. Returns null when the link carries no position.
+   */
+  async resolveMapLink(url: string): Promise<{ lat: number; lng: number } | null> {
+    const result = await this.safeFetch("/api/settings/resolve-location-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!result?.success) return null;
+    return { lat: result.lat, lng: result.lng };
   }
 
   async uploadLogo(file: File): Promise<string> {

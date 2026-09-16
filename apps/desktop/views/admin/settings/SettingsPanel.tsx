@@ -31,6 +31,9 @@ import { BackupCard } from "./BackupCard";
 import { PrintersCard } from "./PrintersCard";
 import { Icon } from "../../../components/ui/icon";
 import { errorMessage } from "@atba3li/shared";
+import type { ShopLocation } from "@atba3li/shared/geo";
+import { directionsUrl } from "@atba3li/shared/geo";
+import LocationPicker from "@atba3li/shared/components/map/LocationPicker";
 
 interface JobStats {
   pending: number;
@@ -76,6 +79,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   const [address, setAddress] = useState(currentSettings.address || "");
   const [workingHours, setWorkingHours] = useState(currentSettings.workingHours || "");
   const [returnPolicy, setReturnPolicy] = useState(currentSettings.returnPolicy || "");
+  const [location, setLocation] = useState<ShopLocation | null>(currentSettings.location ?? null);
+  const [locationOpen, setLocationOpen] = useState(false);
   const [showAddPaperTypeForm, setShowAddPaperTypeForm] = useState(false);
   const [newPaperTypeForm, setNewPaperTypeForm] = useState({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 });
   const [cloudSyncUrl, setCloudSyncUrl] = useState(currentSettings.cloudSyncUrl || "");
@@ -126,6 +131,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     if (clean(address, prev?.address ?? "")) setAddress(currentSettings.address || "");
     if (clean(workingHours, prev?.workingHours ?? "")) setWorkingHours(currentSettings.workingHours || "");
     if (clean(returnPolicy, prev?.returnPolicy ?? "")) setReturnPolicy(currentSettings.returnPolicy || "");
+    if (clean(location, prev?.location ?? null)) setLocation(currentSettings.location ?? null);
     if (clean(cloudSyncUrl, prev?.cloudSyncUrl ?? "")) setCloudSyncUrl(currentSettings.cloudSyncUrl || "");
     if (clean(cloudShopSlug, prev?.cloudShopSlug ?? "")) setCloudShopSlug(currentSettings.cloudShopSlug || "");
     if (clean(shopApiToken, prev?.shopApiToken ?? "")) setShopApiToken(currentSettings.shopApiToken || "");
@@ -298,7 +304,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
   };
 
   const saveShopInfo = () =>
-    persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy });
+    persistSection("shop", { shopName, currency, phoneNumbers, email, address, workingHours, returnPolicy, location });
   const saveCloudSync = () =>
     persistSection("cloud", { cloudSyncUrl, cloudShopSlug, shopApiToken, cloudSyncPollInterval, autoAcceptCloudJobs });
   // Round-trip the cloud with either the typed-but-unsaved credentials or the
@@ -358,7 +364,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     email !== (currentSettings.email || "") ||
     address !== (currentSettings.address || "") ||
     workingHours !== (currentSettings.workingHours || "") ||
-    returnPolicy !== (currentSettings.returnPolicy || "");
+    returnPolicy !== (currentSettings.returnPolicy || "") ||
+    !eq(location, currentSettings.location ?? null);
   const cloudDirty =
     cloudSyncUrl !== (currentSettings.cloudSyncUrl || "") ||
     cloudShopSlug !== (currentSettings.cloudShopSlug || "") ||
@@ -511,6 +518,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
                   <div>
                     <label className="block text-sm font-semibold text-foreground mb-2">{t("shopAddress")}</label>
                     <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={isRtl ? "عنوان المحل" : "123 Main St, City"} />
+                  </div>
+
+                  {/* Map location — the pin the cloud directory sorts by */}
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">
+                      {isRtl ? "الموقع على الخريطة" : "Map location"}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+                        {location ? (
+                          <span dir="ltr" className="font-mono text-xs">
+                            {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {isRtl ? "لم يتم تحديد موقع" : "Not set"}
+                          </span>
+                        )}
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => setLocationOpen(true)}>
+                        <Icon name="map-pin" className="h-4 w-4" />
+                        {location ? (isRtl ? "تعديل" : "Change") : (isRtl ? "تحديد" : "Set")}
+                      </Button>
+                      {location && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => window.open(directionsUrl(location) || "", "_blank", "noopener")}
+                        >
+                          {isRtl ? "عرض" : "Open"}
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {isRtl
+                        ? "يظهر على صفحة المحل ويُستعمل لإيجاد أقرب محل للزبون."
+                        : "Shown on your storefront and used to find the nearest shop to a customer."}
+                    </p>
                   </div>
 
                   {/* Working Hours */}
@@ -989,6 +1034,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
         shopSettings={currentSettings}
         allowPrint
       />
+      {/* Map location picker. Mounted only while open so Leaflet is never
+          loaded for an operator who is editing prices. */}
+      <Dialog open={locationOpen} onOpenChange={setLocationOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isRtl ? "موقع المحل" : "Shop location"}</DialogTitle>
+          </DialogHeader>
+          {locationOpen && (
+            <LocationPicker
+              value={location}
+              onChange={setLocation}
+              isRtl={isRtl}
+              resolveShortLink={(url: string) => storageService.resolveMapLink(url)}
+            />
+          )}
+          <DialogFooter>
+            <Button onClick={() => setLocationOpen(false)}>{isRtl ? "تم" : "Done"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Rule Confirmation */}
       <AlertDialog open={deleteRuleConfirm !== null} onOpenChange={(open) => { if (!open) setDeleteRuleConfirm(null); }}>
         <AlertDialogContent>

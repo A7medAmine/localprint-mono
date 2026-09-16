@@ -209,6 +209,7 @@ export async function syncSettings() {
     email: settings.email || '',
     address: settings.address || '',
     workingHours: settings.workingHours || '',
+    location: settings.location || null,
     returnPolicy: settings.returnPolicy || '',
     autoAcceptCloudJobs: settings.autoAcceptCloudJobs !== false,
   };

@@ -5,6 +5,8 @@ import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import { TRANSLATIONS } from "./constants";
 import { storageService, PublicShop } from "./services/storageService";
+import { directionsUrl, formatDistance, sortByDistance } from "@atba3li/shared/geo";
+import type { Coordinates } from "@atba3li/shared/geo";
 // The upload flow pulls in pdf.js and xlsx for previews; the account page is a
 // separate concern entirely. Neither belongs in the first paint of the other.
 const UploadView = lazy(() => import("./views/UploadView"));
@@ -40,6 +42,36 @@ const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
 const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
   const [shops, setShops] = useState<PublicShop[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // The customer's position, once they ask for it. Never requested on load:
+  // a permission prompt nobody asked for is the fastest way to get a
+  // permanent "block" on the origin, which would kill the feature for good.
+  const [origin, setOrigin] = useState<Coordinates | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
+
+  const locateMe = () => {
+    if (!navigator.geolocation) {
+      setLocateError(isRtl ? "جهازك لا يدعم تحديد الموقع." : "This device can't share a location.");
+      return;
+    }
+    setLocating(true);
+    setLocateError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setOrigin({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocating(false);
+      },
+      (error) => {
+        setLocating(false);
+        setLocateError(
+          error.code === error.PERMISSION_DENIED
+            ? (isRtl ? "تم رفض إذن الموقع." : "Location permission was refused.")
+            : (isRtl ? "تعذر تحديد موقعك." : "Could not get your location."),
+        );
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +97,11 @@ const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
     return <RouteFallback />;
   }
 
+  // Distance sorting happens here, not on the server: the directory endpoint
+  // already returns every active shop, so the browser has everything it needs
+  // and the customer's coordinates never leave their device.
+  const ordered = sortByDistance(shops, origin);
+
   return (
     <div className="w-full max-w-5xl mx-auto mt-8 px-1">
       <div className="text-center">
@@ -84,10 +121,27 @@ const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
         </p>
       </div>
 
+      <div className="mt-6 flex flex-col items-center gap-2">
+        <button
+          type="button"
+          onClick={locateMe}
+          disabled={locating}
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent disabled:opacity-60"
+        >
+          <Icon name="map-pin" className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+          {locating
+            ? (isRtl ? "جارٍ تحديد موقعك…" : "Finding you…")
+            : origin
+              ? (isRtl ? "مرتَّبة حسب الأقرب إليك" : "Sorted by distance from you")
+              : (isRtl ? "أقرب محل إليّ" : "Find the nearest shop")}
+        </button>
+        {locateError && <p className="text-xs text-muted-foreground">{locateError}</p>}
+      </div>
+
       <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {shops.map((shop) => (
+        {ordered.map((shop) => (
           <li key={shop.slug}>
-            <ShopCard shop={shop} isRtl={isRtl} />
+            <ShopCard shop={shop} isRtl={isRtl} distanceKm={shop.distanceKm} />
           </li>
         ))}
       </ul>
@@ -101,13 +155,19 @@ const ShopDirectory: React.FC<{ isRtl: boolean }> = ({ isRtl }) => {
 // fixed box is the only thing that keeps both readable. Shops with no logo get
 // the shop's first letter rather than a generic icon, so the cards still
 // differ from each other at a glance.
-const ShopCard: React.FC<{ shop: PublicShop; isRtl: boolean }> = ({ shop, isRtl }) => {
+const ShopCard: React.FC<{
+  shop: PublicShop;
+  isRtl: boolean;
+  /** Straight-line distance from the customer, once they've shared a position. */
+  distanceKm?: number | null;
+}> = ({ shop, isRtl, distanceKm }) => {
   const phones = (shop.phoneNumbers || []).filter(Boolean);
   const hasContact = phones.length > 0 || !!shop.email;
   // A shop can have a logo recorded but the image fail to load (mid-sync, or a
   // stale record). Fall back to the lettermark rather than a broken-image icon.
   const [logoBroken, setLogoBroken] = useState(false);
   const showLogo = !!shop.logoUrl && !logoBroken;
+  const directions = directionsUrl(shop.location);
 
   return (
     <div className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg dark:hover:border-indigo-800/50">
@@ -145,13 +205,35 @@ const ShopCard: React.FC<{ shop: PublicShop; isRtl: boolean }> = ({ shop, isRtl 
           </p>
         </div>
 
-        {(shop.address || shop.workingHours) && (
+        {typeof distanceKm === "number" && (
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+            <Icon name="map-pin" className="h-3 w-3" />
+            {/* Straight-line, not a driving route — the label says "away",
+                never a travel time. */}
+            {isRtl
+              ? `${formatDistance(distanceKm, "ar")} عنك`
+              : `${formatDistance(distanceKm)} away`}
+          </span>
+        )}
+
+        {(shop.address || shop.workingHours || directions) && (
           <div className="space-y-1.5 text-xs text-muted-foreground">
             {shop.address && (
               <p className="flex items-start gap-2">
                 <Icon name="map-pin" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500 dark:text-indigo-400" />
                 <span dir="auto" className="line-clamp-2">{shop.address}</span>
               </p>
+            )}
+            {directions && (
+              <a
+                href={directions}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                <Icon name="link" className="h-3.5 w-3.5" />
+                {isRtl ? "الاتجاهات" : "Directions"}
+              </a>
             )}
             {shop.workingHours && (
               <p className="flex items-start gap-2">

@@ -59,6 +59,7 @@ import {
   safeEqual,
 } from './auth/adminAuth.js';
 import { countPdfPagesFromBuffer } from '@atba3li/shared/pdf';
+import { normalizeLocation } from '@atba3li/shared/geo';
 import { calculatePrintPrice, calculateJobDiscount } from '@atba3li/shared/pricing';
 
 // ── Magic byte validation ──
@@ -79,6 +80,7 @@ function validateMagicBytes(filePath, mimeType) {
 const PUBLIC_SETTINGS_KEYS = new Set([
   "shopName", "logoUrl", "pricing", "discounts",
   "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
+  "location",
   "currency",
 ]);
 
@@ -1259,6 +1261,17 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
     }
     if (pricing?.returnPolicy) {
       await updateSetting(shopId, 'returnPolicy', pricing.returnPolicy);
+    }
+    // The map pin. Re-validated here rather than trusted: this payload comes
+    // from a desktop install holding a shop token, and the result is served to
+    // every customer browsing the directory. An explicit null clears the pin;
+    // a malformed one is dropped and leaves the stored pin alone, so a bad
+    // sync never wipes a working location.
+    if (pricing?.location === null) {
+      await updateSetting(shopId, 'location', '');
+    } else if (pricing?.location) {
+      const location = normalizeLocation(pricing.location);
+      if (location) await updateSetting(shopId, 'location', location);
     }
     // `logo` is a data URL pushed by the desktop app whenever the image
     // changes. It used to send `pricing.logoUrl`, which was the string

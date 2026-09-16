@@ -7,6 +7,8 @@
 export const PUBLIC_SETTINGS_KEYS = new Set([
   "shopName", "logoUrl", "pricing", "discounts",
   "phoneNumbers", "email", "address", "workingHours", "returnPolicy",
+  // The map pin is public by design — it is how a customer finds the shop.
+  "location",
   "currency",
   // Public storefront link — the customer share sheet builds its QR from these.
   // Both are already public information (the site URL and its slug).

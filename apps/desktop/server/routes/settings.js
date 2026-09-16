@@ -17,6 +17,7 @@ import {
   pickPublicSettings,
   stripSecretSettings,
 } from "../settingsView.js";
+import { normalizeLocation, isShortMapLink, parseMapUrl } from "@atba3li/shared/geo";
 
 export function registerSettingsRoutes(app) {
   // Get settings
@@ -112,6 +113,60 @@ export function registerSettingsRoutes(app) {
     }
   });
 
+  // Turn a pasted map link into coordinates. Most links carry the position in
+  // the URL and the client parses them itself; this endpoint exists for the
+  // short ones (maps.app.goo.gl/...), which carry nothing until they are
+  // followed. That means an outbound request, so it is admin-only and the host
+  // allowlist below is the SSRF guard — a pasted "http://localhost:9000/admin"
+  // must never become a request this server makes on the operator's behalf.
+  const SHORT_LINK_ALLOWED_HOSTS = new Set([
+    'maps.app.goo.gl', 'goo.gl', 'g.co', 'w.waze.com', 'maps.google.com',
+    'www.google.com', 'google.com',
+  ]);
+  const MAX_REDIRECT_HOPS = 3;
+
+  app.post("/api/settings/resolve-location-url", requireAdmin, async (req, res) => {
+    const raw = String(req.body?.url || '').trim();
+    if (!raw) return res.status(400).json({ success: false, error: "No URL provided" });
+
+    // A link that already carries the position needs no network at all.
+    const direct = parseMapUrl(raw);
+    if (direct) return res.status(200).json({ success: true, ...direct, resolved: false });
+
+    if (!isShortMapLink(raw)) {
+      return res.status(422).json({ success: false, error: "That link has no location in it" });
+    }
+
+    let current = raw;
+    try {
+      for (let hop = 0; hop < MAX_REDIRECT_HOPS; hop++) {
+        const url = new URL(current);
+        if (url.protocol !== 'https:' || !SHORT_LINK_ALLOWED_HOSTS.has(url.hostname)) {
+          return res.status(422).json({ success: false, error: "Unsupported map link" });
+        }
+
+        const response = await fetch(url, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: AbortSignal.timeout(5000),
+          headers: { 'User-Agent': 'Atba3li/1.0 (shop location resolver)' },
+        });
+
+        const next = response.headers.get('location');
+        if (!next) break;
+        current = new URL(next, url).toString();
+
+        const found = parseMapUrl(current);
+        if (found) return res.status(200).json({ success: true, ...found, resolved: true });
+      }
+    } catch (err) {
+      console.error("❌ Failed to resolve map link:", err.message);
+      return res.status(502).json({ success: false, error: "Could not reach the map service" });
+    }
+
+    return res.status(422).json({ success: false, error: "That link has no location in it" });
+  });
+
   // Update settings (shop info only; paper types use dedicated endpoints)
   app.post("/api/settings", requireAdmin, (req, res) => {
     try {
@@ -157,6 +212,20 @@ export function registerSettingsRoutes(app) {
       }
       if (req.body.workingHours !== undefined) {
         updateSetting('workingHours', req.body.workingHours);
+      }
+      // The map pin. `null` clears it; anything that doesn't normalize into a
+      // real coordinate pair is rejected outright rather than stored half-set,
+      // because a bad pin sends customers to the wrong place silently.
+      if (req.body.location !== undefined) {
+        if (req.body.location === null) {
+          updateSetting('location', null);
+        } else {
+          const location = normalizeLocation(req.body.location);
+          if (!location) {
+            return res.status(400).json({ success: false, error: "Invalid location coordinates" });
+          }
+          updateSetting('location', location);
+        }
       }
       if (req.body.returnPolicy !== undefined) {
         updateSetting('returnPolicy', req.body.returnPolicy);
