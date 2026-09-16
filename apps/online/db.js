@@ -40,21 +40,75 @@ const slugify = (name) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'shop';
 
+// ── shop lookup cache ────────────────────────────────────────────────────
+// Every authenticated shop request (requireShopToken) and every storefront
+// page view (resolveShopBySlug) resolved the shop with its own Supabase
+// round-trip BEFORE doing any real work. A shop row changes when an operator
+// renames it, deactivates it or rotates its token — measured in times per
+// year, not per second — so it is cached briefly in process.
+//
+// Deliberately short: a cache miss costs one indexed lookup, while a stale
+// entry keeps a deactivated shop or a rotated token alive. Both mutation paths
+// (updateShop, rotateShopToken) evict explicitly, so the TTL only has to cover
+// changes made outside this process.
+const SHOP_CACHE_TTL_MS = 30_000;
+const shopCache = new Map(); // cacheKey -> { shop, expiresAt }
+
+const shopCacheGet = (key) => {
+  const hit = shopCache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    shopCache.delete(key);
+    return undefined;
+  }
+  return hit.shop;
+};
+
+const shopCacheSet = (key, shop) => {
+  shopCache.set(key, { shop, expiresAt: Date.now() + SHOP_CACHE_TTL_MS });
+};
+
+// A shop is reachable under two keys (slug and token hash) and a rename or
+// rotation changes one of them, so eviction drops every entry for that id
+// rather than trying to guess which key is stale.
+export const invalidateShopCache = (shopId) => {
+  for (const [key, entry] of shopCache) {
+    if (!entry.shop || entry.shop.id === shopId) shopCache.delete(key);
+  }
+};
+
 export const getShopBySlug = async (slug) => {
+  const key = `slug:${slug}`;
+  const cached = shopCacheGet(key);
+  if (cached !== undefined) return cached;
+
   const { data, error } = await supabase.from('shops').select('*').eq('slug', slug).single();
   if (error) {
-    if (error.code === 'PGRST116') return null;
+    if (error.code === 'PGRST116') {
+      // Cache the miss too — an unknown slug is exactly what a scanner hammers.
+      shopCacheSet(key, null);
+      return null;
+    }
     throw error;
   }
+  shopCacheSet(key, data);
   return data;
 };
 
 export const getShopByTokenHash = async (tokenHash) => {
+  const key = `token:${tokenHash}`;
+  const cached = shopCacheGet(key);
+  if (cached !== undefined) return cached;
+
   const { data, error } = await supabase.from('shops').select('*').eq('token_hash', tokenHash).single();
   if (error) {
-    if (error.code === 'PGRST116') return null;
+    if (error.code === 'PGRST116') {
+      shopCacheSet(key, null);
+      return null;
+    }
     throw error;
   }
+  shopCacheSet(key, data);
   return data;
 };
 
@@ -151,47 +205,16 @@ export const listPublicShops = async () => {
   });
 };
 
-// Platform-wide + per-shop stats for the admin dashboard. Orders are fetched
-// in full and aggregated in JS — Supabase's JS client has no cross-row SUM,
-// and order volume here is small enough that this stays cheap.
+// Platform-wide + per-shop stats for the admin dashboard.
+//
+// One RPC, aggregated in Postgres (005_server_side_aggregates). This used to
+// select every order row and sum them in JS, which PostgREST silently truncated
+// at its max-rows cap — the dashboard reported the first page of orders as the
+// platform total.
 export const getPlatformStats = async () => {
-  const [{ data: shops, error: shopsErr }, { data: orders, error: ordersErr }] = await Promise.all([
-    supabase.from('shops').select('id, slug, name, is_active'),
-    supabase.from('orders').select('shop_id, pagecount, total_price, copies, uploaddate'),
-  ]);
-  if (shopsErr) throw shopsErr;
-  if (ordersErr) throw ordersErr;
-
-  const byShop = new Map((shops || []).map((s) => [s.id, {
-    id: s.id, slug: s.slug, name: s.name, isActive: s.is_active !== false,
-    orderCount: 0, totalPages: 0,
-  }]));
-
-  let totalOrders = 0, totalPages = 0, totalRevenue = 0, ordersLast30d = 0;
-  const since30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  for (const o of orders || []) {
-    const pages = (Number(o.pagecount) || 0) * (Number(o.copies) || 1);
-    const revenue = Number(o.total_price) || 0;
-    totalOrders += 1;
-    totalPages += pages;
-    totalRevenue += revenue;
-    if (o.uploaddate && new Date(o.uploaddate).getTime() >= since30) ordersLast30d += 1;
-    const s = byShop.get(o.shop_id);
-    if (s) {
-      s.orderCount += 1;
-      s.totalPages += pages;
-    }
-  }
-
-  return {
-    totalShops: (shops || []).length,
-    activeShops: (shops || []).filter((s) => s.is_active !== false).length,
-    totalOrders,
-    totalPages,
-    totalRevenue,
-    ordersLast30d,
-    shops: [...byShop.values()].sort((a, b) => b.orderCount - a.orderCount),
-  };
+  const { data, error } = await supabase.rpc('get_platform_stats');
+  if (error) throw error;
+  return data;
 };
 
 export const rotateShopToken = async (id) => {
@@ -204,6 +227,7 @@ export const rotateShopToken = async (id) => {
     .single();
   if (error) throw error;
   if (!data) return null;
+  invalidateShopCache(id);
   return { ...data, token };
 };
 
@@ -220,6 +244,7 @@ export const updateShop = async (id, { name, slug, is_active } = {}) => {
     .select('id, slug, name, is_active')
     .single();
   if (error) throw error;
+  invalidateShopCache(id);
   return data;
 };
 
@@ -361,12 +386,25 @@ export const upsertProfile = async (userId, fields) => {
 // No FK relationship is declared between orders.shop_id and shops.id, so this
 // can't use PostgREST embedding — fetch orders then batch-lookup shops in JS,
 // matching the rest of this file's style.
-export const getCustomerOrders = async (userId) => {
+// `limit`/`offset` are clamped here rather than trusted from the query string:
+// this used to fetch a customer's entire history unbounded on every account
+// page load.
+export const CUSTOMER_ORDERS_PAGE_DEFAULT = 50;
+export const CUSTOMER_ORDERS_PAGE_MAX = 200;
+
+export const getCustomerOrders = async (userId, { limit, offset = 0 } = {}) => {
+  const take = Math.min(
+    CUSTOMER_ORDERS_PAGE_MAX,
+    Math.max(1, Math.trunc(Number(limit)) || CUSTOMER_ORDERS_PAGE_DEFAULT),
+  );
+  const skip = Math.max(0, Math.trunc(Number(offset)) || 0);
+
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
     .eq('user_id', userId)
-    .order('uploaddate', { ascending: false });
+    .order('uploaded_at', { ascending: false })
+    .range(skip, skip + take - 1);
   if (error) throw error;
   if (!orders || orders.length === 0) return [];
 
@@ -444,20 +482,22 @@ export const getPaperTypes = async (shopId) => {
   return (data || []).map(toCamelPaperType);
 };
 
+// Atomic replace via a single Postgres transaction (003_paper_types_per_shop_pk).
+// The old DELETE-then-INSERT pair could leave a shop with no paper types at all
+// when the insert failed, which is exactly what happened while the primary key
+// was still global: 'normal' / 'glossy' / 'cardboard' are seeded identically by
+// every desktop install, so the second shop to sync collided with the first.
 export const replaceAllPaperTypes = async (shopId, types) => {
-  const { error: delError } = await supabase.from('paper_types').delete().eq('shop_id', shopId);
-  if (delError && delError.code !== 'PGRST116') throw delError;
-  if (types.length === 0) return;
-  const rows = types.map((pt, idx) => ({
-    id: pt.id,
-    shop_id: shopId,
-    name: pt.name,
-    namear: pt.nameAr || pt.name,
-    colorperpage: pt.colorPerPage,
-    blackwhiteperpage: pt.blackWhitePerPage,
-    sortorder: idx,
-  }));
-  const { error } = await supabase.from('paper_types').insert(rows);
+  const { error } = await supabase.rpc('replace_shop_paper_types', {
+    p_shop_id: shopId,
+    p_types: types.map((pt) => ({
+      id: pt.id,
+      name: pt.name,
+      nameAr: pt.nameAr || pt.name,
+      colorPerPage: pt.colorPerPage,
+      blackWhitePerPage: pt.blackWhitePerPage,
+    })),
+  });
   if (error) throw error;
 };
 
@@ -493,13 +533,12 @@ export const updatePaperType = async (shopId, id, updates) => {
   return data;
 };
 
+// Delete + resequence in one statement. The old version issued one UPDATE per
+// surviving row to close the gap in sortorder, and a failure partway through
+// left the list inconsistently numbered.
 export const deletePaperType = async (shopId, id) => {
-  const { error } = await supabase.from('paper_types').delete().eq('shop_id', shopId).eq('id', id);
+  const { error } = await supabase.rpc('delete_paper_type', { p_shop_id: shopId, p_id: id });
   if (error) throw error;
-  const { data: remaining } = await supabase.from('paper_types').select('id').eq('shop_id', shopId).order('sortorder', { ascending: true });
-  for (let i = 0; i < (remaining || []).length; i++) {
-    await supabase.from('paper_types').update({ sortorder: i }).eq('shop_id', shopId).eq('id', remaining[i].id);
-  }
 };
 
 /**

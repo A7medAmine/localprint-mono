@@ -4,6 +4,7 @@ import compression from "compression";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import fsp from "fs/promises";
 import os from "os";
 import { fileURLToPath } from "url";
 import { randomBytes, randomUUID, createHash } from "crypto";
@@ -334,6 +335,15 @@ const DIST_DIR = path.join(__dirname, "dist");
 // durable one.
 const UPLOADS_DIR = isVercel ? path.join(os.tmpdir(), "atba3li-uploads") : path.join(__dirname, "uploads");
 
+// Upper bound on a single order's copies. Caps the damage from a tampered or
+// fat-fingered value before it reaches the price calculator and the DB.
+const MAX_COPIES = 1000;
+
+// Upper bound on a caller-supplied id list. Both the "my recent uploads" query
+// and the SSE stream take an id array straight off the client, which meant one
+// request could ask Postgres for an arbitrarily long IN (...) list.
+const MAX_ID_LOOKUP = 100;
+
 const app = express();
 
 // Cloudflare + the box's reverse proxy sit in front — trust one proxy hop so
@@ -399,7 +409,7 @@ if (!fs.existsSync(DIST_DIR) && !isDev) {
  */
 const getPdfPageCount = async (filePath) => {
   try {
-    const fileBuffer = fs.readFileSync(filePath);
+    const fileBuffer = await fsp.readFile(filePath);
     const pageCount = await countPdfPagesFromBuffer(fileBuffer);
     console.log(`📄 PDF page count for ${path.basename(filePath)}: ${pageCount}`);
     return pageCount;
@@ -409,43 +419,93 @@ const getPdfPageCount = async (filePath) => {
   }
 };
 
-// Backfill missing pageCount for existing PDF orders (runs once at startup)
+// Background maintenance runs on ONE instance only. Both of these jobs walk
+// the whole orders table; with more than one web process every copy would do
+// the same work, race the same rows and unlink the same files.
+//
+// The lease lives in Postgres (maintenance_leases, 005_server_side_aggregates)
+// rather than being a pg advisory lock, because Supabase's pooler does not
+// guarantee the same backend connection across two calls — a session-level
+// lock could be taken and never released. The lease expires instead, so an
+// instance that dies mid-job costs one skipped run, not a permanent stall.
+const MAINTENANCE_HOLDER = `${process.pid}-${randomBytes(4).toString('hex')}`;
+const MAINTENANCE_LEASE_TTL_S = 15 * 60;
+
+const withMaintenanceLease = async (name, fn) => {
+  const { data: taken, error } = await supabase.rpc('take_maintenance_lease', {
+    p_name: name,
+    p_holder: MAINTENANCE_HOLDER,
+    p_ttl_seconds: MAINTENANCE_LEASE_TTL_S,
+  });
+  if (error) {
+    console.error(`❌ ${name}: could not take the maintenance lease:`, error.message);
+    return;
+  }
+  if (taken !== true) return; // another instance holds it
+
+  try {
+    await fn();
+  } finally {
+    const { error: relErr } = await supabase.rpc('release_maintenance_lease', {
+      p_name: name,
+      p_holder: MAINTENANCE_HOLDER,
+    });
+    // Not fatal: an un-released lease just expires on its own.
+    if (relErr) console.warn(`⚠️  ${name}: could not release the maintenance lease:`, relErr.message);
+  }
+};
+
+// Backfill missing pageCount for existing PDF orders.
+//
+// Bounded and opt-in. This used to run unconditionally on every boot: a full
+// scan of the orders table, then a synchronous file read and a PDF parse per
+// row, on the same event loop that was meant to be serving requests — and once
+// per instance, so every replica redid the same work against the same rows.
+//
+// It now runs only when BACKFILL_PAGE_COUNTS is set, behind the maintenance
+// lease (one instance), off the boot path, and in batches. Missing page counts
+// are self-healing anyway: every upload since has computed its own.
+const BACKFILL_BATCH = 200;
+
 const backfillPageCounts = async () => {
-  const { data: pdfOrdersMissingCount, error } = await supabase
+  const { data: pending, error } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, filename, serverfilename')
     .eq('filetype', 'application/pdf')
-    .or('pagecount.is.null,pagecount.eq.0');
+    .or('pagecount.is.null,pagecount.eq.0')
+    .not('serverfilename', 'is', null)
+    .limit(BACKFILL_BATCH);
 
   if (error) { console.error("❌ Backfill query error:", error); return; }
-  if (!pdfOrdersMissingCount || pdfOrdersMissingCount.length === 0) {
+  if (!pending || pending.length === 0) {
     console.log("✅ All PDF orders already have page counts.");
     return;
   }
 
-  console.log(`📚 Backfilling page counts for ${pdfOrdersMissingCount.length} PDF order(s)...`);
+  console.log(`📚 Backfilling page counts for ${pending.length} PDF order(s)...`);
 
-  for (const order of pdfOrdersMissingCount) {
-    if (!order.serverfilename) {
-      console.warn(`  ⚠️  Order ${order.id} has no serverFileName — skipping.`);
-      continue;
-    }
+  let done = 0;
+  for (const order of pending) {
     const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-    if (fs.existsSync(filePath)) {
-      const count = await getPdfPageCount(filePath);
-      if (count !== null) {
-        await supabase.from('orders').update({ pagecount: count }).eq('id', order.id);
-        console.log(`  ✅ ${order.filename}: ${count} page(s)`);
-      } else {
-        console.warn(`  ⚠️  Could not count pages for ${order.filename}`);
-      }
-    } else {
-      console.warn(`  ⚠️  File not found for order ${order.id}`);
-    }
+    const count = await getPdfPageCount(filePath).catch(() => null);
+    if (count === null) continue;
+    const { error: updErr } = await supabase
+      .from('orders')
+      .update({ pagecount: count })
+      .eq('id', order.id);
+    if (updErr) { console.warn(`  ⚠️  ${order.filename}: ${updErr.message}`); continue; }
+    done += 1;
   }
+  console.log(`📚 Backfill updated ${done} order(s).`);
 };
 
-backfillPageCounts().catch((err) => console.error("❌ Backfill error:", err));
+if (process.env.BACKFILL_PAGE_COUNTS === "true") {
+  setTimeout(
+    () => withMaintenanceLease('backfill_page_counts', backfillPageCounts)
+      .catch((err) => console.error("❌ Backfill error:", err)),
+    30_000,
+  );
+}
 
 // Multer configuration
 const storage = multer.diskStorage({
@@ -523,6 +583,9 @@ app.get("/api/s/:shopSlug/orders/stream", resolveShopBySlug, async (req, res) =>
   const requestedIds = raw ? raw.split(",").map(s => s.trim()).filter(Boolean) : [];
   if (requestedIds.length === 0) {
     return res.status(400).json({ error: "ids query parameter is required" });
+  }
+  if (requestedIds.length > MAX_ID_LOOKUP) {
+    return res.status(400).json({ error: `At most ${MAX_ID_LOOKUP} ids per stream` });
   }
 
   // Cap concurrent streams per client before spending a Supabase round-trip.
@@ -756,13 +819,15 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
         ? 1
         : Math.max(1, Math.ceil(req.file.size / 75000));
 
-    const priceJob = {
-      printPreferences: {
-        colorMode: metadata.printPreferences?.colorMode || 'color',
-        copies: metadata.printPreferences?.copies || 1,
-        paperType: metadata.printPreferences?.paperType || 'normal',
-      },
-    };
+    // Print preferences come straight off the client, so they are normalised
+    // once here and reused for both the price and the stored row: the DB now
+    // constrains colormode and copies (migration 004), and a junk value must
+    // fall back rather than surface as a constraint 500.
+    const colorMode = metadata.printPreferences?.colorMode === 'blackWhite' ? 'blackWhite' : 'color';
+    const copies = Math.min(MAX_COPIES, Math.max(1, Math.trunc(Number(metadata.printPreferences?.copies)) || 1));
+    const paperType = metadata.printPreferences?.paperType || 'normal';
+
+    const priceJob = { printPreferences: { colorMode, copies, paperType } };
     const priceCalc = calculatePrintPrice(priceJob, priceSettings, authoritativePages);
     const discountResult = calculateJobDiscount(priceJob, priceCalc.totalPrice, priceCalc.totalPages, activeRules);
     const serverPrice = discountResult.finalAmount;
@@ -792,9 +857,9 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
         status: 'PENDING',
         serverFileName: req.file.filename,
         pageCount,
-        colorMode: metadata.printPreferences?.colorMode || 'color',
-        copies: metadata.printPreferences?.copies || 1,
-        paperType: metadata.printPreferences?.paperType || 'normal',
+        colorMode,
+        copies,
+        paperType,
         totalPrice: serverPrice,
         source: 'upload',
         shopSyncStatus: 'pending',
@@ -845,12 +910,15 @@ app.post("/api/s/:shopSlug/orders/query", resolveShopBySlug, async (req, res) =>
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(200).json([]);
   }
+  if (ids.length > MAX_ID_LOOKUP) {
+    return res.status(400).json({ error: `At most ${MAX_ID_LOOKUP} ids per request` });
+  }
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
     .eq('shop_id', req.shop.id)
     .in('id', ids)
-    .order('uploaddate', { ascending: false });
+    .order('uploaded_at', { ascending: false });
   if (error) throw error;
 
   const sanitized = (orders || []).map(order => {
@@ -1084,7 +1152,10 @@ app.put("/api/account/profile", requireCustomerAuth, async (req, res) => {
 // Get the logged-in customer's orders across all shops
 app.get("/api/account/orders", requireCustomerAuth, async (req, res) => {
   try {
-    const orders = await getCustomerOrders(req.userId);
+    const orders = await getCustomerOrders(req.userId, {
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
     res.status(200).json(orders);
   } catch (err) {
     console.error("❌ Error fetching customer orders:", err);
@@ -1097,13 +1168,21 @@ app.get("/api/account/orders", requireCustomerAuth, async (req, res) => {
  */
 
 // Get pending orders (not yet claimed by shop)
+//
+// Bounded. A desktop app that has been offline for a week, or one whose ack
+// call has been failing, would otherwise ask for its entire unclaimed backlog
+// in a single response every 30 seconds. The oldest are returned first so the
+// backlog drains in order; the poller picks the rest up on its next tick.
+const PENDING_PAGE_MAX = 200;
+
 app.get("/api/shop/pending", requireShopToken, async (req, res) => {
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
     .eq('shop_id', req.shop.id)
     .eq('shopsyncstatus', 'pending')
-    .order('uploaddate', { ascending: false });
+    .order('uploaded_at', { ascending: true })
+    .limit(PENDING_PAGE_MAX);
   if (error) return res.status(500).json({ error: error.message });
 
   const camelOrders = (orders || []).map(order => {
@@ -1219,10 +1298,18 @@ app.post("/api/shop/reject", requireShopToken, async (req, res) => {
 // Update order status (e.g., "PRINTED") — pushed from shop.
 // After updating the DB, push a live SSE event to any customer streams
 // watching that order so their page reflects the change without a reload.
+// Mirrors the orders_status_check constraint (migration 004). Without this an
+// unknown status would come back as an opaque 500 from the constraint instead
+// of telling the shop what it sent wrong.
+const ORDER_STATUSES = ['PENDING', 'READY', 'PRINTED', 'rejected'];
+
 app.post("/api/shop/status", requireShopToken, async (req, res) => {
   const { orderId, status } = req.body;
   if (!orderId || !status) {
     return res.status(400).json({ error: "orderId and status are required" });
+  }
+  if (!ORDER_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${ORDER_STATUSES.join(', ')}` });
   }
   const { error } = await supabase.from('orders').update({ status }).eq('shop_id', req.shop.id).eq('id', orderId);
   if (error) return res.status(500).json({ error: error.message });
@@ -1244,23 +1331,24 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
         cardboardPerPage: parseFloat(pricing.cardboardPerPage) || 40.0,
       });
     }
+    // Presence, not truthiness: the desktop app sends every profile field on
+    // each sync, and an empty one means the owner cleared it. Keying on
+    // truthiness left a deleted phone number or address alive in the cloud
+    // forever, with no way to remove it from the storefront.
+    // shopName is deliberately not in this list: a desktop install that never
+    // set one sends "", and blanking the storefront's name is worse than
+    // keeping a stale one.
+    const TEXT_PROFILE_KEYS = ['email', 'address', 'workingHours', 'returnPolicy'];
+    for (const key of TEXT_PROFILE_KEYS) {
+      if (typeof pricing?.[key] === 'string') {
+        await updateSetting(shopId, key, pricing[key].trim());
+      }
+    }
     if (pricing?.shopName) {
-      await updateSetting(shopId, 'shopName', pricing.shopName);
+      await updateSetting(shopId, 'shopName', String(pricing.shopName).trim());
     }
-    if (pricing?.phoneNumbers) {
+    if (Array.isArray(pricing?.phoneNumbers)) {
       await updateSetting(shopId, 'phoneNumbers', pricing.phoneNumbers);
-    }
-    if (pricing?.email) {
-      await updateSetting(shopId, 'email', pricing.email);
-    }
-    if (pricing?.address) {
-      await updateSetting(shopId, 'address', pricing.address);
-    }
-    if (pricing?.workingHours) {
-      await updateSetting(shopId, 'workingHours', pricing.workingHours);
-    }
-    if (pricing?.returnPolicy) {
-      await updateSetting(shopId, 'returnPolicy', pricing.returnPolicy);
     }
     // The map pin. Re-validated here rather than trusted: this payload comes
     // from a desktop install holding a shop token, and the result is served to
@@ -1305,7 +1393,16 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
       if (rpcErr) throw rpcErr;
     }
 
-    res.status(200).json({ success: true, shopSlug: req.shop.slug });
+    // `hasLogo` lets the desktop app notice that the cloud lost its image —
+    // it only re-uploads when the local fingerprint changes, so without this
+    // signal a logo dropped on this side (wiped row, restored backup) would
+    // never come back.
+    const stored = await getSettings(shopId);
+    res.status(200).json({
+      success: true,
+      shopSlug: req.shop.slug,
+      hasLogo: Boolean(stored?.logo),
+    });
   } catch (err) {
     console.error("❌ Settings sync error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -1315,35 +1412,48 @@ app.post("/api/shop/settings-sync", requireShopToken, async (req, res) => {
 /**
  * CLEANUP JOB — delete claimed orders older than 7 days
  */
+// One bulk DELETE ... RETURNING per batch (delete_claimed_orders_before, in
+// 005_server_side_aggregates) instead of selecting every expired row in full
+// and then deleting them one at a time. Batched so a large backlog cannot
+// produce one enormous statement, and the file unlinks are async so the loop
+// does not block the event loop the way readFileSync/unlinkSync did.
+const CLEANUP_BATCH = 500;
+
 const cleanupOldOrders = async () => {
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: oldOrders, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('shopsyncstatus', 'claimed')
-      .lt('uploaddate', sevenDaysAgo);
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    let removed = 0;
 
-    if (error) { console.error("❌ Cleanup query error:", error); return; }
-    if (!oldOrders || oldOrders.length === 0) return;
+    for (;;) {
+      const { data, error } = await supabase.rpc('delete_claimed_orders_before', {
+        p_cutoff: cutoff,
+        p_limit: CLEANUP_BATCH,
+      });
+      if (error) { console.error("❌ Cleanup query error:", error); return; }
 
-    for (const order of oldOrders) {
-      if (order.serverfilename) {
-        const filePath = path.join(UPLOADS_DIR, order.serverfilename);
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* ignored */ }
-      }
-      await supabase.from('orders').delete().eq('id', order.id);
+      const deleted = Number(data?.deleted) || 0;
+      const names = Array.isArray(data?.files) ? data.files : [];
+      await Promise.all(names.map(async (name) => {
+        try { await fsp.unlink(path.join(UPLOADS_DIR, name)); }
+        catch { /* already gone */ }
+      }));
+
+      removed += deleted;
+      // Batch on rows deleted, not on files unlinked — a batch where no row
+      // carried a filename is still a full batch.
+      if (deleted < CLEANUP_BATCH) break;
     }
-    console.log(`🧹 Cleaned up ${oldOrders.length} old claimed orders`);
+
+    if (removed > 0) console.log(`🧹 Cleaned up ${removed} old claimed order(s)`);
   } catch (err) {
     console.error("❌ Cleanup error:", err);
   }
 };
 
 // Run cleanup daily
-setInterval(cleanupOldOrders, 24 * 60 * 60 * 1000);
+setInterval(() => withMaintenanceLease('cleanup_orders', cleanupOldOrders), 24 * 60 * 60 * 1000);
 // Also run once at startup
-setTimeout(cleanupOldOrders, 60_000);
+setTimeout(() => withMaintenanceLease('cleanup_orders', cleanupOldOrders), 60_000);
 
 /**
  * STATIC FILE SERVING & SPA ROUTING
