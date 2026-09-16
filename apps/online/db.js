@@ -5,6 +5,7 @@ import { randomBytes, randomUUID, createHash } from 'crypto';
 import { checkEnv } from './checkEnv.js';
 import { makeTokenCache, isRejectedTokenError } from './utils/authCache.js';
 import { toApiOrder } from './utils/orderMapping.js';
+import { normalizeLocation } from '@atba3li/shared/geo';
 
 // db.js is the first module to require real env values. ESM evaluates imported
 // modules before the importer's body, so this is the earliest reliable point
@@ -96,7 +97,7 @@ export const listShops = async () => {
 // `logo` holds the image itself (a data URL). It is read only to know whether
 // a shop has one — the directory hands out the /api/s/:slug/logo URL instead,
 // so a page listing 40 shops stays a few KB rather than a few MB.
-const PUBLIC_DIRECTORY_SETTINGS = ['shopName', 'logo', '_logo_filename', 'phoneNumbers', 'email', 'address', 'workingHours'];
+const PUBLIC_DIRECTORY_SETTINGS = ['shopName', 'logo', '_logo_filename', 'phoneNumbers', 'email', 'address', 'workingHours', 'location'];
 
 // Public storefront directory — what the platform root lists when a customer
 // lands without a shop slug. Active shops only, and no ids/tokens/timestamps.
@@ -142,6 +143,10 @@ export const listPublicShops = async () => {
       email: profile.email || null,
       address: profile.address || null,
       workingHours: profile.workingHours || null,
+      // Only a pin that survives validation reaches the directory — the
+      // "nearest to me" sort reads this straight out of the payload, and a
+      // half-parsed coordinate would put a shop in the wrong hemisphere.
+      location: normalizeLocation(profile.location),
     };
   });
 };

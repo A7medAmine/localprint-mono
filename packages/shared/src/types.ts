@@ -66,6 +66,9 @@ export interface PaperType {
   blackWhitePerPage: number;
 }
 
+export type { ShopLocation, LocationSource, Coordinates } from "./geo";
+import type { ShopLocation } from "./geo";
+
 // ShopSettings is the desktop superset: the online app uses only the common
 // fields (shopName…returnPolicy, currency), and every desktop-only field below
 // is optional, so online object literals still satisfy the type unchanged.
@@ -84,6 +87,12 @@ export interface ShopSettings {
   address?: string;
   workingHours?: string;
   returnPolicy?: string;
+  /**
+   * Where the shop physically is, as picked on the map / parsed from a map
+   * link / read off GPS. Separate from `address`, which is the human-readable
+   * street line and stays the thing a customer reads.
+   */
+  location?: ShopLocation | null;
   /** ISO-ish currency label shown next to prices (e.g. "DZD", "USD"). */
   currency?: string;
   cloudSyncUrl?: string;

@@ -1,5 +1,6 @@
 import { PrintJob, ShopSettings, DiscountRule, AccountProfile, AccountOrder } from "../types";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
+import { normalizeLocation } from "@atba3li/shared/geo";
 
 /** One entry in the public shop directory (`GET /api/shops`). */
 export interface PublicShop {
@@ -10,6 +11,7 @@ export interface PublicShop {
   email?: string | null;
   address?: string | null;
   workingHours?: string | null;
+  location?: import("@atba3li/shared/geo").ShopLocation | null;
 }
 
 class StorageService {
@@ -263,6 +265,7 @@ class StorageService {
         email: settings?.email || undefined,
         address: settings?.address || undefined,
         workingHours: settings?.workingHours || undefined,
+        location: normalizeLocation(settings?.location),
         returnPolicy: settings?.returnPolicy || undefined,
       };
     } catch {

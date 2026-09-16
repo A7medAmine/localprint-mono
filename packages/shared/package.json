@@ -8,6 +8,7 @@
     "./types": "./src/types.ts",
     "./constants": "./src/constants.ts",
     "./validation": "./src/validation.js",
+    "./geo": "./src/geo.js",
     "./pdf": "./src/pdf.js",
     "./http": "./src/http.js",
     "./pricing": "./src/pricing.js",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.16.0",
     "mammoth": "^1.12.0",
     "pdf-lib": "^1.17.1",

@@ -21,6 +21,8 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import type { FileStatus } from "./UploadForm";
+import { directionsUrl } from "../../geo";
+import ShopMap from "../map/ShopMap";
 
 export interface UploadDialogsProps {
   t: (key: string) => string;
@@ -205,6 +207,34 @@ export const UploadDialogs: React.FC<UploadDialogsProps> = ({
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{isRtl ? "العنوان" : "Address"}</label>
                 <p className="mt-1 text-sm text-foreground">{shopSettings.address}</p>
+              </div>
+            )}
+            {shopSettings?.location && (
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{isRtl ? "الموقع" : "Location"}</label>
+                {/* The map is the answer to "where exactly is this?"; the
+                    address line above is often a district, not a door. */}
+                <div className="mt-1 overflow-hidden rounded-lg border border-border">
+                  <ShopMap
+                    location={shopSettings.location}
+                    title={shopSettings.shopName}
+                    className="h-48 w-full"
+                    fallback={
+                      <p className="px-3 py-2 text-sm text-muted-foreground">
+                        {isRtl ? "تعذر تحميل الخريطة." : "The map could not load."}
+                      </p>
+                    }
+                  />
+                </div>
+                <a
+                  href={directionsUrl(shopSettings.location) || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                >
+                  <Icon name="map-pin" className="h-4 w-4" />
+                  {isRtl ? "احصل على الاتجاهات" : "Get directions"}
+                </a>
               </div>
             )}
             {shopSettings?.workingHours && (
