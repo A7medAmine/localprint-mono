@@ -32,4 +32,11 @@ contextBridge.exposeInMainWorld('electronPrint', {
   //   - extension  file extension to use for the tmp file (default ".pdf")
   //   Everything else matches printFile.
   printData: (payload) => ipcRenderer.invoke('print-data', payload),
+
+  // payload: { html, pageSize?, landscape? }
+  //   - html       a SELF-CONTAINED document (fonts/images inlined); it is
+  //                rendered from a tmp file, so app-relative URLs will not
+  //                resolve
+  // Resolves a Uint8Array of PDF bytes, ready to hand to printData.
+  renderHtmlPdf: (payload) => ipcRenderer.invoke('render-html-pdf', payload),
 });

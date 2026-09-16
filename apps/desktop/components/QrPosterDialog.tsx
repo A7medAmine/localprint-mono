@@ -9,6 +9,10 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { activeSocialLinks } from "@atba3li/shared/social";
+import type { SocialPlatformId } from "@atba3li/shared/social";
+import { BRAND_PATHS } from "@atba3li/shared/components/StoreSocialLinks";
+import { isElectron, printData, renderHtmlPdf } from "../lib/electronPrint";
 
 type Mode = "local" | "online";
 
@@ -85,6 +89,7 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
   const [qrPng, setQrPng] = useState<string>("");
   const [qrSvg, setQrSvg] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,15 +166,50 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
     document.body.removeChild(a);
   };
 
-  const printPoster = () => {
-    if (!qrSvg) return;
-    const html = buildPosterHtml({
-      lang,
-      shopSettings,
-      qrSvg,
-      url: targetUrl,
-      mode,
-    });
+  // Chromium's own print dialog is not the app's print path: it ignores the
+  // printer and paper the shop configured, reports no real success or failure,
+  // and prints blank on the drivers that made job printing move to the spooler.
+  // So the poster is rendered to a PDF in the main process and spooled like any
+  // other job. Outside Electron (dev in a browser) the iframe path still runs.
+  const printPoster = async () => {
+    if (!qrSvg || printing) return;
+    setPrinting(true);
+    setError(null);
+    try {
+      const html = await inlinePosterAssets(
+        buildPosterHtml({ lang, shopSettings, qrSvg, url: targetUrl, mode }),
+      );
+      if (!isElectron()) {
+        printViaIframe(html);
+        return;
+      }
+      const pdf = await renderHtmlPdf({ html, pageSize: "A4" });
+      const result = await printData({
+        data: pdf,
+        fileType: "application/pdf",
+        extension: ".pdf",
+        // Empty means the OS default printer — same convention as job printing.
+        printerName: shopSettings?.defaultPrinterName || "",
+        silent: true,
+        options: { copies: 1, color: true },
+      });
+      if (result.ok === false && !result.cancelled) {
+        throw new Error(isRtl ? "تعذّرت الطباعة" : "Could not print the poster");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : isRtl
+            ? "تعذّرت الطباعة"
+            : "Could not print the poster",
+      );
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const printViaIframe = (html: string) => {
     // A hidden iframe, not window.open(): under Electron an about:blank popup
     // is handed to the OS shell ("Get an app to open this 'about' link") and
     // never prints.
@@ -178,7 +218,7 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
     // Kept at A4 pixel size and merely off-screen — a 0x0 frame can print blank.
     frame.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;";
     frame.srcdoc = html;
-    frame.onload = () => {
+    frame.onload = async () => {
       const win = frame.contentWindow;
       if (!win) {
         frame.remove();
@@ -186,6 +226,12 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
       }
       const cleanup = () => setTimeout(() => frame.remove(), 1000);
       win.addEventListener("afterprint", cleanup, { once: true });
+      // The load event does not wait for @font-face, so printing straight away
+      // can spool the poster in a fallback system face.
+      await Promise.race([
+        win.document.fonts?.ready ?? Promise.resolve(),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]).catch(() => undefined);
       try {
         win.focus();
         win.print();
@@ -307,8 +353,14 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
             </Button>
           )}
           {allowPrint && (
-            <Button onClick={printPoster} disabled={loading || !qrSvg} className="flex-1">
-              {isRtl ? "طباعة الملصق A4" : "Print A4 Poster"}
+            <Button onClick={printPoster} disabled={loading || printing || !qrSvg} className="flex-1">
+              {printing
+                ? isRtl
+                  ? "جارِ الطباعة…"
+                  : "Printing…"
+                : isRtl
+                  ? "طباعة الملصق A4"
+                  : "Print A4 Poster"}
             </Button>
           )}
           <Button
@@ -356,7 +408,7 @@ const escapeHtml = (s: string) =>
   );
 
 const svgIcon = (path: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
 
 /** Inline SVG — a printed page has no icon font and no component runtime. */
 const ICONS = {
@@ -368,12 +420,49 @@ const ICONS = {
     '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
   ),
   clock: svgIcon('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
-  wifi: svgIcon(
-    '<path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M8.5 16.02a6 6 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M12 20h.01"/>',
-  ),
-  globe: svgIcon(
-    '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  ),
+};
+
+/** The brand marks, filled single paths — the same glyphs the storefront uses. */
+const socialIcon = (id: SocialPlatformId) =>
+  id === "website"
+    ? svgIcon(
+        '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.8 5.6 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/>',
+      )
+    : `<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="${BRAND_PATHS[id]}"/></svg>`;
+
+// Platforms whose public identity is written "@handle"; a Facebook page is not.
+const AT_HANDLE = new Set<SocialPlatformId>(["instagram", "tiktok", "telegram", "youtube"]);
+
+/**
+ * The display name for a stored social link. Settings keep the full URL (a
+ * username alone is ambiguous across platforms), but on a printed poster
+ * "@yourshop" reads far better than a 40-character address — so the handle is
+ * derived back out of the URL and the link itself never reaches the page.
+ *
+ * Returns null when there is no meaningful handle (a profile-less URL); the
+ * caller then falls back to the platform's name.
+ */
+const socialHandle = (id: SocialPlatformId, url: string): string | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (id === "website") return parsed.hostname.replace(/^www\./, "");
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return null;
+  // Deep links ("facebook.com/p/name/123", "youtube.com/channel/UC…") hold no
+  // clean handle — the first segment is the closest thing to one.
+  const raw = decodeURIComponent(segments[0]).replace(/^@/, "");
+  if (!raw) return null;
+
+  if (id === "whatsapp") {
+    const digits = raw.replace(/\D/g, "");
+    return digits ? `+${digits}` : null;
+  }
+  return AT_HANDLE.has(id) ? `@${raw}` : raw;
 };
 
 const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps) => {
@@ -384,56 +473,62 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
   const email = shopSettings?.email || "";
   const address = shopSettings?.address || "";
   const hours = shopSettings?.workingHours || "";
+  const socials = activeSocialLinks(shopSettings?.socialLinks);
 
   const t = (en: string, ar: string) => (isRtl ? ar : en);
   const dir = isRtl ? "rtl" : "ltr";
 
   const steps = [
-    { n: 1, en: "Open your phone camera", ar: "\u0627\u0641\u062a\u062d \u0643\u0627\u0645\u064a\u0631\u0627 \u0647\u0627\u062a\u0641\u0643" },
-    { n: 2, en: "Scan the QR code", ar: "\u0627\u0645\u0633\u062d \u0631\u0645\u0632 \u0627\u0644\u0627\u0633\u062a\u062c\u0627\u0628\u0629" },
-    { n: 3, en: "Upload files & we print", ar: "\u0627\u0631\u0641\u0639 \u0627\u0644\u0645\u0644\u0641\u0627\u062a \u0648\u0633\u0646\u0637\u0628\u0639\u0647\u0627" },
+    { n: 1, en: "Open your phone camera", ar: "افتح كاميرا هاتفك" },
+    { n: 2, en: "Scan the code", ar: "امسح الرمز" },
+    { n: 3, en: "Upload files — we print", ar: "ارفع الملفات وسنطبعها" },
   ];
 
-  const modeBadge =
+  const modeNote =
     mode === "online"
-      ? t("Online \u2014 works anywhere", "\u0639\u0628\u0631 \u0627\u0644\u0625\u0646\u062a\u0631\u0646\u062a \u2014 \u064a\u0639\u0645\u0644 \u0645\u0646 \u0623\u064a \u0645\u0643\u0627\u0646")
-      : t("In-store Wi-Fi only", "\u0634\u0628\u0643\u0629 \u0627\u0644\u0645\u062d\u0644 \u0641\u0642\u0637");
-  const modeIcon = mode === "online" ? ICONS.globe : ICONS.wifi;
+      ? t("Works anywhere", "يعمل من أي مكان")
+      : t("On the in-store Wi-Fi", "على شبكة المحل");
 
-  const footItem = (icon: string, text: string) =>
-    `<div class="foot-item"><span class="foot-ico">${icon}</span><span>${text}</span></div>`;
+  const contact = (icon: string, text: string) =>
+    `<div class="contact"><span class="ico">${icon}</span><span class="contact-text">${text}</span></div>`;
 
   const contacts = [
-    phones.length ? footItem(ICONS.phone, phones.map(escapeHtml).join("  &nbsp;\u00b7&nbsp;  ")) : "",
-    email ? footItem(ICONS.mail, escapeHtml(email)) : "",
-    address ? footItem(ICONS.pin, escapeHtml(address)) : "",
-    hours ? footItem(ICONS.clock, escapeHtml(hours)) : "",
+    phones.length
+      ? contact(ICONS.phone, phones.map(escapeHtml).join("&nbsp;&nbsp;·&nbsp;&nbsp;"))
+      : "",
+    email ? contact(ICONS.mail, escapeHtml(email)) : "",
+    address ? contact(ICONS.pin, escapeHtml(address)) : "",
+    hours ? contact(ICONS.clock, escapeHtml(hours)) : "",
   ].filter(Boolean);
+
+  // Only the platforms the shop actually filled in; nothing is printed for a
+  // shop that set none.
+  const socialRow = socials
+    .map(({ platform, url: link }) => {
+      const id = platform.id as SocialPlatformId;
+      const handle = socialHandle(id, link) || (isRtl ? platform.labelAr : platform.label);
+      return `<div class="social"><span class="ico brand">${socialIcon(id)}</span><span class="handle">${escapeHtml(handle)}</span></div>`;
+    })
+    .join("");
 
   return `
 <div class="poster" dir="${dir}">
-  <div class="accent-bar"></div>
-
-  <header class="poster-head">
+  <header class="masthead">
     ${
       logo
-        ? `<div class="logo"><img src="${escapeHtml(logo)}" alt="logo"/></div>`
+        ? `<div class="logo"><img src="${escapeHtml(logo)}" alt=""/></div>`
         : `<div class="logo logo-fallback">${escapeHtml(shopName.slice(0, 1).toUpperCase())}</div>`
     }
-    <div class="head-text">
+    <div class="masthead-text">
       <h1>${escapeHtml(shopName)}</h1>
-      <p class="tagline">${t("Print from your phone in seconds", "\u0627\u0637\u0628\u0639 \u0645\u0646 \u0647\u0627\u062a\u0641\u0643 \u0641\u064a \u062b\u0648\u0627\u0646\u064d")}</p>
+      <p class="eyebrow">${escapeHtml(t("Print from your phone", "اطبع من هاتفك"))}</p>
     </div>
-    <div class="mode-badge"><span class="mode-ico">${modeIcon}</span><span>${escapeHtml(modeBadge)}</span></div>
   </header>
 
   <section class="qr-block">
-    <p class="scan-cta">${t("Scan to upload", "\u0627\u0645\u0633\u062d \u0644\u0628\u062f\u0621 \u0627\u0644\u0631\u0641\u0639")}</p>
-    <div class="qr-card">
-      <span class="corner tl"></span><span class="corner tr"></span>
-      <span class="corner bl"></span><span class="corner br"></span>
-      <div class="qr-frame">${qrSvg}</div>
-    </div>
+    <div class="qr-frame">${qrSvg}</div>
+    <p class="scan-cta">${escapeHtml(t("Scan to upload", "امسح لبدء الرفع"))}</p>
+    <p class="mode-note">${escapeHtml(modeNote)}</p>
     <p class="qr-url">${escapeHtml(url)}</p>
   </section>
 
@@ -442,69 +537,127 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
       .map(
         (s) => `
       <div class="step">
-        <div class="step-n">${s.n}</div>
-        <div class="step-label">${escapeHtml(t(s.en, s.ar))}</div>
+        <span class="step-n">${s.n}</span>
+        <span class="step-label">${escapeHtml(t(s.en, s.ar))}</span>
       </div>`,
       )
       .join("")}
   </section>
 
   <footer class="poster-foot">
-    ${contacts.length ? `<div class="foot-grid">${contacts.join("")}</div>` : ""}
-    <p class="foot-brand">${t("Powered by", "\u0645\u062f\u0639\u0648\u0645 \u0628\u0640")} Atba3li \u00b7 \u0623\u0637\u0628\u0639\u0644\u064a</p>
+    ${contacts.length ? `<div class="contacts">${contacts.join("")}</div>` : ""}
+    ${socialRow ? `<div class="socials">${socialRow}</div>` : ""}
+    <p class="foot-brand">Atba3li · أطبعلي</p>
   </footer>
 </div>
   `;
 };
 
+// Self-hosted faces from public/ — the packaged app prints offline, so a webfont
+// CDN would silently drop the poster back to a system UI face. Roboto Slab
+// carries the display lines, Inter the text, Rubik every Arabic glyph (neither
+// Latin face has Arabic, so it is listed last in both stacks and the browser
+// falls through per glyph).
 const posterCss = `
+  @font-face{font-family:'PosterSans';src:url('/Inter.ttf') format('truetype-variations');font-weight:100 900;font-display:block}
+  @font-face{font-family:'PosterDisplay';src:url('/RobotoSlab.ttf') format('truetype-variations');font-weight:100 900;font-display:block}
+  @font-face{font-family:'PosterArabic';src:url('/Rubik.ttf') format('truetype-variations');font-weight:300 900;font-display:block}
+
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{background:#fff;font-family:'Segoe UI',Tahoma,'Helvetica Neue',Arial,sans-serif;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .poster{width:210mm;height:297mm;padding:0 14mm 12mm;background:#fff;display:flex;flex-direction:column}
+  html,body{background:#fff;color:#111827;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-family:'PosterSans','PosterArabic','Segoe UI',Arial,sans-serif;font-feature-settings:'kern' 1,'liga' 1,'tnum' 1;-webkit-font-smoothing:antialiased}
 
-  /* Full-bleed brand band across the top of the sheet. */
-  .accent-bar{height:6mm;margin:0 -14mm 10mm;background:linear-gradient(90deg,#4f46e5 0%,#6366f1 45%,#a5b4fc 100%)}
+  .poster{width:210mm;height:297mm;padding:15mm 18mm 11mm;display:flex;flex-direction:column}
 
-  .poster-head{display:flex;align-items:center;gap:6mm;padding-bottom:6mm;border-bottom:0.4mm solid #e2e8f0}
-  .logo{width:22mm;height:22mm;border-radius:4mm;overflow:hidden;background:#fff;border:0.4mm solid #e2e8f0;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .masthead{display:flex;align-items:center;gap:5mm}
+  .logo{width:16mm;height:16mm;flex-shrink:0;overflow:hidden;border-radius:2mm;display:flex;align-items:center;justify-content:center}
   .logo img{width:100%;height:100%;object-fit:contain}
-  .logo-fallback{background:#4f46e5;color:#fff;font-size:12mm;font-weight:700}
-  .head-text{flex:1;min-width:0}
-  .head-text h1{font-size:11mm;line-height:1.05;font-weight:800;letter-spacing:-0.3mm}
-  .tagline{margin-top:1.5mm;font-size:4.4mm;color:#64748b;font-weight:500}
-  .mode-badge{display:flex;align-items:center;gap:2mm;flex-shrink:0;background:#eef2ff;color:#3730a3;padding:2mm 4mm;border-radius:10mm;font-size:3.4mm;font-weight:700;border:0.3mm solid #c7d2fe}
-  .mode-ico{display:inline-flex;width:4.2mm;height:4.2mm}
-  .mode-ico svg{width:100%;height:100%}
+  .logo-fallback{background:#111827;color:#fff;font-family:'PosterDisplay','PosterArabic',serif;font-size:8mm;font-weight:600}
+  .masthead-text{min-width:0}
+  .masthead h1{font-family:'PosterDisplay','PosterArabic',serif;font-size:9mm;line-height:1.1;font-weight:600;letter-spacing:-0.15mm}
+  .eyebrow{margin-top:1.2mm;font-size:3.5mm;font-weight:500;color:#6b7280;letter-spacing:0.3mm;text-transform:uppercase}
+  [dir="rtl"] .eyebrow{text-transform:none;letter-spacing:0}
 
-  .qr-block{margin-top:10mm;text-align:center}
-  .scan-cta{font-size:9mm;font-weight:800;color:#0f172a;letter-spacing:-0.3mm}
-  .qr-card{position:relative;display:inline-block;margin-top:6mm;padding:9mm;background:#fff;border:0.5mm solid #e2e8f0;border-radius:6mm}
-  /* Viewfinder brackets — they read as "point your camera here". */
-  .corner{position:absolute;width:10mm;height:10mm;border:1mm solid #4f46e5}
-  .corner.tl{top:2.5mm;left:2.5mm;border-right:0;border-bottom:0;border-top-left-radius:4mm}
-  .corner.tr{top:2.5mm;right:2.5mm;border-left:0;border-bottom:0;border-top-right-radius:4mm}
-  .corner.bl{bottom:2.5mm;left:2.5mm;border-right:0;border-top:0;border-bottom-left-radius:4mm}
-  .corner.br{bottom:2.5mm;right:2.5mm;border-left:0;border-top:0;border-bottom-right-radius:4mm}
-  .qr-frame{line-height:0}
-  .qr-frame svg{width:98mm;height:98mm;display:block}
-  .qr-url{margin:5mm auto 0;padding:2mm 5mm;display:inline-block;background:#f8fafc;border:0.3mm solid #e2e8f0;border-radius:10mm;font-size:3.4mm;color:#475569;word-break:break-all;max-width:170mm;font-family:'Consolas','Menlo',monospace;direction:ltr}
+  /* The code owns the middle of the sheet; nothing competes with it. */
+  .qr-block{margin-top:auto;margin-bottom:auto;text-align:center}
+  .qr-frame{display:inline-block;line-height:0;padding:5mm;border:0.35mm solid #e5e7eb;border-radius:3mm}
+  .qr-frame svg{width:84mm;height:84mm;display:block}
+  .scan-cta{margin-top:6mm;font-family:'PosterDisplay','PosterArabic',serif;font-size:9.5mm;font-weight:600;line-height:1.15;letter-spacing:-0.2mm}
+  .mode-note{margin-top:2mm;font-size:4mm;font-weight:500;color:#6b7280}
+  .qr-url{margin-top:4mm;font-family:'Consolas','Menlo',monospace;font-size:3.2mm;color:#9ca3af;word-break:break-all;direction:ltr}
 
-  .steps{margin-top:10mm;display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}
-  .step{border:0.4mm solid #e2e8f0;border-radius:3mm;padding:5mm 3mm;text-align:center;background:#f8fafc}
-  .step-n{width:10mm;height:10mm;margin:0 auto 3mm;border-radius:50%;background:#4f46e5;color:#fff;font-size:5.4mm;font-weight:800;display:flex;align-items:center;justify-content:center}
-  .step-label{font-size:3.8mm;font-weight:600;color:#0f172a;line-height:1.35}
+  /* Numbered steps as one typographic line, not three boxed cards. */
+  .steps{display:flex;gap:7mm;padding:5mm 0;border-top:0.3mm solid #e5e7eb;border-bottom:0.3mm solid #e5e7eb}
+  .step{flex:1;display:flex;align-items:baseline;gap:2.5mm}
+  .step-n{flex-shrink:0;font-family:'PosterDisplay',serif;font-size:5mm;font-weight:600;color:#c7cbd1}
+  .step-label{font-size:3.8mm;font-weight:500;line-height:1.35;color:#374151}
 
-  .poster-foot{margin-top:auto;padding-top:6mm;border-top:0.4mm solid #e2e8f0}
-  .foot-grid{display:grid;grid-template-columns:1fr 1fr;gap:3mm 8mm;font-size:3.8mm;color:#334155}
-  .foot-item{display:flex;align-items:center;gap:2.5mm;font-weight:500}
-  .foot-ico{display:inline-flex;width:4.6mm;height:4.6mm;color:#4f46e5;flex-shrink:0}
-  .foot-ico svg{width:100%;height:100%}
-  .foot-brand{margin-top:5mm;text-align:center;font-size:3mm;color:#94a3b8;letter-spacing:0.3mm}
+  .poster-foot{margin-top:6mm}
+  .contacts{display:grid;grid-template-columns:1fr 1fr;gap:3mm 8mm;font-size:3.6mm;color:#374151}
+  .contact{display:flex;align-items:center;gap:2.5mm;min-width:0}
+  .contact-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext}
+  .ico{display:inline-flex;width:4.2mm;height:4.2mm;flex-shrink:0;color:#111827}
+  .ico svg{width:100%;height:100%}
+  .ico.brand{color:#4b5563}
+
+  .socials{margin-top:4mm;padding-top:3.5mm;border-top:0.3mm solid #f1f2f4;display:flex;flex-wrap:wrap;gap:3mm 7mm}
+  .social{display:flex;align-items:center;gap:2mm}
+  .handle{font-size:3.5mm;font-weight:500;color:#374151;direction:ltr;unicode-bidi:isolate}
+
+  .foot-brand{margin-top:5mm;text-align:center;font-size:2.9mm;color:#b0b5bd;letter-spacing:0.4mm}
 
   [dir="rtl"] .poster{text-align:right}
   @page{size:A4 portrait;margin:0}
-  @media print{.poster{box-shadow:none}}
 `;
+
+// The main process renders the poster from a tmp file, where "/Inter.ttf" or a
+// relative logo URL resolves against the drive root instead of the app server —
+// so every asset is fetched here and inlined as a data URL first. Faces are
+// fetched once per session; a font that fails to load is dropped from the CSS
+// and the stack below it takes over.
+const assetCache = new Map<string, Promise<string | null>>();
+
+const asDataUrl = (path: string): Promise<string | null> => {
+  const cached = assetCache.get(path);
+  if (cached) return cached;
+  const pending = (async () => {
+    try {
+      const res = await fetch(path);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  })();
+  assetCache.set(path, pending);
+  return pending;
+};
+
+const inlinePosterAssets = async (html: string): Promise<string> => {
+  const assets = [...html.matchAll(/(?:url\('|<img src=")(\/[^'"]+)/g)].map((m) => m[1]);
+  const unique = [...new Set(assets)];
+  const resolved = await Promise.all(unique.map(asDataUrl));
+
+  let out = html;
+  unique.forEach((asset, i) => {
+    const dataUrl = resolved[i];
+    const escaped = asset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (dataUrl) {
+      out = out.replace(new RegExp(escaped, "g"), dataUrl);
+    } else {
+      // Drop the whole @font-face src rather than leave a dead URL that makes
+      // Chromium wait for a load that will never arrive.
+      out = out.replace(new RegExp(`src:url\\('${escaped}'\\)[^;}]*;?`, "g"), "");
+    }
+  });
+  return out;
+};
 
 const buildPosterHtml = (props: PosterProps) => `<!doctype html>
 <html lang="${props.lang}" dir="${props.lang === "ar" ? "rtl" : "ltr"}">

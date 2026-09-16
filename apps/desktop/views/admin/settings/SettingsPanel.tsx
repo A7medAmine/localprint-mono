@@ -54,6 +54,11 @@ interface SettingsPanelProps {
   onManageInventory: () => void;
 }
 
+// The settings page is grouped into tabs: one long scroll of unrelated cards
+// made everything equally far away. Tab ids double as the persistSection keys
+// the group's cards save under.
+type SettingsTabId = "shop" | "pricing" | "cloud" | "system";
+
 const PAPER_TYPE_FALLBACK = (pricing: ShopSettings["pricing"]): PaperType[] => [
   { id: "normal", name: "Normal", nameAr: "عادي", colorPerPage: pricing?.colorPerPage || 30.0, blackWhitePerPage: pricing?.blackWhitePerPage || 15.0 },
   { id: "glossy", name: "Glossy", nameAr: "لامع", colorPerPage: pricing?.glossyPerPage || 50.0, blackWhitePerPage: pricing?.glossyPerPage || 50.0 },
@@ -112,6 +117,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     is_active: true,
   });
   const [deleteRuleConfirm, setDeleteRuleConfirm] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("shop");
 
   // Re-sync the draft when the SAVED settings change — initial load, a cloud
   // settings pull, a logo upload, or (now that each card saves on its own) a
@@ -414,692 +420,748 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
     }
   };
 
+  const SETTINGS_TABS: { id: SettingsTabId; label: string; labelAr: string; icon: "building" | "money" | "cloud" | "settings"; dirty: () => boolean }[] = [
+    { id: "shop", label: "Shop", labelAr: "المحل", icon: "building", dirty: () => shopDirty },
+    { id: "pricing", label: "Pricing", labelAr: "الأسعار", icon: "money", dirty: () => false },
+    { id: "cloud", label: "Cloud", labelAr: "السحابة", icon: "cloud", dirty: () => cloudDirty },
+    { id: "system", label: "System", labelAr: "النظام", icon: "settings", dirty: () => inventoryDirty },
+  ];
+
   return (
     <>
-          <div className="max-w-5xl mx-auto">
-            {/* Page Header */}
-            <div className="mb-8">
-              <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
-                {isRtl ? "إعدادات المحل" : "Shop Settings"}
-              </h2>
-              <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-                {isRtl
-                  ? "إدارة إعدادات المحل والتسعير"
-                  : "Manage your shop configuration and pricing"}
-              </p>
+      <div className="max-w-5xl mx-auto pb-12">
+        {/* Page Header */}
+        <div className="mb-6">
+          <h2 className="text-2xl sm:text-3xl font-bold text-foreground">
+            {isRtl ? "إعدادات المحل" : "Shop Settings"}
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
+            {isRtl
+              ? "إدارة إعدادات المحل والتسعير"
+              : "Manage your shop configuration and pricing"}
+          </p>
+        </div>
+
+        {/* Quick Stats — a compact strip under the header so the numbers stay
+            visible whichever settings tab is open. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: isRtl ? "الملفات المعلقة" : "Pending Files", value: jobStats.pending, tone: "text-yellow-600 dark:text-yellow-400" },
+            { label: isRtl ? "جاهز للاستلام" : "Ready Files", value: jobStats.ready, tone: "text-blue-600 dark:text-blue-400" },
+            { label: isRtl ? "الملفات المطبوعة" : "Printed Files", value: jobStats.printed, tone: "text-green-600 dark:text-green-400" },
+            { label: isRtl ? "إجمالي العملاء" : "Total Customers", value: jobStats.customers, tone: "text-indigo-600 dark:text-indigo-400" },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-card rounded-xl px-4 py-3 shadow-sm dark:shadow-gray-900/50">
+              <div className="text-xs text-muted-foreground mb-1">{stat.label}</div>
+              <div className={cn("text-xl sm:text-2xl font-bold", stat.tone)}>{stat.value}</div>
             </div>
+          ))}
+        </div>
 
-            {/* Settings Grid — all cards sit in one grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* QR Poster Card — promoted to the top: it's the fastest way for a
-                  shop to get customers uploading, so it leads the settings page. */}
-              <Card className="lg:col-span-2 border-0 bg-indigo-50/50 dark:bg-indigo-950/20 ring-1 ring-indigo-100 dark:ring-indigo-900/40">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
-                      <Icon name="qr" className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{isRtl ? "ملصق QR للمتجر" : "Shop QR Poster"}</CardTitle>
-                      <CardDescription>
-                        {isRtl
-                          ? "أنشئ ملصق A4 بشعار المتجر ورمز QR جاهزًا للطباعة والعرض"
-                          : "Generate an A4 poster with your shop branding and QR, ready to print and display"}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <p className="text-xs text-muted-foreground max-w-md">
-                      {isRtl
-                        ? "يمكنك اختيار رابط الشبكة المحلية أو رابط الموقع الإلكتروني قبل الطباعة."
-                        : "Pick the local-network link or the online website link before printing."}
-                    </p>
-                    <Button onClick={() => setQrPosterOpen(true)} className="gap-2 w-full sm:w-auto">
-                      <Icon name="print" className="w-4 h-4" />
-                      {isRtl ? "فتح ملصق QR" : "Open QR Poster"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Shop Info Card */}
-              <Card className="border-0">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
-                      <Icon name="building" className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{isRtl ? "معلومات المحل" : "Shop Information"}</CardTitle>
-                      <CardDescription>{isRtl ? "الاسم والشعار" : "Name & logo"}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopName")}</label>
-                    <Input value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder={isRtl ? "اسم المحل" : "Print Shop Name"} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopLogo")}</label>
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                      {logoUrl ? (
-                        <div className="w-20 h-20 rounded-xl border-2 border-white dark:border-gray-700 shadow-md dark:shadow-gray-800/50 overflow-hidden bg-muted flex-shrink-0">
-                          <img src={logoUrl} alt="Logo Preview" className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="w-20 h-20 rounded-xl border-2 border-dashed border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
-                          <Icon name="file-image" className="w-8 h-8 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="flex-1 w-full">
-                        <Input type="file" accept="image/*" onChange={handleLogoUpload} className="file:me-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-600 dark:file:text-indigo-400 file:hover:bg-indigo-100 dark:file:hover:bg-indigo-900/50 file:cursor-pointer cursor-pointer" />
-                        <p className="text-xs text-muted-foreground mt-2">{isRtl ? "PNG, JPG أو GIF (الحد الأقصى 2MB)" : "PNG, JPG or GIF (max 2MB)"}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Phone Numbers */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopPhone")}</label>
-                    <div className="space-y-2">
-                      {phoneNumbers.map((num, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <Input value={num} onChange={(e) => { const next = [...phoneNumbers]; next[idx] = e.target.value; setPhoneNumbers(next); }} placeholder={isRtl ? "رقم الهاتف" : "Phone number"} />
-                          <button type="button" onClick={() => setPhoneNumbers(phoneNumbers.filter((_, i) => i !== idx))} aria-label={isRtl ? "حذف الرقم" : "Remove number"} className="p-2 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
-                            <Icon name="x" className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                      <Button variant="outline" size="sm" onClick={() => setPhoneNumbers([...phoneNumbers, ""])}>
-                        <Icon name="plus" className="w-3.5 h-3.5 me-1" />
-                        {t("addPhone")}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Email */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopEmail")}</label>
-                    <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isRtl ? "البريد الإلكتروني" : "shop@example.com"} />
-                  </div>
-
-                  {/* Address */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopAddress")}</label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={isRtl ? "عنوان المحل" : "123 Main St, City"} />
-                  </div>
-
-                  {/* Map location — the pin the cloud directory sorts by */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">
-                      {isRtl ? "الموقع على الخريطة" : "Map location"}
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-                        {location ? (
-                          <span dir="ltr" className="font-mono text-xs">
-                            {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            {isRtl ? "لم يتم تحديد موقع" : "Not set"}
-                          </span>
-                        )}
-                      </div>
-                      <Button type="button" variant="outline" onClick={() => setLocationOpen(true)}>
-                        <Icon name="map-pin" className="h-4 w-4" />
-                        {location ? (isRtl ? "تعديل" : "Change") : (isRtl ? "تحديد" : "Set")}
-                      </Button>
-                      {location && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => window.open(directionsUrl(location) || "", "_blank", "noopener")}
-                        >
-                          {isRtl ? "عرض" : "Open"}
-                        </Button>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {isRtl
-                        ? "يظهر على صفحة المحل ويُستعمل لإيجاد أقرب محل للزبون."
-                        : "Shown on your storefront and used to find the nearest shop to a customer."}
-                    </p>
-                  </div>
-
-                  {/* Working Hours */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopWorkingHours")}</label>
-                    <Input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} placeholder={isRtl ? "ساعات العمل" : "Sat-Thu 9:00-18:00"} />
-                  </div>
-
-                  {/* Return Policy */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{t("shopReturnPolicy")}</label>
-                    <textarea value={returnPolicy} onChange={(e) => setReturnPolicy(e.target.value)} rows={3} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y" placeholder={isRtl ? "سياسة الإرجاع" : "Return policy details..."} />
-                  </div>
-
-                  {/* Store description — the blurb on the cloud storefront card
-                      and at the foot of the upload page. */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">
-                      {isRtl ? "وصف المحل" : "Store description"}
-                    </label>
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
-                      rows={3}
-                      maxLength={MAX_DESCRIPTION_LENGTH}
-                      className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y"
-                      placeholder={isRtl ? "نبذة قصيرة عن المحل وخدماته" : "A short line about your shop and what it prints"}
-                    />
-                    <div className="flex items-center justify-between mt-1">
-                      <p className="text-xs text-muted-foreground">
-                        {isRtl
-                          ? "يظهر على بطاقة المحل في المنصة وفي أسفل صفحة الرفع."
-                          : "Shown on your storefront card and at the bottom of the upload page."}
-                      </p>
-                      <span className="text-xs text-muted-foreground tabular-nums" dir="ltr">
-                        {description.length}/{MAX_DESCRIPTION_LENGTH}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Social links — one row per platform, all optional. Each
-                      field takes the page's own link, copied from the browser;
-                      a username is rejected rather than guessed into a URL. */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">
-                      {isRtl ? "روابط التواصل الاجتماعي" : "Social links"}
-                    </label>
-                    <div className="space-y-2">
-                      {SOCIAL_PLATFORMS.map((platform) => (
-                        <div key={platform.id} className="flex items-center gap-2">
-                          <span
-                            title={isRtl ? platform.labelAr : platform.label}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-                          >
-                            <SocialIcon id={platform.id} className="h-4 w-4" />
-                          </span>
-                          <Input
-                            dir="ltr"
-                            value={socialLinks[platform.id] || ""}
-                            onChange={(e) =>
-                              setSocialLinks({ ...socialLinks, [platform.id]: e.target.value })
-                            }
-                            placeholder={platform.placeholder}
-                            aria-label={isRtl ? platform.labelAr : platform.label}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {isRtl
-                        ? "الصق رابط الصفحة كاملًا (وليس اسم المستخدم). اترك الحقل فارغًا إذا لم يكن لديك حساب — تُنشر الحقول المملوءة فقط."
-                        : "Paste the full link to the page, not a username. Leave a field empty if you don't have that account — only filled ones are published."}
-                    </p>
-                  </div>
-
-                  {/* Currency */}
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "العملة" : "Currency"}</label>
-                    <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder={isRtl ? "مثال: DZD" : "e.g. DZD"} />
-                    <p className="text-xs text-muted-foreground mt-1">{isRtl ? "تظهر بجانب الأسعار في جميع أنحاء التطبيق." : "Shown next to prices across the app."}</p>
-                  </div>
-
-                  {renderSaveBar(shopDirty, "shop", saveShopInfo)}
-                </CardContent>
-              </Card>
-
-              {/* Pricing Card */}
-              <Card className="border-0">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center flex-shrink-0">
-                      <Icon name="money" className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{isRtl ? "أسعار الطباعة" : "Printing Prices"}</CardTitle>
-                      <CardDescription>{isRtl ? "التسعير لكل صفحة" : "Per page pricing"}</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-foreground">
-                      {isRtl ? "أنواع الورق وأسعارها" : "Paper Types & Pricing"}
-                    </label>
-                    <Button size="sm" onClick={() => { setShowAddPaperTypeForm(true); setEditingPaperTypeId(null); }}>
-                      <Icon name="plus" className="w-3.5 h-3.5" />
-                      {isRtl ? "إضافة نوع" : "Add Type"}
-                    </Button>
-                  </div>
-
-                  <div className="overflow-x-auto rounded-xl">
-                    <table className="w-full text-sm min-w-[400px]">
-                      <thead>
-                        <tr className="bg-muted/40 border-b border-border">
-                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "نوع الورق" : "Paper Type"}</th>
-                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "ملون" : "Color"}</th>
-                          <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "أبيض/أسود" : "B&W"}</th>
-                          <th className="px-3 py-2.5 w-16"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paperTypes.map((pt, idx) => (
-                          <tr key={pt.id} className={idx < paperTypes.length - 1 ? "border-b border-border" : ""}>
-                            {editingPaperTypeId === pt.id && editingPaperTypeForm ? (
-                              <>
-                                <td className="px-3 py-2">
-                                  <Input value={editingPaperTypeForm.name} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, name: e.target.value })} placeholder="EN" className="text-xs mb-1 h-8" />
-                                  <Input value={editingPaperTypeForm.nameAr} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, nameAr: e.target.value })} placeholder="AR" className="text-xs h-8" />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.colorPerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.blackWhitePerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
-                                </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex gap-1">
-                                    <Button size="sm" variant="default" onClick={() => handleSavePaperType(pt.id)} aria-label={isRtl ? "حفظ" : "Save"}><Icon name="check" /></Button>
-                                    <Button size="sm" variant="outline" onClick={() => { setEditingPaperTypeId(null); setEditingPaperTypeForm(null); }} aria-label={isRtl ? "إلغاء" : "Cancel"}><Icon name="x" /></Button>
-                                  </div>
-                                </td>
-                              </>
-                            ) : (
-                              <>
-                                <td className="px-3 py-3">
-                                  <div className="font-semibold text-foreground text-sm">{isRtl ? pt.nameAr : pt.name}</div>
-                                  <div className="text-xs text-muted-foreground">{isRtl ? pt.name : pt.nameAr}</div>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <span className="font-semibold text-indigo-700 dark:text-indigo-400">{pt.colorPerPage}</span>
-                                  <span className="text-xs text-muted-foreground ms-1">DZD</span>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <span className="font-semibold text-foreground">{pt.blackWhitePerPage}</span>
-                                  <span className="text-xs text-muted-foreground ms-1">DZD</span>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <div className="flex gap-1">
-                                    <Button variant="ghost" size="icon" onClick={() => { setEditingPaperTypeId(pt.id); setEditingPaperTypeForm({ name: pt.name, nameAr: pt.nameAr, colorPerPage: pt.colorPerPage, blackWhitePerPage: pt.blackWhitePerPage }); setShowAddPaperTypeForm(false); }} title="Edit" aria-label="Edit">
-                                      <Icon name="edit" className="w-3.5 h-3.5" />
-                                    </Button>
-                                    {paperTypes.length > 1 && (
-                                      <Button variant="ghost" size="icon" onClick={() => handleDeletePaperType(pt.id)} title="Delete" aria-label="Delete">
-                                        <Icon name="trash" className="w-3.5 h-3.5" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Add Paper Type Dialog */}
-                  <Dialog open={showAddPaperTypeForm} onOpenChange={(open) => { if (!open) { setShowAddPaperTypeForm(false); setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 }); }}}>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>{isRtl ? "إضافة نوع ورق جديد" : "Add New Paper Type"}</DialogTitle>
-                      </DialogHeader>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (EN)" : "Name (EN)"}</label>
-                          <Input
-                            value={newPaperTypeForm.name}
-                            onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, name: e.target.value })}
-                            placeholder="e.g. Matte"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (AR)" : "Name (AR)"}</label>
-                          <Input
-                            value={newPaperTypeForm.nameAr}
-                            onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, nameAr: e.target.value })}
-                            placeholder="مثلاً: مطفي"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر ملون (DZD)" : "Color (DZD)"}</label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={newPaperTypeForm.colorPerPage}
-                            onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر أبيض/أسود (DZD)" : "B&W (DZD)"}</label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={newPaperTypeForm.blackWhitePerPage}
-                            onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter className="gap-2">
-                        <Button variant="outline" onClick={() => { setShowAddPaperTypeForm(false); setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 }); }}>
-                          {isRtl ? "إلغاء" : "Cancel"}
-                        </Button>
-                        <Button onClick={handleAddPaperType}>
-                          {isRtl ? "إضافة" : "Add"}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </CardContent>
-              </Card>
-
-              <PasswordCard />
-
-            {/* Discount Rules Card - Full Width */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader className="flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0">
-                    <Icon name="tag" className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "قواعد الخصم" : "Discount Rules"}</CardTitle>
-                    <CardDescription>{isRtl ? "خصومات تلقائية للطباعة بالجملة" : "Automatic bulk print discounts"}</CardDescription>
-                  </div>
-                </div>
-                <Button size="sm" onClick={handleAddRule}>
-                  <Icon name="plus" className="w-4 h-4" />
-                  {isRtl ? "إضافة قاعدة" : "Add Rule"}
-                </Button>
-              </CardHeader>
-
-              <CardContent>
-                {discountRules.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Icon name="frown" className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-500" />
-                    <p>{isRtl ? "لا توجد قواعد خصم بعد" : "No discount rules yet"}</p>
-                    <p className="text-sm mt-1">
-                      {isRtl ? "انقر على إضافة قاعدة لإنشاء خصم جديد" : "Click Add Rule to create a discount"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {discountRules.map((rule) => (
-                      <div
-                        key={rule.id}
-                        className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
-                          rule.is_active
-                            ? "bg-card border-border"
-                            : "bg-muted/40 border-border opacity-60"
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          {/* Active Toggle */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleRuleActive(rule)}
-                            className={`relative w-12 h-6 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-purple-500/40 dark:focus:ring-purple-400/40 ${
-                              rule.is_active ? "bg-purple-600 dark:bg-purple-500" : "bg-gray-300 dark:bg-gray-600"
-                            }`}
-                          >
-                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-card shadow-md dark:shadow-gray-800/50 transition-all duration-300 ${
-                              isRtl
-                                ? (rule.is_active ? "right-[1.625rem]" : "right-0.5")
-                                : (rule.is_active ? "left-[1.625rem]" : "left-0.5")
-                            }`} />
-                          </button>
-
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-foreground">{rule.name}</span>
-                              {rule.priority > 0 && (
-                                <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded-full font-medium">
-                                  P{rule.priority}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                              {rule.discount_type === "percent"
-                                ? `${rule.discount_value}% ${isRtl ? "خصم" : "off"}`
-                                : `${rule.discount_value} DZD ${isRtl ? "خصم" : "off"}`}
-                              {" · "}
-                              {rule.condition_type === "pages"
-                                ? `${isRtl ? "عند" : "when"} ≥ ${rule.threshold} ${isRtl ? "صفحة" : "pages"}`
-                                : `${isRtl ? "عند" : "when"} ≥ ${rule.threshold} DZD`}
-                              {rule.max_discount_cap && ` ${isRtl ? "(حد أقصى" : "(max"} ${rule.max_discount_cap} DZD)`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEditRule(rule)} aria-label={isRtl ? "تعديل القاعدة" : "Edit rule"}>
-                            <Icon name="edit" className="w-5 h-5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(rule.id)} aria-label={isRtl ? "حذف القاعدة" : "Delete rule"}>
-                            <Icon name="trash" className="w-5 h-5" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        {/* Tabs — the page used to be one long scroll of unrelated cards; each
+            group now gets its own tab so a card is a short reach away. */}
+        <div className="sticky top-0 z-10 mb-6 bg-background/95 backdrop-blur-sm border-b border-border">
+          <div className="flex gap-1 overflow-x-auto py-2">
+            {SETTINGS_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold whitespace-nowrap transition-colors",
+                  activeTab === tab.id
+                    ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
-              </CardContent>
-            </Card>
+              >
+                <Icon name={tab.icon} className="w-4 h-4" />
+                {isRtl ? tab.labelAr : tab.label}
+                {tab.dirty() && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden />}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {/* Cloud Sync Card */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 flex items-center justify-center flex-shrink-0">
-                    <Icon name="cloud-upload" className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "المزامنة السحابية" : "Cloud Sync"}</CardTitle>
-                    <CardDescription>{isRtl ? "المزامنة مع تطبيق السحابة للطلبات والإعدادات" : "Sync orders and settings with a cloud instance"}</CardDescription>
-                  </div>
+        {activeTab === "shop" && (
+          <div className="space-y-6">
+          {/* QR Poster Card — promoted to the top: it's the fastest way for a
+              shop to get customers uploading, so it leads the settings page. */}
+          <Card className="border-0 bg-indigo-50/50 dark:bg-indigo-950/20 ring-1 ring-indigo-100 dark:ring-indigo-900/40">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="qr" className="w-5 h-5" />
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    {isRtl ? "رابط المتجر السحابي" : "Store link"}
-                  </label>
-                  <Input value={cloudSyncUrl} onChange={(e) => { setCloudSyncUrl(e.target.value); setCloudTestResult(null); }} placeholder="https://print.example.com/s/your-store" />
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <CardTitle className="text-base">{isRtl ? "ملصق QR للمتجر" : "Shop QR Poster"}</CardTitle>
+                  <CardDescription>
                     {isRtl
-                      ? "الصق الرابط كما زوّدك به المشرف؛ يُستخرج معرّف المتجر منه تلقائيًا."
-                      : "Paste the link exactly as your platform admin gave it — the store slug is extracted automatically."}
-                  </p>
+                      ? "أنشئ ملصق A4 بشعار المتجر ورمز QR جاهزًا للطباعة والعرض"
+                      : "Generate an A4 poster with your shop branding and QR, ready to print and display"}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-xs text-muted-foreground max-w-md">
+                  {isRtl
+                    ? "يمكنك اختيار رابط الشبكة المحلية أو رابط الموقع الإلكتروني قبل الطباعة."
+                    : "Pick the local-network link or the online website link before printing."}
+                </p>
+                <Button onClick={() => setQrPosterOpen(true)} className="gap-2 w-full sm:w-auto">
+                  <Icon name="print" className="w-4 h-4" />
+                  {isRtl ? "فتح ملصق QR" : "Open QR Poster"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="building" className="w-5 h-5" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    {isRtl ? "معرّف المتجر (slug)" : "Store slug"}
-                  </label>
-                  <Input value={cloudShopSlug} onChange={(e) => setCloudShopSlug(e.target.value)} placeholder="your-store" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {isRtl
-                      ? "يُملأ تلقائيًا من الرابط أعلاه أو بعد أول مزامنة. يُستخدم لبناء رابط الرفع: /s/<slug>/upload"
-                      : "Filled automatically from the link above, or after the first sync. Used to build the upload link: /s/<slug>/upload"}
-                  </p>
+                  <CardTitle className="text-base">{isRtl ? "معلومات المحل" : "Shop Information"}</CardTitle>
+                  <CardDescription>{isRtl ? "الاسم والشعار والعملة" : "Name, logo and currency"}</CardDescription>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    {isRtl ? "رمز API" : "API Token"}
-                  </label>
-                  <Input type="password" value={shopApiToken} onChange={(e) => { setShopApiToken(e.target.value); setCloudTestResult(null); }} placeholder={isRtl ? "64 حرفًا سداسيًا" : "64-char hex token"} />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    {isRtl ? "فترة التحديث (مللي ثانية)" : "Poll Interval (ms)"}
-                  </label>
-                  <Input type="number" min="15000" step="1000" value={cloudSyncPollInterval} onChange={(e) => setCloudSyncPollInterval(e.target.value)} />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {isRtl ? "الحد الأدنى 15000 (15 ثانية)" : "Minimum 15000 (15 seconds)"}
-                  </p>
-                </div>
-                <div className="flex items-start justify-between gap-4 pt-2 border-t border-border">
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground">
-                      {isRtl ? "قبول طلبات السحابة تلقائيًا" : "Auto-accept cloud orders"}
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                      {isRtl
-                        ? "عند التعطيل، ستظهر الطلبات الواردة من الرابط الإلكتروني في قسم \"مراجعة الطلبات\" لقبولها أو رفضها يدويًا قبل إضافتها إلى قائمة الطباعة."
-                        : "When off, orders from the online upload link land in \"Job Review\" for you to accept or reject before they're added to the print queue."}
-                    </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopName")}</label>
+                <Input value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder={isRtl ? "اسم المحل" : "Print Shop Name"} />
+              </div>
+              {/* Currency */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{isRtl ? "العملة" : "Currency"}</label>
+                <Input value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder={isRtl ? "مثال: DZD" : "e.g. DZD"} />
+                <p className="text-xs text-muted-foreground mt-1">{isRtl ? "تظهر بجانب الأسعار في جميع أنحاء التطبيق." : "Shown next to prices across the app."}</p>
+              </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopLogo")}</label>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  {logoUrl ? (
+                    <div className="w-20 h-20 rounded-xl border-2 border-white dark:border-gray-700 shadow-md dark:shadow-gray-800/50 overflow-hidden bg-muted flex-shrink-0">
+                      <img src={logoUrl} alt="Logo Preview" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 rounded-xl border-2 border-dashed border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
+                      <Icon name="file-image" className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 w-full">
+                    <Input type="file" accept="image/*" onChange={handleLogoUpload} className="file:me-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-600 dark:file:text-indigo-400 file:hover:bg-indigo-100 dark:file:hover:bg-indigo-900/50 file:cursor-pointer cursor-pointer" />
+                    <p className="text-xs text-muted-foreground mt-2">{isRtl ? "PNG, JPG أو GIF (الحد الأقصى 2MB)" : "PNG, JPG or GIF (max 2MB)"}</p>
                   </div>
-                  <Switch
-                    checked={autoAcceptCloudJobs}
-                    onCheckedChange={(checked) => setAutoAcceptCloudJobs(checked)}
-                    className="shrink-0"
-                  />
                 </div>
-                <div className="pt-3 border-t border-border space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={cloudTesting !== null}
-                      onClick={() => runCloudTest("draft")}
-                    >
-                      <Icon name="zap" className="w-4 h-4" />
-                      {cloudTesting === "draft"
-                        ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
-                        : (isRtl ? "اختبار هذه القيم" : "Test these values")}
-                    </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="phone" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "الاتصال والموقع" : "Contact & location"}</CardTitle>
+                  <CardDescription>{isRtl ? "كيف يصل إليك الزبون" : "How customers reach you"}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {/* Phone Numbers */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopPhone")}</label>
+                <div className="space-y-2">
+                  {phoneNumbers.map((num, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Input value={num} onChange={(e) => { const next = [...phoneNumbers]; next[idx] = e.target.value; setPhoneNumbers(next); }} placeholder={isRtl ? "رقم الهاتف" : "Phone number"} />
+                      <button type="button" onClick={() => setPhoneNumbers(phoneNumbers.filter((_, i) => i !== idx))} aria-label={isRtl ? "حذف الرقم" : "Remove number"} className="p-2 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                        <Icon name="x" className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={() => setPhoneNumbers([...phoneNumbers, ""])}>
+                    <Icon name="plus" className="w-3.5 h-3.5 me-1" />
+                    {t("addPhone")}
+                  </Button>
+                </div>
+              </div>
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopEmail")}</label>
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isRtl ? "البريد الإلكتروني" : "shop@example.com"} />
+              </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              {/* Address */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopAddress")}</label>
+                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={isRtl ? "عنوان المحل" : "123 Main St, City"} />
+              </div>
+              {/* Working Hours */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopWorkingHours")}</label>
+                <Input value={workingHours} onChange={(e) => setWorkingHours(e.target.value)} placeholder={isRtl ? "ساعات العمل" : "Sat-Thu 9:00-18:00"} />
+              </div>
+              </div>
+              {/* Map location — the pin the cloud directory sorts by */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "الموقع على الخريطة" : "Map location"}
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+                    {location ? (
+                      <span dir="ltr" className="font-mono text-xs">
+                        {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {isRtl ? "لم يتم تحديد موقع" : "Not set"}
+                      </span>
+                    )}
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => setLocationOpen(true)}>
+                    <Icon name="map-pin" className="h-4 w-4" />
+                    {location ? (isRtl ? "تعديل" : "Change") : (isRtl ? "تحديد" : "Set")}
+                  </Button>
+                  {location && (
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={cloudTesting !== null}
-                      onClick={() => runCloudTest("saved")}
+                      onClick={() => window.open(directionsUrl(location) || "", "_blank", "noopener")}
                     >
-                      <Icon name="refresh" className="w-4 h-4" />
-                      {cloudTesting === "saved"
-                        ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
-                        : (isRtl ? "اختبار الاتصال المحفوظ" : "Test saved connection")}
+                      {isRtl ? "عرض" : "Open"}
                     </Button>
-                  </div>
-                  {cloudTestResult && (
-                    <p
-                      className={cn(
-                        "text-xs",
-                        cloudTestResult.ok
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400",
-                      )}
-                    >
-                      {cloudTestResult.text}
-                    </p>
                   )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isRtl
+                    ? "يظهر على صفحة المحل ويُستعمل لإيجاد أقرب محل للزبون."
+                    : "Shown on your storefront and used to find the nearest shop to a customer."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="qr" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "صفحة المتجر" : "Storefront"}</CardTitle>
+                  <CardDescription>{isRtl ? "ما يظهر للزبون على الإنترنت" : "What customers see online"}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Store description — the blurb on the cloud storefront card
+                  and at the foot of the upload page. */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "وصف المحل" : "Store description"}
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))}
+                  rows={3}
+                  maxLength={MAX_DESCRIPTION_LENGTH}
+                  className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y"
+                  placeholder={isRtl ? "نبذة قصيرة عن المحل وخدماته" : "A short line about your shop and what it prints"}
+                />
+                <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-muted-foreground">
                     {isRtl
-                      ? "الاختبار يقرأ إعدادات المتجر من السحابة فقط؛ لا يغيّر أي بيانات."
-                      : "The test only reads this shop's settings from the cloud — it changes nothing."}
+                      ? "يظهر على بطاقة المحل في المنصة وفي أسفل صفحة الرفع."
+                      : "Shown on your storefront card and at the bottom of the upload page."}
                   </p>
-                </div>
-                {renderSaveBar(cloudDirty, "cloud", saveCloudSync)}
-              </CardContent>
-            </Card>
-
-            {/* Inventory Card */}
-            <Card className="lg:col-span-2 border-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                    <Icon name="package" className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{isRtl ? "المخزون" : "Inventory"}</CardTitle>
-                    <CardDescription>{isRtl ? "خصم الورق تلقائيًا عند الطباعة" : "Automatic paper deduction on printing"}</CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-foreground">
-                      {isRtl ? "خصم المخزون تلقائيًا" : "Auto-deduct stock"}
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-xl">
-                      {isRtl
-                        ? "عند التفعيل، وبمجرد تحديد أي طلب كـ\"تمت الطباعة\"، يتم خصم (عدد الصفحات × عدد النسخ) تلقائيًا من عنصر المخزون المرتبط بنوع الورق المستخدم. إذا لم يكن هناك عنصر مرتبط بذلك النوع، فلن يحدث أي شيء. الحبر والمستلزمات الأخرى تُعدَّل يدويًا دائمًا."
-                        : "When on, marking any job as printed subtracts pages × copies from the inventory item linked to that job's paper type. If no item is linked to that paper type, nothing happens. Ink/toner and other supplies are always adjusted manually."}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={onManageInventory}
-                      className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline mt-2"
-                    >
-                      <>{isRtl ? "إدارة عناصر المخزون" : "Manage inventory items"}<Icon name="arrow-end" className="ms-1 inline-block align-text-bottom rtl:rotate-180" /></>
-                    </button>
-                  </div>
-                  <Switch
-                    checked={autoDeductStock}
-                    onCheckedChange={(checked) => setAutoDeductStock(checked)}
-                    className="shrink-0"
-                  />
-                </div>
-                {renderSaveBar(inventoryDirty, "inventory", saveInventory)}
-              </CardContent>
-            </Card>
-
-            <PrintersCard
-              currentSettings={currentSettings}
-              onPersist={persistSection}
-              renderSaveBar={renderSaveBar}
-            />
-
-            <BackupCard />
-            </div>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-8">
-              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-muted-foreground mb-1">
-                  {isRtl ? "الملفات المعلقة" : "Pending Files"}
-                </div>
-                <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                  {jobStats.pending}
+                  <span className="text-xs text-muted-foreground tabular-nums" dir="ltr">
+                    {description.length}/{MAX_DESCRIPTION_LENGTH}
+                  </span>
                 </div>
               </div>
-              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-muted-foreground mb-1">
-                  {isRtl ? "جاهز للاستلام" : "Ready Files"}
+              {/* Social links — one row per platform, all optional. Each
+                  field takes the page's own link, copied from the browser;
+                  a username is rejected rather than guessed into a URL. */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "روابط التواصل الاجتماعي" : "Social links"}
+                </label>
+                <div className="space-y-2">
+                  {SOCIAL_PLATFORMS.map((platform) => (
+                    <div key={platform.id} className="flex items-center gap-2">
+                      <span
+                        title={isRtl ? platform.labelAr : platform.label}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                      >
+                        <SocialIcon id={platform.id} className="h-4 w-4" />
+                      </span>
+                      <Input
+                        dir="ltr"
+                        value={socialLinks[platform.id] || ""}
+                        onChange={(e) =>
+                          setSocialLinks({ ...socialLinks, [platform.id]: e.target.value })
+                        }
+                        placeholder={platform.placeholder}
+                        aria-label={isRtl ? platform.labelAr : platform.label}
+                      />
+                    </div>
+                  ))}
                 </div>
-                <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {jobStats.ready}
-                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isRtl
+                    ? "الصق رابط الصفحة كاملًا (وليس اسم المستخدم). اترك الحقل فارغًا إذا لم يكن لديك حساب — تُنشر الحقول المملوءة فقط."
+                    : "Paste the full link to the page, not a username. Leave a field empty if you don't have that account — only filled ones are published."}
+                </p>
               </div>
-              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-muted-foreground mb-1">
-                  {isRtl ? "الملفات المطبوعة" : "Printed Files"}
-                </div>
-                <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
-                  {jobStats.printed}
-                </div>
+              {/* Return Policy */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t("shopReturnPolicy")}</label>
+                <textarea value={returnPolicy} onChange={(e) => setReturnPolicy(e.target.value)} rows={3} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 resize-y" placeholder={isRtl ? "سياسة الإرجاع" : "Return policy details..."} />
               </div>
-              <div className="bg-card rounded-xl p-4 shadow-sm dark:shadow-gray-900/50">
-                <div className="text-xs text-muted-foreground mb-1">
-                  {isRtl ? "إجمالي العملاء" : "Total Customers"}
-                </div>
-                <div className="text-xl sm:text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                  {jobStats.customers}
-                </div>
-              </div>
+            </CardContent>
+          </Card>
+
+            {/* One Save for the whole shop group — the three cards above all
+                write the same settings section. */}
+            <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm rounded-xl px-4">
+              {renderSaveBar(shopDirty, "shop", saveShopInfo)}
             </div>
           </div>
+        )}
+
+        {activeTab === "pricing" && (
+          <div className="space-y-6">
+          {/* Pricing Card */}
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="money" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "أسعار الطباعة" : "Printing Prices"}</CardTitle>
+                  <CardDescription>{isRtl ? "التسعير لكل صفحة" : "Per page pricing"}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-foreground">
+                  {isRtl ? "أنواع الورق وأسعارها" : "Paper Types & Pricing"}
+                </label>
+                <Button size="sm" onClick={() => { setShowAddPaperTypeForm(true); setEditingPaperTypeId(null); }}>
+                  <Icon name="plus" className="w-3.5 h-3.5" />
+                  {isRtl ? "إضافة نوع" : "Add Type"}
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl">
+                <table className="w-full text-sm min-w-[400px]">
+                  <thead>
+                    <tr className="bg-muted/40 border-b border-border">
+                      <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "نوع الورق" : "Paper Type"}</th>
+                      <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "ملون" : "Color"}</th>
+                      <th className="px-3 py-2.5 text-xs font-semibold text-muted-foreground text-start">{isRtl ? "أبيض/أسود" : "B&W"}</th>
+                      <th className="px-3 py-2.5 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paperTypes.map((pt, idx) => (
+                      <tr key={pt.id} className={idx < paperTypes.length - 1 ? "border-b border-border" : ""}>
+                        {editingPaperTypeId === pt.id && editingPaperTypeForm ? (
+                          <>
+                            <td className="px-3 py-2">
+                              <Input value={editingPaperTypeForm.name} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, name: e.target.value })} placeholder="EN" className="text-xs mb-1 h-8" />
+                              <Input value={editingPaperTypeForm.nameAr} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, nameAr: e.target.value })} placeholder="AR" className="text-xs h-8" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.colorPerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input type="number" min="0" step="0.5" value={editingPaperTypeForm.blackWhitePerPage} onChange={e => setEditingPaperTypeForm({ ...editingPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })} className="w-20 text-xs h-8" />
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="default" onClick={() => handleSavePaperType(pt.id)} aria-label={isRtl ? "حفظ" : "Save"}><Icon name="check" /></Button>
+                                <Button size="sm" variant="outline" onClick={() => { setEditingPaperTypeId(null); setEditingPaperTypeForm(null); }} aria-label={isRtl ? "إلغاء" : "Cancel"}><Icon name="x" /></Button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-3 py-3">
+                              <div className="font-semibold text-foreground text-sm">{isRtl ? pt.nameAr : pt.name}</div>
+                              <div className="text-xs text-muted-foreground">{isRtl ? pt.name : pt.nameAr}</div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className="font-semibold text-indigo-700 dark:text-indigo-400">{pt.colorPerPage}</span>
+                              <span className="text-xs text-muted-foreground ms-1">DZD</span>
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className="font-semibold text-foreground">{pt.blackWhitePerPage}</span>
+                              <span className="text-xs text-muted-foreground ms-1">DZD</span>
+                            </td>
+                            <td className="px-3 py-3">
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" onClick={() => { setEditingPaperTypeId(pt.id); setEditingPaperTypeForm({ name: pt.name, nameAr: pt.nameAr, colorPerPage: pt.colorPerPage, blackWhitePerPage: pt.blackWhitePerPage }); setShowAddPaperTypeForm(false); }} title="Edit" aria-label="Edit">
+                                  <Icon name="edit" className="w-3.5 h-3.5" />
+                                </Button>
+                                {paperTypes.length > 1 && (
+                                  <Button variant="ghost" size="icon" onClick={() => handleDeletePaperType(pt.id)} title="Delete" aria-label="Delete">
+                                    <Icon name="trash" className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Add Paper Type Dialog */}
+              <Dialog open={showAddPaperTypeForm} onOpenChange={(open) => { if (!open) { setShowAddPaperTypeForm(false); setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 }); }}}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{isRtl ? "إضافة نوع ورق جديد" : "Add New Paper Type"}</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (EN)" : "Name (EN)"}</label>
+                      <Input
+                        value={newPaperTypeForm.name}
+                        onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, name: e.target.value })}
+                        placeholder="e.g. Matte"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "الاسم (AR)" : "Name (AR)"}</label>
+                      <Input
+                        value={newPaperTypeForm.nameAr}
+                        onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, nameAr: e.target.value })}
+                        placeholder="مثلاً: مطفي"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر ملون (DZD)" : "Color (DZD)"}</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={newPaperTypeForm.colorPerPage}
+                        onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, colorPerPage: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-foreground mb-1.5">{isRtl ? "سعر أبيض/أسود (DZD)" : "B&W (DZD)"}</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={newPaperTypeForm.blackWhitePerPage}
+                        onChange={e => setNewPaperTypeForm({ ...newPaperTypeForm, blackWhitePerPage: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => { setShowAddPaperTypeForm(false); setNewPaperTypeForm({ name: "", nameAr: "", colorPerPage: 30, blackWhitePerPage: 15 }); }}>
+                      {isRtl ? "إلغاء" : "Cancel"}
+                    </Button>
+                    <Button onClick={handleAddPaperType}>
+                      {isRtl ? "إضافة" : "Add"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardContent>
+          </Card>
+
+          {/* Discount Rules Card - Full Width */}
+          <Card className="border-0">
+            <CardHeader className="flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="tag" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "قواعد الخصم" : "Discount Rules"}</CardTitle>
+                  <CardDescription>{isRtl ? "خصومات تلقائية للطباعة بالجملة" : "Automatic bulk print discounts"}</CardDescription>
+                </div>
+              </div>
+              <Button size="sm" onClick={handleAddRule}>
+                <Icon name="plus" className="w-4 h-4" />
+                {isRtl ? "إضافة قاعدة" : "Add Rule"}
+              </Button>
+            </CardHeader>
+
+            <CardContent>
+              {discountRules.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Icon name="frown" className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-500" />
+                  <p>{isRtl ? "لا توجد قواعد خصم بعد" : "No discount rules yet"}</p>
+                  <p className="text-sm mt-1">
+                    {isRtl ? "انقر على إضافة قاعدة لإنشاء خصم جديد" : "Click Add Rule to create a discount"}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {discountRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                        rule.is_active
+                          ? "bg-card border-border"
+                          : "bg-muted/40 border-border opacity-60"
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        {/* Active Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRuleActive(rule)}
+                          className={`relative w-12 h-6 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-purple-500/40 dark:focus:ring-purple-400/40 ${
+                            rule.is_active ? "bg-purple-600 dark:bg-purple-500" : "bg-gray-300 dark:bg-gray-600"
+                          }`}
+                        >
+                          <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-card shadow-md dark:shadow-gray-800/50 transition-all duration-300 ${
+                            isRtl
+                              ? (rule.is_active ? "right-[1.625rem]" : "right-0.5")
+                              : (rule.is_active ? "left-[1.625rem]" : "left-0.5")
+                          }`} />
+                        </button>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-foreground">{rule.name}</span>
+                            {rule.priority > 0 && (
+                              <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs rounded-full font-medium">
+                                P{rule.priority}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            {rule.discount_type === "percent"
+                              ? `${rule.discount_value}% ${isRtl ? "خصم" : "off"}`
+                              : `${rule.discount_value} DZD ${isRtl ? "خصم" : "off"}`}
+                            {" · "}
+                            {rule.condition_type === "pages"
+                              ? `${isRtl ? "عند" : "when"} ≥ ${rule.threshold} ${isRtl ? "صفحة" : "pages"}`
+                              : `${isRtl ? "عند" : "when"} ≥ ${rule.threshold} DZD`}
+                            {rule.max_discount_cap && ` ${isRtl ? "(حد أقصى" : "(max"} ${rule.max_discount_cap} DZD)`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleEditRule(rule)} aria-label={isRtl ? "تعديل القاعدة" : "Edit rule"}>
+                          <Icon name="edit" className="w-5 h-5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(rule.id)} aria-label={isRtl ? "حذف القاعدة" : "Delete rule"}>
+                          <Icon name="trash" className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          </div>
+        )}
+
+        {activeTab === "cloud" && (
+          <div className="space-y-6">
+          {/* Cloud Sync Card */}
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="cloud-upload" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "المزامنة السحابية" : "Cloud Sync"}</CardTitle>
+                  <CardDescription>{isRtl ? "المزامنة مع تطبيق السحابة للطلبات والإعدادات" : "Sync orders and settings with a cloud instance"}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "رابط المتجر السحابي" : "Store link"}
+                </label>
+                <Input value={cloudSyncUrl} onChange={(e) => { setCloudSyncUrl(e.target.value); setCloudTestResult(null); }} placeholder="https://print.example.com/s/your-store" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isRtl
+                    ? "الصق الرابط كما زوّدك به المشرف؛ يُستخرج معرّف المتجر منه تلقائيًا."
+                    : "Paste the link exactly as your platform admin gave it — the store slug is extracted automatically."}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "معرّف المتجر (slug)" : "Store slug"}
+                </label>
+                <Input value={cloudShopSlug} onChange={(e) => setCloudShopSlug(e.target.value)} placeholder="your-store" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isRtl
+                    ? "يُملأ تلقائيًا من الرابط أعلاه أو بعد أول مزامنة. يُستخدم لبناء رابط الرفع: /s/<slug>/upload"
+                    : "Filled automatically from the link above, or after the first sync. Used to build the upload link: /s/<slug>/upload"}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "رمز API" : "API Token"}
+                </label>
+                <Input type="password" value={shopApiToken} onChange={(e) => { setShopApiToken(e.target.value); setCloudTestResult(null); }} placeholder={isRtl ? "64 حرفًا سداسيًا" : "64-char hex token"} />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">
+                  {isRtl ? "فترة التحديث (مللي ثانية)" : "Poll Interval (ms)"}
+                </label>
+                <Input type="number" min="15000" step="1000" value={cloudSyncPollInterval} onChange={(e) => setCloudSyncPollInterval(e.target.value)} />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isRtl ? "الحد الأدنى 15000 (15 ثانية)" : "Minimum 15000 (15 seconds)"}
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-4 pt-2 border-t border-border">
+                <div>
+                  <label className="block text-sm font-semibold text-foreground">
+                    {isRtl ? "قبول طلبات السحابة تلقائيًا" : "Auto-accept cloud orders"}
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                    {isRtl
+                      ? "عند التعطيل، ستظهر الطلبات الواردة من الرابط الإلكتروني في قسم \"مراجعة الطلبات\" لقبولها أو رفضها يدويًا قبل إضافتها إلى قائمة الطباعة."
+                      : "When off, orders from the online upload link land in \"Job Review\" for you to accept or reject before they're added to the print queue."}
+                  </p>
+                </div>
+                <Switch
+                  checked={autoAcceptCloudJobs}
+                  onCheckedChange={(checked) => setAutoAcceptCloudJobs(checked)}
+                  className="shrink-0"
+                />
+              </div>
+              <div className="pt-3 border-t border-border space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={cloudTesting !== null}
+                    onClick={() => runCloudTest("draft")}
+                  >
+                    <Icon name="zap" className="w-4 h-4" />
+                    {cloudTesting === "draft"
+                      ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
+                      : (isRtl ? "اختبار هذه القيم" : "Test these values")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={cloudTesting !== null}
+                    onClick={() => runCloudTest("saved")}
+                  >
+                    <Icon name="refresh" className="w-4 h-4" />
+                    {cloudTesting === "saved"
+                      ? (isRtl ? "جارٍ الاختبار..." : "Testing…")
+                      : (isRtl ? "اختبار الاتصال المحفوظ" : "Test saved connection")}
+                  </Button>
+                </div>
+                {cloudTestResult && (
+                  <p
+                    className={cn(
+                      "text-xs",
+                      cloudTestResult.ok
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-red-600 dark:text-red-400",
+                    )}
+                  >
+                    {cloudTestResult.text}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {isRtl
+                    ? "الاختبار يقرأ إعدادات المتجر من السحابة فقط؛ لا يغيّر أي بيانات."
+                    : "The test only reads this shop's settings from the cloud — it changes nothing."}
+                </p>
+              </div>
+              {renderSaveBar(cloudDirty, "cloud", saveCloudSync)}
+            </CardContent>
+          </Card>
+          </div>
+        )}
+
+        {activeTab === "system" && (
+          <div className="space-y-6">
+          <PrintersCard
+            currentSettings={currentSettings}
+            onPersist={persistSection}
+            renderSaveBar={renderSaveBar}
+          />
+
+          {/* Inventory Card */}
+          <Card className="border-0">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                  <Icon name="package" className="w-5 h-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">{isRtl ? "المخزون" : "Inventory"}</CardTitle>
+                  <CardDescription>{isRtl ? "خصم الورق تلقائيًا عند الطباعة" : "Automatic paper deduction on printing"}</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-foreground">
+                    {isRtl ? "خصم المخزون تلقائيًا" : "Auto-deduct stock"}
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xl">
+                    {isRtl
+                      ? "عند التفعيل، وبمجرد تحديد أي طلب كـ\"تمت الطباعة\"، يتم خصم (عدد الصفحات × عدد النسخ) تلقائيًا من عنصر المخزون المرتبط بنوع الورق المستخدم. إذا لم يكن هناك عنصر مرتبط بذلك النوع، فلن يحدث أي شيء. الحبر والمستلزمات الأخرى تُعدَّل يدويًا دائمًا."
+                      : "When on, marking any job as printed subtracts pages × copies from the inventory item linked to that job's paper type. If no item is linked to that paper type, nothing happens. Ink/toner and other supplies are always adjusted manually."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onManageInventory}
+                    className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline mt-2"
+                  >
+                    <>{isRtl ? "إدارة عناصر المخزون" : "Manage inventory items"}<Icon name="arrow-end" className="ms-1 inline-block align-text-bottom rtl:rotate-180" /></>
+                  </button>
+                </div>
+                <Switch
+                  checked={autoDeductStock}
+                  onCheckedChange={(checked) => setAutoDeductStock(checked)}
+                  className="shrink-0"
+                />
+              </div>
+              {renderSaveBar(inventoryDirty, "inventory", saveInventory)}
+            </CardContent>
+          </Card>
+
+          <PasswordCard />
+
+          <BackupCard />
+          </div>
+        )}
+      </div>
       <QrPosterDialog
         open={qrPosterOpen}
         onOpenChange={setQrPosterOpen}

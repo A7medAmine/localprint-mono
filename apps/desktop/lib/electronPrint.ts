@@ -36,6 +36,13 @@ export interface PrintFileResult {
   handedOff?: boolean;
 }
 
+export interface RenderHtmlPdfPayload {
+  /** A self-contained document — fonts and images must already be inlined. */
+  html: string;
+  pageSize?: string;
+  landscape?: boolean;
+}
+
 export interface PrintEngineInfo {
   /** "spooler" = SumatraPDF via the Windows spooler, "chromium" = fallback. */
   engine: "spooler" | "chromium";
@@ -48,6 +55,7 @@ interface ElectronPrintBridge {
   getPrintEngine(): Promise<PrintEngineInfo>;
   printFile(payload: PrintFilePayload): Promise<PrintFileResult>;
   printData(payload: PrintDataPayload): Promise<PrintFileResult>;
+  renderHtmlPdf(payload: RenderHtmlPdfPayload): Promise<Uint8Array>;
 }
 
 function bridge(): ElectronPrintBridge | null {
@@ -100,4 +108,16 @@ export async function printData(payload: PrintDataPayload): Promise<PrintFileRes
   const b = bridge();
   if (!b) throw new Error("Native printing is only available in the desktop app.");
   return withNativePrint(() => b.printData(payload));
+}
+
+/**
+ * An HTML page rendered to PDF bytes by the main process, so it can be spooled
+ * through the same engine as every other job instead of Chromium's own print
+ * dialog. The HTML must be self-contained — it is rendered from a tmp file, so
+ * app-relative URLs (fonts, logos) do not resolve.
+ */
+export async function renderHtmlPdf(payload: RenderHtmlPdfPayload): Promise<Uint8Array> {
+  const b = bridge();
+  if (!b?.renderHtmlPdf) throw new Error("PDF rendering is only available in the desktop app.");
+  return b.renderHtmlPdf(payload);
 }

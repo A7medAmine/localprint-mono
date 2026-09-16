@@ -596,6 +596,65 @@ ipcMain.handle('get-print-engine', async () => ({
   platform: process.platform,
 }));
 
+// Poster/label printing: the renderer builds an HTML page, main turns it into
+// a PDF and the normal print path (spooler first, Chromium as fallback) takes
+// it from there.
+//
+// The old poster path called window.print() on a hidden iframe inside the app
+// window. That is Chromium's own print dialog, which on Windows ignores the
+// printer and paper settings the shop already chose, has no success/failure
+// signal, and prints blank on the same driver/GPU combinations that made us
+// move job printing to the spooler in the first place.
+//
+// The HTML must be self-contained (fonts and images inlined): it is written to
+// a tmp file, so a "/asset.ttf" reference would resolve against the drive root
+// rather than the app server.
+ipcMain.handle('render-html-pdf', async (_event, payload) => {
+  const { html, pageSize = 'A4', landscape = false } = payload || {};
+  if (!html || typeof html !== 'string') {
+    throw new Error('render-html-pdf: html is required');
+  }
+
+  const tmpPath = path.join(os.tmpdir(), `atba3li-${crypto.randomBytes(8).toString('hex')}.html`);
+  fs.writeFileSync(tmpPath, html, 'utf8');
+
+  const win = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1200,
+    backgroundColor: '#ffffff',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  // Same reason as the print window above: a dark OS theme would otherwise
+  // leak UA dark styling into the rendered page.
+  const priorTheme = nativeTheme.themeSource;
+  nativeTheme.themeSource = 'light';
+
+  try {
+    await win.loadFile(tmpPath);
+    // printToPDF does not wait for @font-face downloads; without this the
+    // poster comes out in a fallback system face.
+    await win.webContents.executeJavaScript(
+      'document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true',
+    );
+    // One frame for the layout to settle after the real faces land.
+    await new Promise((r) => setTimeout(r, 150));
+    const pdf = await win.webContents.printToPDF({
+      printBackground: true,
+      landscape: landscape === true,
+      pageSize,
+      margins: { marginType: 'none' },
+      // The page's own @page rule wins — the poster is laid out in mm.
+      preferCSSPageSize: true,
+    });
+    return pdf;
+  } finally {
+    nativeTheme.themeSource = priorTheme;
+    try { win.destroy(); } catch { /* already gone */ }
+    try { fs.unlinkSync(tmpPath); } catch { /* already gone */ }
+  }
+});
+
 // Print Studio generates PDFs in-memory (card layouts, page reorders) that
 // never touch the jobs store. Rather than saving them just to print, the
 // renderer sends the raw bytes here — we drop them in the OS tmp dir, print,
