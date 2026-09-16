@@ -22,6 +22,7 @@ import supabase, {
   getShopByTokenHash,
   createShop,
   listShops,
+  listPublicShops,
   getPlatformStats,
   rotateShopToken,
   updateShop,
@@ -934,6 +935,16 @@ app.get("/api/s/:shopSlug/logo", resolveShopBySlug, async (req, res) => {
 });
 
 // Get settings (public — used by price calculator)
+// Public shop directory — the platform root page uses it when no slug is given.
+app.get("/api/shops", async (req, res) => {
+  try {
+    res.json(await listPublicShops());
+  } catch (err) {
+    console.error("❌ listPublicShops:", err);
+    res.status(500).json({ error: "Failed to list shops" });
+  }
+});
+
 app.get("/api/s/:shopSlug/settings", resolveShopBySlug, async (req, res) => {
   const settings = pickPublicSettings(await getSettings(req.shop.id));
   settings.paperTypes = await getPaperTypes(req.shop.id);
