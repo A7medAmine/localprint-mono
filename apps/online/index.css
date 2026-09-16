@@ -13,18 +13,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Inter, self-hosted. The packaged desktop app runs without a network, so the
+   Google Fonts stylesheet it used to load never arrived and the whole UI fell
+   back to a system face. This is the variable TTF that already shipped in
+   public/ — the four Inter-*.woff2 files next to it were 1.6KB HTML error
+   pages a download script had saved under a font name, which is why Chromium
+   reported "OTS parsing error: invalid sfntVersion". Arabic comes from
+   Rubik (below), which the `sans` stack lists next. */
 @font-face {
-  font-family: "Noto Kufi Arabic";
-  src: url("/fonts/noto-kufi-arabic/NotoKufiArabic-Regular.woff2")
-    format("woff2");
-  font-weight: 400;
+  font-family: "Inter";
+  src: url("/Inter.ttf") format("truetype-variations");
+  font-weight: 100 900;
   font-display: swap;
 }
 
+/* Rubik, self-hosted variable TTF (wght 300-900) — the Arabic face for the RTL
+   UI. Inter has no Arabic glyphs, so the `sans` stack lists Rubik right behind
+   it and the browser falls through per glyph: Latin from Inter, Arabic from
+   Rubik. */
 @font-face {
-  font-family: "Noto Kufi Arabic";
-  src: url("/fonts/noto-kufi-arabic/NotoKufiArabic-Bold.woff2")
-    format("woff2");
-  font-weight: 700;
+  font-family: "Rubik";
+  src: url("/Rubik.ttf") format("truetype-variations");
+  font-weight: 300 900;
   font-display: swap;
 }

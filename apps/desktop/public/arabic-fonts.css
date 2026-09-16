@@ -1,7 +1,7 @@
-/* Arabic Font Styles - IBM Plex Arabic Text font */
+/* Arabic Font Styles - Rubik, the app's Arabic face */
 @font-face {
-  font-family: "IBMPlexArabic";
-  src: url("/IBMPlexArabic-Text.ttf") format("truetype");
+  font-family: "Rubik";
+  src: url("/Rubik.ttf") format("truetype-variations");
   font-weight: normal;
   font-style: normal;
   unicode-range:
@@ -10,11 +10,11 @@
 
 /* Arabic text styling */
 [dir="rtl"] {
-  font-family: "IBMPlexArabic", sans-serif;
+  font-family: "Rubik", sans-serif;
 }
 
 [dir="rtl"] body {
-  font-family: "IBMPlexArabic", sans-serif;
+  font-family: "Rubik", sans-serif;
 }
 
 [dir="rtl"] h1,
@@ -23,13 +23,13 @@
 [dir="rtl"] h4,
 [dir="rtl"] h5,
 [dir="rtl"] h6 {
-  font-family: "IBMPlexArabic", sans-serif;
+  font-family: "Rubik", sans-serif;
   font-weight: 700;
 }
 
 [dir="rtl"] .font-bold,
 [dir="rtl"] .font-semibold {
-  font-family: "IBMPlexArabic", sans-serif;
+  font-family: "Rubik", sans-serif;
   font-weight: 700;
 }
 
@@ -41,7 +41,7 @@
 [dir="rtl"] input,
 [dir="rtl"] textarea {
   text-align: right;
-  font-family: "IBMPlexArabic", sans-serif;
+  font-family: "Rubik", sans-serif;
 }
 
 /* RTL layout adjustments */

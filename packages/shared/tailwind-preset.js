@@ -9,7 +9,12 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'sans-serif'],
+        // Rubik sits right behind Inter: Inter has no Arabic glyphs, so
+        // without it every `font-sans` element (which is most of the UI) fell
+        // back to whatever Arabic face the OS picked, and the RTL UI rendered in
+        // two different fonts depending on whether a rule in arabic-fonts.css
+        // happened to match the element.
+        sans: ['Inter', 'Rubik', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",

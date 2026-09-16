@@ -187,7 +187,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
       <aside
         className={`fixed md:static inset-y-0 left-0 z-50 w-[220px] flex-shrink-0 flex flex-col bg-gray-50 dark:bg-[#111] border-r border-border transition-transform duration-250 ease md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } ${isRtl ? "font-['IBMPlexArabic']" : ""}`}
+        } ${isRtl ? "font-['Rubik']" : ""}`}
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-5">

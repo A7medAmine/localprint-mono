@@ -261,7 +261,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
   );
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950 text-foreground ${isRtl ? "font-['IBMPlexArabic']" : ""}`}>
+    <div className={`flex h-screen overflow-hidden bg-[#F8FAFC] dark:bg-gray-950 text-foreground ${isRtl ? "font-['Rubik']" : ""}`}>
       {/* Desktop sidebar (inline) */}
       <aside
         className={`hidden md:flex flex-col bg-gray-50 dark:bg-[#111] border-border transition-[width] duration-200 shrink-0 ${
