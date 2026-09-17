@@ -846,7 +846,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                       {renderCost(job)}
                                     </td>
                                     <td className="px-4 py-2 align-middle">
-                                      <StatusBadge job={job} />
+                                      <StatusBadge job={job} onStatusChange={jobs.handleStatusChange} />
                                     </td>
                                     <td className="px-4 py-2 align-middle">
                                       <PaymentBadge job={job} onEdit={handlePaymentClick} />

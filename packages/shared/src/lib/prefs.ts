@@ -19,6 +19,7 @@ export const PREF_KEYS = {
   myUploadIds: "my_upload_ids",
   myUploadTokens: "my_upload_tokens",
   imageFilterPresets: "ps_image_filter_presets",
+  credentialCardPaperSize: "ps_credential_card_paper_size",
 } as const;
 
 export type PrefKey = keyof typeof PREF_KEYS;

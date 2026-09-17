@@ -1,5 +1,5 @@
 import React from "react";
-import { PrintJob, PrintStatus, PaperType, DiscountRule, ShopSettings } from "../../../types";
+import { PrintJob, PaperType, DiscountRule, ShopSettings } from "../../../types";
 import {
   calculatePrintPrice,
   formatPrice,
@@ -339,27 +339,6 @@ export function makeJobCells({
           <Button variant="ghost" size="icon" onClick={() => handleDownload(job)} title={t("download")} className="text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-white/10 w-8 h-8" aria-label={t("download")}>
             <Icon name="download" className="w-4 h-4" />
           </Button>
-          <span className="mx-1 w-px h-6 bg-gray-200 dark:bg-white/20 shrink-0" />
-          <span className="group/status relative" title={isRtl ? "تغيير الحالة" : "Change status"}>
-            <Select value={job.status} onValueChange={(val) => handleStatusChange(job.id, val as PrintStatus)}>
-              <SelectTrigger className={`h-8 w-8 border-0 p-0 ${job.status === PrintStatus.PRINTED ? "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-white/10" : job.status === PrintStatus.READY ? "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-white/10" : "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-white/10"}`}>
-                <SelectValue>
-                  <Icon name="check-circle" className="w-4 h-4" />
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={PrintStatus.PENDING}>
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500 dark:bg-yellow-400 inline-block"></span>{isRtl ? "قيد الانتظار" : "Pending"}</span>
-                </SelectItem>
-                <SelectItem value={PrintStatus.READY}>
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>{isRtl ? "جاهز" : "Ready"}</span>
-                </SelectItem>
-                <SelectItem value={PrintStatus.PRINTED}>
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>{isRtl ? "تمت الطباعة" : "Printed"}</span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </span>
           <Button variant="ghost" size="icon" onClick={() => handleDelete(job.id)} title={t("delete")} className="text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-white/10 w-8 h-8" aria-label={t("delete")}>
             <Icon name="trash" className="w-4 h-4" />
           </Button>
@@ -390,7 +369,7 @@ export function makeJobCells({
             <div className="flex-1 min-w-0">{renderFileInfo(job)}</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge job={job} />
+            <StatusBadge job={job} onStatusChange={handleStatusChange} />
             <PaymentBadge job={job} onEdit={handlePaymentClick} />
           </div>
           {renderSettingsControls(job)}

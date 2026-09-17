@@ -7,6 +7,7 @@ export enum PrintStatus {
   PENDING = "PENDING",
   READY = "READY",
   PRINTED = "PRINTED",
+  CANCELED = "CANCELED",
 }
 
 export enum PaymentStatus {

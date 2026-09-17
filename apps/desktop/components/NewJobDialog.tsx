@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { PDFDocument } from "pdf-lib";
 import { ALLOWED_TYPES } from "../constants";
@@ -48,7 +48,23 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
   const [mode, setMode] = useState<Mode>(null);
   const [working, setWorking] = useState(false);
   const [progress, setProgress] = useState("");
+  const [previews, setPreviews] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fileKey = (f: File) => f.name + f.size + f.lastModified;
+
+  // Object URLs for image thumbnails in the file list — revoked whenever the
+  // file set changes, so a removed/replaced file never leaks its blob URL.
+  useEffect(() => {
+    const urls: Record<string, string> = {};
+    files.forEach((f) => {
+      if (isImageFile(f)) urls[fileKey(f)] = URL.createObjectURL(f);
+    });
+    setPreviews(urls);
+    return () => {
+      Object.values(urls).forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [files]);
 
   const reset = () => {
     setCustomerName("");
@@ -298,7 +314,12 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
           {files.length > 0 && (
             <div className="space-y-1.5">
               {files.map((f) => (
-                <div key={f.name + f.size + f.lastModified} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 text-sm">
+                <div key={fileKey(f)} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5 text-sm">
+                  {previews[fileKey(f)] ? (
+                    <img src={previews[fileKey(f)]} alt="" className="w-8 h-8 rounded-md object-cover shrink-0" />
+                  ) : (
+                    <Icon name="file-doc" className="w-8 h-8 p-1.5 rounded-md bg-muted text-muted-foreground shrink-0" />
+                  )}
                   <span className="flex-1 truncate">{f.name}</span>
                   <span className="text-xs text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
                   <button

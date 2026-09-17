@@ -1,4 +1,4 @@
-import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment } from "../types";
+import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment, Credential, CredentialSettings } from "../types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { normalizeLocation } from "@atba3li/shared/geo";
 import { normalizeSocialLinks } from "@atba3li/shared/social";
@@ -588,6 +588,57 @@ class StorageService {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount, reason, note }),
+    });
+  }
+
+  // Credentials
+  async getCredentials(): Promise<Credential[]> {
+    const data = await this.safeFetch("/api/credentials");
+    return Array.isArray(data) ? data : [];
+  }
+
+  async getCredential(id: string): Promise<Credential> {
+    return this.safeFetch(`/api/credentials/${id}`);
+  }
+
+  async createCredential(cred: Partial<Credential>): Promise<Credential> {
+    return this.safeFetch("/api/credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cred),
+    });
+  }
+
+  async updateCredential(id: string, updates: Partial<Credential>): Promise<Credential> {
+    return this.safeFetch(`/api/credentials/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteCredential(id: string): Promise<void> {
+    await this.safeFetch(`/api/credentials/${id}`, { method: "DELETE" });
+  }
+
+  async getCredentialSettings(): Promise<CredentialSettings> {
+    try {
+      const data = await this.safeFetch("/api/credentials/settings");
+      return {
+        services: Array.isArray(data?.services) ? data.services : [],
+        defaultNotice: data?.defaultNotice || "",
+        fontScale: data?.fontScale === "large" || data?.fontScale === "xlarge" ? data.fontScale : "normal",
+      };
+    } catch {
+      return { services: [], defaultNotice: "", fontScale: "normal" };
+    }
+  }
+
+  async updateCredentialSettings(settings: Partial<CredentialSettings>): Promise<CredentialSettings> {
+    return this.safeFetch("/api/credentials/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
     });
   }
 

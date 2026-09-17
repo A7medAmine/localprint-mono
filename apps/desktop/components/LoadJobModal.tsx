@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { PrintJob } from "../types";
 import { useLanguage } from "../lib/useLanguage";
 import { Icon } from "./ui/icon";
@@ -66,7 +67,12 @@ const LoadJobModal: React.FC<LoadJobModalProps> = ({ isOpen, onClose, onSelect, 
 
   if (!isOpen) return null;
 
-  return (
+  // Portaled to document.body — a plain `fixed` div inside CardIDTool's
+  // preview panel (which has a CSS transform for the print-scale preview)
+  // would resolve `position: fixed` against that transformed ancestor
+  // instead of the viewport, covering only its box and letting the rest of
+  // the page bleed through around the modal.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
       <button
         type="button"
@@ -110,8 +116,14 @@ const LoadJobModal: React.FC<LoadJobModalProps> = ({ isOpen, onClose, onSelect, 
                       className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition disabled:opacity-50 text-start"
                       onClick={() => handleSelect(job)}
                     >
-                      <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0">
-                        <Icon name="file-doc" className="w-4 h-4 text-muted-foreground" />
+                      <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                        <img
+                          src={`/api/files/public/${job.id}`}
+                          alt=""
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                        />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-foreground truncate">{job.fileName}</div>
@@ -156,7 +168,8 @@ const LoadJobModal: React.FC<LoadJobModalProps> = ({ isOpen, onClose, onSelect, 
         </div>
         {error && <div className="px-4 pb-4 text-sm text-red-500 dark:text-red-400">{error}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

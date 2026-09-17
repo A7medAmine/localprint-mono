@@ -163,6 +163,21 @@ db.exec(`
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Customer account credentials saved for printing (registration-service
+  -- shops: CNAS, e-Paiement, email, etc). password is stored encrypted (see
+  -- encryptToken/decryptToken) — plaintext only ever exists in memory when a
+  -- single record is fetched for editing or printing.
+  CREATE TABLE IF NOT EXISTS credentials (
+    id TEXT PRIMARY KEY,
+    customerName TEXT NOT NULL,
+    serviceName TEXT NOT NULL,
+    websiteUrl TEXT DEFAULT '',
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    notice TEXT DEFAULT '',
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
   -- The admin list reads jobs newest-first and the review queue filters on
   -- status; without these both are full table scans that grow with the shop.
   CREATE INDEX IF NOT EXISTS idx_jobs_uploadDate ON jobs(uploadDate DESC);
@@ -171,6 +186,8 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_inventory_items_paperType ON inventory_items(paperTypeId);
   CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_itemId ON inventory_adjustments(itemId, createdAt DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_credentials_createdAt ON credentials(createdAt DESC);
 `);
 
 // Seed default paper types if table is empty
@@ -491,7 +508,7 @@ const ENCRYPTION_KEY = (() => {
   return Buffer.from(keyHex, 'hex');
 })();
 
-function encryptToken(plaintext) {
+export function encryptToken(plaintext) {
   if (!plaintext) return '';
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
@@ -501,7 +518,7 @@ function encryptToken(plaintext) {
   return iv.toString('hex') + ':' + authTag + ':' + encrypted;
 }
 
-function decryptToken(ciphertext) {
+export function decryptToken(ciphertext) {
   if (!ciphertext || !ciphertext.includes(':')) return '';
   const parts = ciphertext.split(':');
   if (parts.length !== 3) return '';
@@ -592,6 +609,98 @@ export const getPendingEmailById = (id) => {
   const row = db.prepare('SELECT * FROM gmail_pending WHERE id = ?').get(id);
   if (row) row.attachment_meta = JSON.parse(row.attachment_meta || '[]');
   return row;
+};
+
+/**
+ * Credential Helpers
+ *
+ * password is encrypted at rest (see encryptToken/decryptToken above —
+ * reused rather than duplicated, since both need reversible storage for a
+ * value that must be read back in plaintext). The list endpoint masks
+ * the password so it never leaves the machine as anything but "••••••••"
+ * until a single record is explicitly opened for edit/print.
+ */
+const MASKED_PASSWORD = "••••••••";
+
+const maskCredential = (row) => ({ ...row, password: row.password ? MASKED_PASSWORD : "" });
+
+const decryptCredential = (row) => ({ ...row, password: decryptToken(row.password) });
+
+export const getCredentials = () => {
+  return db.prepare('SELECT * FROM credentials ORDER BY createdAt DESC').all().map(maskCredential);
+};
+
+export const getCredential = (id) => {
+  const row = db.prepare('SELECT * FROM credentials WHERE id = ?').get(id);
+  return row ? decryptCredential(row) : null;
+};
+
+export const createCredential = (cred) => {
+  db.prepare(`
+    INSERT INTO credentials (id, customerName, serviceName, websiteUrl, username, password, notice)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    cred.id,
+    cred.customerName,
+    cred.serviceName,
+    cred.websiteUrl || '',
+    cred.username,
+    encryptToken(cred.password),
+    cred.notice || '',
+  );
+  return getCredential(cred.id);
+};
+
+export const updateCredential = (id, updates) => {
+  const existing = db.prepare('SELECT id FROM credentials WHERE id = ?').get(id);
+  if (!existing) return null;
+
+  const fields = [];
+  const values = [];
+  if (updates.customerName !== undefined) { fields.push('customerName = ?'); values.push(updates.customerName); }
+  if (updates.serviceName !== undefined) { fields.push('serviceName = ?'); values.push(updates.serviceName); }
+  if (updates.websiteUrl !== undefined) { fields.push('websiteUrl = ?'); values.push(updates.websiteUrl || ''); }
+  if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
+  if (updates.password !== undefined) { fields.push('password = ?'); values.push(encryptToken(updates.password)); }
+  if (updates.notice !== undefined) { fields.push('notice = ?'); values.push(updates.notice || ''); }
+
+  if (fields.length === 0) return getCredential(id);
+
+  values.push(id);
+  db.prepare(`UPDATE credentials SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getCredential(id);
+};
+
+export const deleteCredential = (id) => {
+  db.prepare('DELETE FROM credentials WHERE id = ?').run(id);
+  return id;
+};
+
+/**
+ * Credential-card shop-wide settings: reusable "service" presets for the
+ * add-card dropdown, a default notice printed on every card unless a
+ * credential sets its own override, and a font-size scale (the printed card
+ * looks sparse on a full A4/A5 sheet at the thermal-tuned default size).
+ * Stored in the generic key-value `settings` table (same mechanism as
+ * shopName/pricing/etc) rather than a dedicated table — no relational data
+ * here, just a few blobs.
+ */
+const CREDENTIAL_FONT_SCALES = ['normal', 'large', 'xlarge'];
+
+export const getCredentialSettings = () => {
+  const settings = getSettings();
+  return {
+    services: Array.isArray(settings.credentialServices) ? settings.credentialServices : [],
+    defaultNotice: typeof settings.credentialNotice === 'string' ? settings.credentialNotice : '',
+    fontScale: CREDENTIAL_FONT_SCALES.includes(settings.credentialFontScale) ? settings.credentialFontScale : 'normal',
+  };
+};
+
+export const updateCredentialSettings = ({ services, defaultNotice, fontScale }) => {
+  if (services !== undefined) updateSetting('credentialServices', services);
+  if (defaultNotice !== undefined) updateSetting('credentialNotice', defaultNotice || '');
+  if (fontScale !== undefined && CREDENTIAL_FONT_SCALES.includes(fontScale)) updateSetting('credentialFontScale', fontScale);
+  return getCredentialSettings();
 };
 
 // Fold the WAL back into the main database file, then close.
