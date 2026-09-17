@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-
 import { Language, ShopSettings } from "./types";
 import { TRANSLATIONS } from "./constants";
 import { storageService } from "./services/storageService";
-import { isNativePrintActive } from "./lib/electronPrint";
+import { isElectron, isNativePrintActive } from "./lib/electronPrint";
 import LanguageToggle from "./components/LanguageToggle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./components/LoginPage";
@@ -167,10 +167,12 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect / to /upload
+  // Redirect / to /upload — LAN customers only. The desktop app's own window
+  // never lands on "/" (electron/main.js loads /admin directly), but guard it
+  // anyway so the operator's copy of the app can't end up on the upload page.
   useEffect(() => {
     if (location.pathname === "/") {
-      navigate("/upload", { replace: true });
+      navigate(isElectron() ? "/admin" : "/upload", { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -193,7 +195,7 @@ const App: React.FC = () => {
           navigate("/admin/login");
         }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "u") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "u" && !isElectron()) {
         e.preventDefault();
         navigate("/upload");
       }
@@ -209,7 +211,7 @@ const App: React.FC = () => {
           emitAppEvent("ps:new-job");
         }
       }
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !isElectron()) {
         if (location.pathname.startsWith("/admin")) {
           navigate("/upload");
         }
@@ -229,7 +231,7 @@ const App: React.FC = () => {
     storageService.setAuthToken(null);
     clearPref("adminToken");
     setIsAdmin(false);
-    navigate("/upload", { replace: true });
+    navigate(isElectron() ? "/admin/login" : "/upload", { replace: true });
   };
 
   // Navigate immediately — the old 150ms fade-out ran before every mode switch
@@ -358,7 +360,7 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            <Route path="*" element={<Navigate to="/upload" replace />} />
+            <Route path="*" element={<Navigate to={isElectron() ? "/admin" : "/upload"} replace />} />
           </Routes>
           </Suspense>
         </div>

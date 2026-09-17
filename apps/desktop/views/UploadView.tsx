@@ -73,6 +73,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   // Pricing & Pages States
   const [shopSettings, setShopSettings] = useState<ShopSettings | null>(propSettings || null);
@@ -186,9 +187,12 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
     name: string,
     phone: string,
     notes: string,
+    orderId: string,
+    signal: AbortSignal,
   ) => {
     const job: PrintJob = {
       id: generateSafeId(),
+      orderId,
       customerName: name.trim(),
       phoneNumber: phone.trim(),
       notes: notes.trim(),
@@ -215,7 +219,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
         setSelectedFiles((prev) =>
           prev.map((f) => (f.id === fileStatus.id ? { ...f, progress } : f)),
         );
-      });
+      }, signal);
       setSelectedFiles((prev) =>
         prev.map((f) =>
           f.id === fileStatus.id
@@ -224,6 +228,14 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
         ),
       );
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setSelectedFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileStatus.id ? { ...f, status: "pending", progress: 0 } : f,
+          ),
+        );
+        throw err;
+      }
       console.error("Upload error for file:", fileStatus.file.name, err);
       setSelectedFiles((prev) =>
         prev.map((f) =>
@@ -244,6 +256,13 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
     setIsUploading(true);
     setError(null);
 
+    // One id per submission, shared by every file in it, so the admin groups
+    // them as a single order even though each file uploads — and lands on
+    // the server — at its own time.
+    const orderId = generateSafeId();
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+
     try {
       for (const fileStatus of selectedFiles) {
         if (fileStatus.status === "success") continue;
@@ -252,14 +271,23 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
           formData.name,
           formData.phone,
           formData.notes,
+          orderId,
+          controller.signal,
         );
       }
       setOverallSuccess(true);
-    } catch {
-      setError(t("errorMsg"));
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        setError(t("errorMsg"));
+      }
     } finally {
       setIsUploading(false);
+      uploadAbortRef.current = null;
     }
+  };
+
+  const cancelUpload = () => {
+    uploadAbortRef.current?.abort();
   };
 
   const formatSize = (bytes: number) => {
@@ -412,6 +440,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
         isUploading={isUploading}
         overallProgress={overallProgress}
         selectedFiles={selectedFiles}
+        onCancelUpload={cancelUpload}
         cancelConfirm={cancelConfirm}
         setCancelConfirm={setCancelConfirm}
         confirmCancelJob={confirmCancelJob}

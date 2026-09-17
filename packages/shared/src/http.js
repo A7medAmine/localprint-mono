@@ -77,7 +77,12 @@ export function buildContentSecurityPolicy({
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       `connect-src ${connectSrc.join(" ")}`,
-      "frame-src 'self'",
+      // blob: covers the file preview's <embed type="application/pdf">, which
+      // is handed the PDF as a blob URL and rendered by the host's own PDF
+      // viewer. object-src has to be stated: without it Chromium falls back to
+      // default-src and drops the viewer frame silently, logging nothing.
+      "frame-src 'self' blob:",
+      "object-src 'self' blob:",
     ].join("; ") + ";"
   );
 }

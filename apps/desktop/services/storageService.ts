@@ -123,7 +123,8 @@ class StorageService {
   async saveJob(
     job: PrintJob,
     file: File,
-    onProgress?: (p: number) => void
+    onProgress?: (p: number) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
@@ -144,6 +145,15 @@ class StorageService {
             onProgress(percent);
           }
         };
+      }
+
+      if (signal) {
+        if (signal.aborted) {
+          xhr.abort();
+          reject(new DOMException("Upload cancelled", "AbortError"));
+          return;
+        }
+        signal.addEventListener("abort", () => xhr.abort());
       }
 
       xhr.onload = () => {
@@ -175,6 +185,7 @@ class StorageService {
       };
 
       xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
       xhr.send(formData);
     });
   }

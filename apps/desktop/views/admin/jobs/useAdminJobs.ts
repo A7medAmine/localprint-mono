@@ -41,7 +41,7 @@ export interface StudioPrintOptions {
 }
 
 /** "1-3, 5, 8-10" -> [{from:0,to:2},{from:4,to:4},{from:7,to:9}] (0-indexed). */
-function parsePageRanges(spec: string): { from: number; to: number }[] {
+export function parsePageRanges(spec: string): { from: number; to: number }[] {
   if (!spec || !spec.trim()) return [];
   const out: { from: number; to: number }[] = [];
   for (const part of spec.split(",")) {
@@ -189,8 +189,15 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
       const phone = job.phoneNumber?.trim() || "";
       let key = `${name}-${phone}`;
       if (!name && !phone) {
-        const timeKey = new Date(job.uploadDate).toISOString().slice(0, 16);
-        key = `anon-${timeKey}`;
+        // Anonymous upload: no identity to group on, so fall back to the
+        // shared orderId every file from one submission carries — that way
+        // files that finish uploading (and so arrive here) at different
+        // times still land in the same order instead of splitting apart.
+        // Older jobs predate orderId; those fall back to the previous
+        // same-minute heuristic.
+        key = job.orderId
+          ? `anon-order-${job.orderId}`
+          : `anon-${new Date(job.uploadDate).toISOString().slice(0, 16)}`;
       }
       if (!acc[key]) {
         acc[key] = { key, customerName: name, phoneNumber: phone, jobs: [], latestDate: job.uploadDate };

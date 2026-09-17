@@ -4,13 +4,14 @@ import { Icon } from "../../ui/icon";
 interface ImageRendererProps {
   src: string;
   fileName: string;
+  isRtl?: boolean;
 }
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.25;
 
-const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
+const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName, isRtl }) => {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -56,7 +57,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
         <Icon name="alert-circle" className="w-12 h-12" />
-        <p className="text-sm font-medium">Failed to load image</p>
+        <p className="text-sm font-medium">{isRtl ? "تعذّر تحميل الصورة" : "Failed to load image"}</p>
       </div>
     );
   }
@@ -64,7 +65,7 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-center gap-2 px-4 py-2 border-b border-border shrink-0">
-        <span className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
+        <span dir="ltr" className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
           {Math.round(zoom * 100)}%
         </span>
         <div className="flex items-center gap-1">
@@ -72,23 +73,25 @@ const ImageRenderer: React.FC<ImageRendererProps> = ({ src, fileName }) => {
             onClick={zoomOut}
             disabled={zoom <= MIN_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Zoom out"
-           aria-label="Zoom out">
+            title={isRtl ? "تصغير" : "Zoom out"}
+            aria-label={isRtl ? "تصغير" : "Zoom out"}
+          >
             <Icon name="minus" className="w-4 h-4" />
           </button>
           <button
             onClick={resetZoom}
             className="p-1.5 rounded-lg hover:bg-muted transition-colors text-xs font-medium min-w-[2.5rem]"
-            title="Reset zoom"
+            title={isRtl ? "إعادة الضبط" : "Reset zoom"}
           >
-            Fit
+            {isRtl ? "ملائمة" : "Fit"}
           </button>
           <button
             onClick={zoomIn}
             disabled={zoom >= MAX_ZOOM}
             className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Zoom in"
-           aria-label="Zoom in">
+            title={isRtl ? "تكبير" : "Zoom in"}
+            aria-label={isRtl ? "تكبير" : "Zoom in"}
+          >
             <Icon name="plus" className="w-4 h-4" />
           </button>
         </div>

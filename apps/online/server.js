@@ -849,6 +849,10 @@ app.post("/api/s/:shopSlug/upload", uploadRateLimit, resolveShopBySlug, optional
     const newOrder = {
       ...fromApiOrder({
         id: orderId,
+        // Shared by every file the customer's browser sent in this submit
+        // batch, so files that finish uploading at different times still
+        // land in one order instead of one order per file.
+        orderId: String(metadata.orderId || "").trim() || orderId,
         customerName: metadata.customerName || profile?.name || '',
         phoneNumber: metadata.phoneNumber || profile?.phone || '',
         notes: metadata.notes || '',

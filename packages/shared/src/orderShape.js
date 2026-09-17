@@ -20,6 +20,11 @@
 // the round-trip test enforces it, so a stray/renamed field can't drift in.
 export const ORDER_FIELDS = [
   'id',
+  // Groups every file from one upload submission into a single order — set
+  // once per submit batch, shared by all the files it contains, so files
+  // that finish uploading at different times still belong to one order
+  // instead of splitting into one order per file.
+  'orderId',
   'customerName',
   'customerEmail',
   'phoneNumber',
@@ -50,6 +55,7 @@ export const ORDER_FIELDS = [
 // site rather than relying on the mapper to omit it.
 export const ONLINE_ORDER_COLUMNS = {
   id: 'id',
+  orderId: 'order_id',
   customerName: 'customername',
   phoneNumber: 'phonenumber',
   notes: 'notes',
@@ -80,6 +86,7 @@ export const ONLINE_ORDER_COLUMNS = {
 // routed through these mappers.
 export const DESKTOP_ORDER_COLUMNS = {
   id: 'id',
+  orderId: 'orderId',
   customerName: 'customerName',
   customerEmail: 'customerEmail',
   phoneNumber: 'phoneNumber',

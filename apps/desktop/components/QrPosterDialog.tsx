@@ -13,6 +13,7 @@ import { activeSocialLinks } from "@atba3li/shared/social";
 import type { SocialPlatformId } from "@atba3li/shared/social";
 import { BRAND_PATHS } from "@atba3li/shared/components/StoreSocialLinks";
 import { isElectron, printData, renderHtmlPdf } from "../lib/electronPrint";
+import PosterPrintOptionsDialog, { PosterPrintOptions } from "./PosterPrintOptionsDialog";
 
 type Mode = "local" | "online";
 
@@ -90,6 +91,7 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
   const [qrSvg, setQrSvg] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [printOptionsOpen, setPrintOptionsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -170,8 +172,10 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
   // printer and paper the shop configured, reports no real success or failure,
   // and prints blank on the drivers that made job printing move to the spooler.
   // So the poster is rendered to a PDF in the main process and spooled like any
-  // other job. Outside Electron (dev in a browser) the iframe path still runs.
-  const printPoster = async () => {
+  // other job. Outside Electron (dev in a browser) the iframe path still runs,
+  // and the printer/copies/colour picked in the options dialog are moot there —
+  // the OS print dialog takes over.
+  const printPoster = async (opts: PosterPrintOptions) => {
     if (!qrSvg || printing) return;
     setPrinting(true);
     setError(null);
@@ -189,13 +193,14 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
         fileType: "application/pdf",
         extension: ".pdf",
         // Empty means the OS default printer — same convention as job printing.
-        printerName: shopSettings?.defaultPrinterName || "",
+        printerName: opts.printerName,
         silent: true,
-        options: { copies: 1, color: true },
+        options: { copies: opts.copies, color: opts.color },
       });
       if (result.ok === false && !result.cancelled) {
         throw new Error(isRtl ? "تعذّرت الطباعة" : "Could not print the poster");
       }
+      setPrintOptionsOpen(false);
     } catch (err) {
       setError(
         err instanceof Error && err.message
@@ -353,7 +358,11 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
             </Button>
           )}
           {allowPrint && (
-            <Button onClick={printPoster} disabled={loading || printing || !qrSvg} className="flex-1">
+            <Button
+              onClick={() => setPrintOptionsOpen(true)}
+              disabled={loading || printing || !qrSvg}
+              className="flex-1"
+            >
               {printing
                 ? isRtl
                   ? "جارِ الطباعة…"
@@ -390,6 +399,17 @@ const QrPosterDialog: React.FC<QrPosterDialogProps> = ({
           )}
         </p>
       </DialogContent>
+
+      {allowPrint && (
+        <PosterPrintOptionsDialog
+          open={printOptionsOpen}
+          isRtl={isRtl}
+          defaultPrinterName={shopSettings?.defaultPrinterName || ""}
+          submitting={printing}
+          onClose={() => setPrintOptionsOpen(false)}
+          onPrint={printPoster}
+        />
+      )}
     </Dialog>
   );
 };
@@ -513,6 +533,8 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
 
   return `
 <div class="poster" dir="${dir}">
+  <div class="cal-bar" aria-hidden="true"><span class="cal c"></span><span class="cal m"></span><span class="cal y"></span><span class="cal k"></span></div>
+  <div class="poster-body">
   <header class="masthead">
     ${
       logo
@@ -547,8 +569,9 @@ const buildPosterInner = ({ lang, shopSettings, qrSvg, url, mode }: PosterProps)
   <footer class="poster-foot">
     ${contacts.length ? `<div class="contacts">${contacts.join("")}</div>` : ""}
     ${socialRow ? `<div class="socials">${socialRow}</div>` : ""}
-    <p class="foot-brand">Atba3li · أطبعلي</p>
+    <p class="foot-brand">Atba3li<span class="foot-dot"></span>أطبعلي</p>
   </footer>
+  </div>
 </div>
   `;
 };
@@ -564,23 +587,37 @@ const posterCss = `
   @font-face{font-family:'PosterArabic';src:url('/Rubik.ttf') format('truetype-variations');font-weight:300 900;font-display:block}
 
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{background:#fff;color:#111827;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  html,body{background:#fff;color:#161616;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{font-family:'PosterSans','PosterArabic','Segoe UI',Arial,sans-serif;font-feature-settings:'kern' 1,'liga' 1,'tnum' 1;-webkit-font-smoothing:antialiased}
 
-  .poster{width:210mm;height:297mm;padding:15mm 18mm 11mm;display:flex;flex-direction:column}
+  .poster{width:210mm;height:297mm;display:flex;flex-direction:column}
+
+  /* A press's own colour-calibration strip, run across the top edge — the
+     first proof of colour a printed sheet gives you. */
+  .cal-bar{display:flex;height:3mm;flex-shrink:0}
+  .cal{flex:1}
+  .cal.c{background:#00aeef}
+  .cal.m{background:#ec008c}
+  .cal.y{background:#ffe600}
+  .cal.k{background:#161616}
+
+  .poster-body{
+    flex:1;display:flex;flex-direction:column;padding:11mm 18mm 11mm;
+    background-image:radial-gradient(circle,rgba(22,22,22,.05) .4mm,transparent .42mm);
+    background-size:3.4mm 3.4mm;
+  }
 
   .masthead{display:flex;align-items:center;gap:5mm}
   .logo{width:16mm;height:16mm;flex-shrink:0;overflow:hidden;border-radius:2mm;display:flex;align-items:center;justify-content:center}
   .logo img{width:100%;height:100%;object-fit:contain}
-  .logo-fallback{background:#111827;color:#fff;font-family:'PosterDisplay','PosterArabic',serif;font-size:8mm;font-weight:600}
+  .logo-fallback{background:#161616;color:#fff;font-family:'PosterDisplay','PosterArabic',serif;font-size:8mm;font-weight:600}
   .masthead-text{min-width:0}
   .masthead h1{font-family:'PosterDisplay','PosterArabic',serif;font-size:9mm;line-height:1.1;font-weight:600;letter-spacing:-0.15mm}
-  .eyebrow{margin-top:1.2mm;font-size:3.5mm;font-weight:500;color:#6b7280;letter-spacing:0.3mm;text-transform:uppercase}
-  [dir="rtl"] .eyebrow{text-transform:none;letter-spacing:0}
+  .eyebrow{margin-top:1.2mm;font-size:3.8mm;font-weight:500;color:#6b7280}
 
   /* The code owns the middle of the sheet; nothing competes with it. */
   .qr-block{margin-top:auto;margin-bottom:auto;text-align:center}
-  .qr-frame{display:inline-block;line-height:0;padding:5mm;border:0.35mm solid #e5e7eb;border-radius:3mm}
+  .qr-frame{display:inline-block;line-height:0;padding:5mm;background:#fff;border:0.35mm solid #e5e7eb;border-radius:3mm}
   .qr-frame svg{width:84mm;height:84mm;display:block}
   .scan-cta{margin-top:6mm;font-family:'PosterDisplay','PosterArabic',serif;font-size:9.5mm;font-weight:600;line-height:1.15;letter-spacing:-0.2mm}
   .mode-note{margin-top:2mm;font-size:4mm;font-weight:500;color:#6b7280}
@@ -596,7 +633,7 @@ const posterCss = `
   .contacts{display:grid;grid-template-columns:1fr 1fr;gap:3mm 8mm;font-size:3.6mm;color:#374151}
   .contact{display:flex;align-items:center;gap:2.5mm;min-width:0}
   .contact-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext}
-  .ico{display:inline-flex;width:4.2mm;height:4.2mm;flex-shrink:0;color:#111827}
+  .ico{display:inline-flex;width:4.2mm;height:4.2mm;flex-shrink:0;color:#161616}
   .ico svg{width:100%;height:100%}
   .ico.brand{color:#4b5563}
 
@@ -604,9 +641,10 @@ const posterCss = `
   .social{display:flex;align-items:center;gap:2mm}
   .handle{font-size:3.5mm;font-weight:500;color:#374151;direction:ltr;unicode-bidi:isolate}
 
-  .foot-brand{margin-top:5mm;text-align:center;font-size:2.9mm;color:#b0b5bd;letter-spacing:0.4mm}
+  .foot-brand{margin-top:5mm;text-align:center;font-size:2.9mm;color:#9aa0a8;letter-spacing:0.4mm}
+  .foot-dot{display:inline-block;width:1.5mm;height:1.5mm;border-radius:50%;background:#ec008c;margin:0 2mm;vertical-align:middle}
 
-  [dir="rtl"] .poster{text-align:right}
+  [dir="rtl"] .poster-body{text-align:right}
   @page{size:A4 portrait;margin:0}
 `;
 

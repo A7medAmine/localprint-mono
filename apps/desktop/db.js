@@ -115,6 +115,7 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch { /* ign
 try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch { /* ignored */ }
 try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch { /* ignored */ }
 try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch { /* ignored */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN orderId TEXT`); } catch { /* ignored */ }
 
 runMigrations(db);
 
@@ -166,6 +167,7 @@ db.exec(`
   -- status; without these both are full table scans that grow with the shop.
   CREATE INDEX IF NOT EXISTS idx_jobs_uploadDate ON jobs(uploadDate DESC);
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+  CREATE INDEX IF NOT EXISTS idx_jobs_orderId ON jobs(orderId);
 
   CREATE INDEX IF NOT EXISTS idx_inventory_items_paperType ON inventory_items(paperTypeId);
   CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_itemId ON inventory_adjustments(itemId, createdAt DESC);

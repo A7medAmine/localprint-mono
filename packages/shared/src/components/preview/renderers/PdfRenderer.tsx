@@ -1,122 +1,72 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getPdfjs, PDF_DOC_OPTIONS } from "../../../lib/pdfRender";
+import React, { useState, useEffect } from "react";
 import { Icon } from "../../ui/icon";
 import { errorMessage } from "@atba3li/shared";
 
 interface PdfRendererProps {
   src: string;
+  /** 0-indexed inclusive ranges (as parsed from a "1-3, 5" field). Empty/undefined = all pages. */
+  pageRanges?: { from: number; to: number }[];
+  isRtl?: boolean;
 }
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 3;
-const ZOOM_STEP = 0.25;
-
-const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
-  const [pdf, setPdf] = useState<any>(null);
-  const [pageCount, setPageCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [zoom, setZoom] = useState(1);
-  const [loading, setLoading] = useState(true);
+// Renders through the host's built-in PDF viewer (PDFium in Electron/Chromium,
+// the browser's own viewer on the web) rather than rasterising with pdf.js.
+// pdf.js's glyph rasterizer mis-renders some embedded Arabic fonts — letters
+// come out scrambled — while the exact same file prints correctly, because
+// printing already goes through this native engine (see chromiumPrint() in
+// apps/desktop/electron/main.js).
+//
+// The bytes are fetched and handed over as a blob: URL instead of pointing
+// <embed> straight at `src`. A blob carries no response headers, so the
+// app-wide X-Frame-Options: DENY (which Chromium applies to plugin frames
+// exactly as it does to iframes) can't block it. It also keeps this working
+// for endpoints that only answer to an authenticated fetch.
+//
+// Needs `webPreferences.plugins: true` on the Electron window, and blob: in
+// the CSP's object-src/frame-src — without the CSP entry the viewer frame is
+// dropped silently, with nothing logged.
+const PdfRenderer: React.FC<PdfRendererProps> = ({ src, pageRanges, isRtl }) => {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const renderTaskRef = useRef<any>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let created: string | null = null;
 
-    async function init() {
-      try {
-        setLoading(true);
-        setError(null);
-        const pdfjs = await getPdfjs();
-        const data = await fetch(src).then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.arrayBuffer();
-        });
-        if (cancelled) return;
-        const doc = await pdfjs.getDocument({ data, ...PDF_DOC_OPTIONS }).promise;
-        if (cancelled) return;
-        setPdf(doc);
-        setPageCount(doc.numPages);
-        setCurrentPage(1);
-        setLoading(false);
-      } catch (err) {
-        if (!cancelled) {
-          setError(errorMessage(err) || "Failed to load PDF");
-          setLoading(false);
-        }
-      }
-    }
+    setBlobUrl(null);
+    setError(null);
 
-    init();
-    return () => { cancelled = true; };
+    fetch(src)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        created = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+        setBlobUrl(created);
+      })
+      .catch((err) => {
+        // Kept unlocalised in state so a language toggle doesn't re-fetch the file.
+        if (!cancelled) setError(errorMessage(err) || "");
+      });
+
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
   }, [src]);
 
-  useEffect(() => {
-    if (!pdf || !canvasRef.current) return;
-    let cancelled = false;
-
-    async function renderPage() {
-      try {
-        if (renderTaskRef.current) {
-          try { await renderTaskRef.current.cancel(); } catch { /* ignored */ }
-        }
-        const page = await pdf.getPage(currentPage);
-        if (cancelled) return;
-
-        const viewport = page.getViewport({ scale: zoom });
-        const canvas = canvasRef.current!;
-        const ctx = canvas.getContext("2d")!;
-
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = viewport.width * dpr;
-        canvas.height = viewport.height * dpr;
-        canvas.style.width = viewport.width + "px";
-        canvas.style.height = viewport.height + "px";
-
-        ctx.scale(dpr, dpr);
-
-        try {
-          renderTaskRef.current = page.render({ canvasContext: ctx, viewport });
-          await renderTaskRef.current.promise;
-          renderTaskRef.current = null;
-        } catch (err) {
-          // pdf.js signals a superseded render by name, not by type.
-          if ((err as { name?: string } | null)?.name === "RenderingCancelledException") return;
-          throw err;
-        }
-      } catch (err) {
-        if (cancelled) return;
-        console.error("PdfRenderer render failed", err);
-        setError(errorMessage(err) || "Failed to render PDF page");
-      }
-    }
-
-    renderPage();
-    return () => { cancelled = true; };
-  }, [pdf, currentPage, zoom]);
-
-  const goToPage = useCallback(
-    (page: number) => {
-      setCurrentPage(Math.max(1, Math.min(page, pageCount)));
-    },
-    [pageCount],
-  );
-
-  const zoomIn = useCallback(() => setZoom((z) => Math.min(z + ZOOM_STEP, MAX_ZOOM)), []);
-  const zoomOut = useCallback(() => setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM)), []);
-  const resetZoom = useCallback(() => setZoom(1), []);
-
-  if (error) {
+  if (error !== null) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-muted-foreground gap-3">
         <Icon name="alert-circle" className="w-12 h-12" />
-        <p className="text-sm font-medium">{error}</p>
+        <p className="text-sm font-medium">{error || (isRtl ? "تعذّر تحميل ملف PDF" : "Failed to load PDF")}</p>
       </div>
     );
   }
 
-  if (loading) {
+  if (!blobUrl) {
     return (
       <div className="flex items-center justify-center h-full min-h-[300px]">
         <div className="flex flex-col items-center gap-4 animate-pulse">
@@ -128,64 +78,36 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src }) => {
     );
   }
 
+  // The native viewer exposes no API to restrict paging, so a page range only
+  // decides which page it opens on.
+  const startPage = pageRanges && pageRanges.length > 0 ? pageRanges[0].from + 1 : undefined;
+
+  // PDFium's own open-parameters (toolbar/navpanes/statusbar/scrollbar=0)
+  // strip its built-in toolbar — filename, page count, zoom, download/print
+  // icons — since this preview sits inside our own dialog chrome already.
+  const fragmentParams = ["toolbar=0", "navpanes=0", "statusbar=0"];
+  if (startPage !== undefined) fragmentParams.unshift(`page=${startPage}`);
+  const embedSrc = `${blobUrl}#${fragmentParams.join("&")}`;
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Previous page"
-           aria-label="Previous page">
-            <Icon name="chevron-left" className="w-4 h-4" />
-          </button>
-          <span className="text-xs font-medium text-muted-foreground min-w-[5rem] text-center tabular-nums">
-            {currentPage} / {pageCount}
-          </span>
-          <button
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= pageCount}
-            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Next page"
-           aria-label="Next page">
-            <Icon name="chevron-right" className="w-4 h-4" />
-          </button>
+    <div className="flex flex-col h-full" dir={isRtl ? "rtl" : "ltr"}>
+      {startPage !== undefined && (
+        <div className="px-4 py-2 border-b border-border shrink-0 text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+          {isRtl
+            ? `المعاينة تبدأ من الصفحة ${startPage} — سيُطبع النطاق المحدد كاملاً`
+            : `Preview starts at page ${startPage} — the full selected range will print`}
         </div>
-
-        <div className="flex items-center gap-1">
-          <span className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            onClick={zoomOut}
-            disabled={zoom <= MIN_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Zoom out"
-           aria-label="Zoom out">
-            <Icon name="minus" className="w-4 h-4" />
-          </button>
-          <button
-            onClick={resetZoom}
-            className="p-1.5 rounded-lg hover:bg-muted transition-colors text-xs font-medium"
-            title="Reset zoom"
-          >
-            Fit
-          </button>
-          <button
-            onClick={zoomIn}
-            disabled={zoom >= MAX_ZOOM}
-            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 transition-colors"
-            title="Zoom in"
-           aria-label="Zoom in">
-            <Icon name="plus" className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto bg-gray-50/50 dark:bg-gray-900/50 p-4 flex justify-center">
-        <canvas ref={canvasRef} className="shadow-xl rounded-lg" />
-      </div>
+      )}
+      {/* Keyed on the page anchor: swapping only the `src` attribute on an
+          already-mounted <embed> doesn't reliably re-navigate the native
+          PDFium plugin (Electron/Chromium) — it just goes blank. A key
+          forces React to tear down and remount the plugin instance instead. */}
+      <embed
+        key={startPage ?? "all"}
+        src={embedSrc}
+        type="application/pdf"
+        className="w-full h-full flex-1"
+      />
     </div>
   );
 };

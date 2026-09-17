@@ -150,6 +150,12 @@ export function registerJobRoutes(app) {
 
       const newJob = {
         id,
+        // Shared by every file from one upload submission (the client sends
+        // the same value for each file in a batch) so files that finish
+        // uploading — and so arrive here — at different times still land in
+        // one order. Falls back to the job's own id for older clients that
+        // don't send it, so it still groups as a lone-file order.
+        orderId: String(metadata.orderId || "").trim() || id,
         customerName: String(metadata.customerName || metadata.customer || "").trim(),
         phoneNumber: String(metadata.phoneNumber || metadata.phone || "").trim(),
         notes: String(metadata.notes || "").trim(),
@@ -168,14 +174,14 @@ export function registerJobRoutes(app) {
 
       const insertStmt = db.prepare(`
         INSERT INTO jobs (
-          id, customerName, phoneNumber, notes, fileName, fileType,
+          id, orderId, customerName, phoneNumber, notes, fileName, fileType,
           fileSize, uploadDate, status, serverFileName, pageCount,
           colorMode, copies, paperType, source, deleteTokenHash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       insertStmt.run(
-        newJob.id, newJob.customerName, newJob.phoneNumber, newJob.notes,
+        newJob.id, newJob.orderId, newJob.customerName, newJob.phoneNumber, newJob.notes,
         newJob.fileName, newJob.fileType, newJob.fileSize, newJob.uploadDate,
         newJob.status, newJob.serverFileName, newJob.pageCount,
         newJob.colorMode, newJob.copies, newJob.paperType, newJob.source,
@@ -228,6 +234,7 @@ export function registerJobRoutes(app) {
 
       const newJob = {
         id,
+        orderId: id,
         customerName: String(metadata.customerName || metadata.customer || "").trim(),
         phoneNumber: String(metadata.phoneNumber || metadata.phone || "").trim(),
         notes: String(metadata.notes || "").trim(),
@@ -246,14 +253,14 @@ export function registerJobRoutes(app) {
 
       const insertStmt = db.prepare(`
         INSERT INTO jobs (
-          id, customerName, phoneNumber, notes, fileName, fileType,
+          id, orderId, customerName, phoneNumber, notes, fileName, fileType,
           fileSize, uploadDate, status, serverFileName, pageCount,
           colorMode, copies, paperType, source, deleteTokenHash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       insertStmt.run(
-        newJob.id, newJob.customerName, newJob.phoneNumber, newJob.notes,
+        newJob.id, newJob.orderId, newJob.customerName, newJob.phoneNumber, newJob.notes,
         newJob.fileName, newJob.fileType, newJob.fileSize, newJob.uploadDate,
         newJob.status, newJob.serverFileName, newJob.pageCount,
         newJob.colorMode, newJob.copies, newJob.paperType, newJob.source,

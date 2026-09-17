@@ -3,6 +3,7 @@
 
 export type OrderField =
   | 'id'
+  | 'orderId'
   | 'customerName'
   | 'customerEmail'
   | 'phoneNumber'
@@ -35,6 +36,7 @@ export const DESKTOP_ORDER_COLUMNS: OrderColumnMap;
 /** The canonical camelCase order/job shape at an API boundary (flattened). */
 export interface OrderApiShape {
   id?: string;
+  orderId?: string;
   customerName?: string;
   customerEmail?: string;
   phoneNumber?: string;
