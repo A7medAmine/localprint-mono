@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { PrintJob } from "../types";
 import { useLanguage } from "../lib/useLanguage";
-import { Icon } from "./ui/icon";
 import { readPref } from "@atba3li/shared/lib/prefs";
 
 interface PhotoSourceModalProps {
@@ -101,7 +101,7 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
       <button
         type="button"
@@ -159,8 +159,14 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
                           checked={isSelected}
                           onChange={() => toggleJob(job.id)}
                         />
-                        <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0">
-                          <Icon name="file-doc" className="w-4 h-4 text-muted-foreground" />
+                        <div className="w-9 h-9 bg-muted rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                          <img
+                            src={`/api/files/public/${job.id}`}
+                            alt=""
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-foreground truncate">{job.fileName}</div>
@@ -192,7 +198,8 @@ const PhotoSourceModal: React.FC<PhotoSourceModalProps> = ({ isOpen, onClose, on
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
