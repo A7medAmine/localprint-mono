@@ -23,6 +23,19 @@ import { useAuth } from "./hooks/useAuth";
 import { isCustomerAuthConfigured } from "./services/supabaseClient";
 import { Icon } from "./components/ui/icon";
 
+const ShopNotFound: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
+  <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
+    <p className="text-lg font-semibold">
+      {isRtl ? "المتجر غير موجود" : "Store not found"}
+    </p>
+    <p className="text-sm mt-2">
+      {isRtl
+        ? "تأكد من رابط الرفع الذي حصلت عليه من صاحب المحل."
+        : "Double-check the upload link you were given."}
+    </p>
+  </div>
+);
+
 const NoShopSpecified: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
   <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
     <p className="text-lg font-semibold">
@@ -312,6 +325,7 @@ const UploadRoute: React.FC<{
 }> = ({ lang, onSettingsLoaded, onShopVisited }) => {
   const { shopSlug } = useParams<{ shopSlug: string }>();
   const [settings, setSettings] = useState<ShopSettings | undefined>(undefined);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     if (!shopSlug) return;
@@ -323,6 +337,10 @@ const UploadRoute: React.FC<{
         onSettingsLoaded(serverSettings);
         document.title = serverSettings.shopName;
       } catch (error) {
+        if ((error as Error & { status?: number }).status === 404) {
+          setNotFound(true);
+          return;
+        }
         console.error("Failed to load settings:", error);
       }
     })();
@@ -330,6 +348,10 @@ const UploadRoute: React.FC<{
 
   if (!shopSlug) {
     return <NoShopSpecified isRtl={lang === "ar"} />;
+  }
+
+  if (notFound) {
+    return <ShopNotFound isRtl={lang === "ar"} />;
   }
 
   return <UploadView lang={lang} shopSlug={shopSlug} shopSettings={settings} />;

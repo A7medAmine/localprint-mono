@@ -54,7 +54,8 @@ There are no roles and no second operator account — a single hardened login.
 
 - JSON/urlencoded bodies capped at 256 KB.
 - Headers: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`,
-  and a CSP tuned for pdf.js. `X-XSS-Protection` is deliberately not set.
+  and a CSP tuned for pdf.js plus `blob:` in `frame-src`/`object-src` for the
+  file preview's native PDF viewer. `X-XSS-Protection` is deliberately not set.
 - CORS is dev-only (`DEV_CORS_ORIGIN`, default `http://localhost:3000`).
 
 ## Reporting

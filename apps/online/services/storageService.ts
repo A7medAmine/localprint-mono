@@ -36,7 +36,9 @@ class StorageService {
       if (!response.ok) {
         let msg = `Server error: ${response.status}`;
         try { const errBody = JSON.parse(text); if (errBody.error) msg = errBody.error; } catch { /* ignored */ }
-        throw new Error(msg);
+        const err = new Error(msg) as Error & { status?: number };
+        err.status = response.status;
+        throw err;
       }
 
       if (!text) return {};
@@ -106,15 +108,16 @@ class StorageService {
     file: File,
     onProgress?: (p: number) => void,
     accessToken?: string | null,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
-      await this.postJob(shopSlug, job, file, onProgress, accessToken);
+      await this.postJob(shopSlug, job, file, onProgress, accessToken, signal);
     } catch (err) {
       // The server asks for a wait via a typed field on the thrown error.
       const retryAfter = (err as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
-      if (!retryAfter) throw err;
+      if (!retryAfter || signal?.aborted) throw err;
       await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000));
-      await this.postJob(shopSlug, job, file, onProgress, accessToken);
+      await this.postJob(shopSlug, job, file, onProgress, accessToken, signal);
     }
   }
 
@@ -124,6 +127,7 @@ class StorageService {
     file: File,
     onProgress?: (p: number) => void,
     accessToken?: string | null,
+    signal?: AbortSignal,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
@@ -146,6 +150,15 @@ class StorageService {
             onProgress(percent);
           }
         };
+      }
+
+      if (signal) {
+        if (signal.aborted) {
+          xhr.abort();
+          reject(new DOMException("Upload cancelled", "AbortError"));
+          return;
+        }
+        signal.addEventListener("abort", () => xhr.abort());
       }
 
       xhr.onload = () => {
@@ -187,6 +200,7 @@ class StorageService {
       };
 
       xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
       xhr.send(formData);
     });
   }
@@ -273,7 +287,10 @@ class StorageService {
         description: settings?.description || undefined,
         socialLinks: normalizeSocialLinks(settings?.socialLinks),
       };
-    } catch {
+    } catch (err) {
+      // A missing shop must surface as "not found", not a fake generic
+      // storefront the customer can upload into but never actually reaches.
+      if ((err as Error & { status?: number }).status === 404) throw err;
       return { shopName: "Atba3li", logoUrl: null, phoneNumbers: [], email: "", address: "", workingHours: "", returnPolicy: "" };
     }
   }

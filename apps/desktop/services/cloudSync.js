@@ -378,13 +378,18 @@ async function importOrder(order) {
   try {
     db.prepare(`
       INSERT INTO jobs (
-        id, cloudOrderId, customerName, phoneNumber, notes, fileName, fileType,
+        id, cloudOrderId, orderId, customerName, phoneNumber, notes, fileName, fileType,
         fileSize, uploadDate, status, serverFileName, pageCount,
         colorMode, copies, paperType, source, uploaderIp, uploaderFingerprint
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       orderId,
       orderId,
+      // The batch id from the customer's submission — all its sibling files
+      // share it, so they group as one order locally too. Older cloud rows
+      // (uploaded before this field existed) have none, so fall back to this
+      // job's own id.
+      order.orderId || orderId,
       order.customerName || '',
       order.phoneNumber || '',
       order.notes || '',

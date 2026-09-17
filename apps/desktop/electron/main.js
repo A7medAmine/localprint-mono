@@ -293,6 +293,12 @@ function createWindow() {
       // Preload exposes the print IPC bridge (window.electronPrint).
       // Kept sandbox-compatible — see electron/preload.js.
       preload: path.join(__dirname, 'preload.js'),
+      // Lets an in-page <embed type="application/pdf"> use Chromium's
+      // built-in PDFium viewer for the file-preview panel — the same
+      // engine chromiumPrint() below uses. pdf.js's own glyph rasterizer
+      // (see PdfRenderer.tsx) mis-renders some embedded Arabic fonts even
+      // though the font itself prints fine through PDFium.
+      plugins: true,
     },
   });
 
@@ -332,8 +338,13 @@ function createWindow() {
 
   // If the page fails to load, don't leave the user staring at a blank window.
   // Render an inline error page they can screenshot and open DevTools from.
-  mainWindow.webContents.on('did-fail-load', (_e, code, description, validatedURL) => {
+  mainWindow.webContents.on('did-fail-load', (_e, code, description, validatedURL, isMainFrame) => {
     if (code === -3) return; // aborted (usually because we navigated away)
+    // A failed subframe/plugin load — e.g. the in-app PDF preview's
+    // <embed type="application/pdf"> hitting a 404 or blocked response —
+    // is not the app failing to load. Only a main-frame failure should
+    // blank the whole window.
+    if (isMainFrame === false) return;
     const html = `<!doctype html><meta charset="utf-8"><title>Atba3li — load failed</title>
       <body style="font:14px/1.5 -apple-system,Segoe UI,sans-serif;padding:32px;color:#111;background:#f8fafc">
         <h1 style="margin:0 0 8px">Couldn't load the app</h1>

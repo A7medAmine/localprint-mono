@@ -17,6 +17,12 @@ export enum PaymentStatus {
 
 export interface PrintJob {
   id: string;
+  /**
+   * Shared by every file from one upload submission, so the admin groups
+   * them as a single order even when the files finish uploading — and so
+   * arrive at the server — at different times.
+   */
+  orderId?: string;
   customerName: string;
   phoneNumber: string;
   notes: string;

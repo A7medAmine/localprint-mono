@@ -37,6 +37,7 @@ export interface UploadDialogsProps {
   isUploading: boolean;
   overallProgress: number;
   selectedFiles: FileStatus[];
+  onCancelUpload: () => void;
 
   /** "Cancel this print job?" confirmation. */
   cancelConfirm: { isOpen: boolean; jobId: string | null };
@@ -63,6 +64,7 @@ export const UploadDialogs: React.FC<UploadDialogsProps> = ({
   isUploading,
   overallProgress,
   selectedFiles,
+  onCancelUpload,
   cancelConfirm,
   setCancelConfirm,
   confirmCancelJob,
@@ -136,6 +138,14 @@ export const UploadDialogs: React.FC<UploadDialogsProps> = ({
                 </div>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={onCancelUpload}
+              className="mt-5 text-xs font-semibold text-muted-foreground hover:text-destructive transition-colors"
+            >
+              {isRtl ? "إلغاء الإرسال" : "Cancel upload"}
+            </button>
           </div>
         </div>
       )}
