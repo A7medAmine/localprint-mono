@@ -7,7 +7,7 @@ import { toast } from "../components/ui/use-toast";
 import { Toaster } from "../components/ui/toaster";
 import { Button } from "../components/ui/button";
 import { Icon } from "../components/ui/icon";
-import { UploadForm } from "@atba3li/shared/components/upload/UploadForm";
+import { UploadForm, UploadPrintPreferences, FilePrintOverrides } from "@atba3li/shared/components/upload/UploadForm";
 import { RecentUploads } from "@atba3li/shared/components/upload/RecentUploads";
 import { UploadDialogs } from "@atba3li/shared/components/upload/UploadDialogs";
 import { StoreFooter } from "@atba3li/shared/components/upload/StoreFooter";
@@ -61,6 +61,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
     copies: 1,
     paperType: "normal",
   });
+  const [fileOverrides, setFileOverrides] = useState<FilePrintOverrides>({});
   const [selectedFiles, setSelectedFiles] = useState<FileStatus[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [overallSuccess, setOverallSuccess] = useState(false);
@@ -130,10 +131,18 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
   };
 
 
+  // A file's effective print preferences: the shared defaults, overridden
+  // per-file when the customer customized that one (e.g. B&W for one file,
+  // color for another).
+  const getPreferencesForFile = (fileId?: string): UploadPrintPreferences => ({
+    ...printPreferences,
+    ...(fileId ? fileOverrides[fileId] : undefined),
+  });
+
   // Prices shown under each picked file, discounts included.
   const getFilePriceWithDiscount = makeFilePriceCalculator(
     shopSettings,
-    printPreferences,
+    getPreferencesForFile,
     discountRules,
     filePageCounts,
   );
@@ -180,6 +189,12 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
   const removeFile = (id: string) => {
     if (isUploading) return;
     setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
+    setFileOverrides((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   };
 
   const performUpload = async (
@@ -190,6 +205,8 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
     orderId: string,
     signal: AbortSignal,
   ) => {
+    const effectivePreferences = getPreferencesForFile(fileStatus.id);
+
     const job: PrintJob = {
       id: generateSafeId(),
       orderId,
@@ -202,9 +219,9 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
       uploadDate: new Date().toISOString(),
       status: PrintStatus.PENDING,
       printPreferences: {
-        colorMode: printPreferences.colorMode,
-        copies: printPreferences.copies,
-        paperType: printPreferences.paperType,
+        colorMode: effectivePreferences.colorMode,
+        copies: effectivePreferences.copies,
+        paperType: effectivePreferences.paperType,
       },
     };
 
@@ -339,6 +356,7 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
                 onClick={() => {
                   setOverallSuccess(false);
                   setSelectedFiles([]);
+                  setFileOverrides({});
                   setFormData({ name: "", phone: "", notes: "" });
                   setPrintPreferences({ colorMode: "color", copies: 1, paperType: shopSettings?.paperTypes?.[0]?.id || "normal" });
                 }}
@@ -389,6 +407,9 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSettings: propSetting
         setFormData={setFormData}
         printPreferences={printPreferences}
         setPrintPreferences={setPrintPreferences}
+        fileOverrides={fileOverrides}
+        setFileOverrides={setFileOverrides}
+        filePageCounts={filePageCounts}
         selectedFiles={selectedFiles}
         setSelectedFiles={setSelectedFiles}
         removeFile={removeFile}

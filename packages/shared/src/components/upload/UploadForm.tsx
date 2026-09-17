@@ -26,6 +26,9 @@ export interface UploadPrintPreferences {
   paperType: string;
 }
 
+/** Per-file deviations from the shared default print preferences, keyed by file id. */
+export type FilePrintOverrides = Record<string, Partial<UploadPrintPreferences>>;
+
 /** What a price line under a file shows, once discounts are applied. */
 export interface FilePriceInfo {
   original: number;
@@ -33,6 +36,7 @@ export interface FilePriceInfo {
   final: number;
   hasDiscount: boolean;
   ruleName?: string;
+  pages: number;
 }
 
 // Id generator that works in non-secure contexts (HTTP over a LAN IP), where
@@ -48,6 +52,9 @@ export interface UploadFormProps {
   setFormData: React.Dispatch<React.SetStateAction<UploadFormData>>;
   printPreferences: UploadPrintPreferences;
   setPrintPreferences: React.Dispatch<React.SetStateAction<UploadPrintPreferences>>;
+  fileOverrides: FilePrintOverrides;
+  setFileOverrides: React.Dispatch<React.SetStateAction<FilePrintOverrides>>;
+  filePageCounts: Record<string, number>;
 
   selectedFiles: FileStatus[];
   setSelectedFiles: React.Dispatch<React.SetStateAction<FileStatus[]>>;
@@ -86,6 +93,9 @@ export const UploadForm: React.FC<UploadFormProps> = ({
   setFormData,
   printPreferences,
   setPrintPreferences,
+  fileOverrides,
+  setFileOverrides,
+  filePageCounts,
   selectedFiles,
   setSelectedFiles,
   removeFile,
@@ -102,6 +112,32 @@ export const UploadForm: React.FC<UploadFormProps> = ({
   getFilePriceWithDiscount,
   formatSize,
 }) => {
+  const [customizingFileId, setCustomizingFileId] = React.useState<string | null>(null);
+
+  const effectivePreferences = (fileId: string): UploadPrintPreferences => ({
+    ...printPreferences,
+    ...fileOverrides[fileId],
+  });
+
+  const setFileOverride = <K extends keyof UploadPrintPreferences>(
+    fileId: string,
+    key: K,
+    value: UploadPrintPreferences[K],
+  ) => {
+    setFileOverrides((prev) => ({
+      ...prev,
+      [fileId]: { ...prev[fileId], [key]: value },
+    }));
+  };
+
+  const clearFileOverride = (fileId: string) => {
+    setFileOverrides((prev) => {
+      const next = { ...prev };
+      delete next[fileId];
+      return next;
+    });
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -416,8 +452,13 @@ export const UploadForm: React.FC<UploadFormProps> = ({
                     <p className="text-xs sm:text-sm font-medium text-foreground break-words leading-snug">
                       {fileStatus.file.name}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2">
+                    <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2">
                       <span>{formatSize(fileStatus.file.size)}</span>
+                      {filePageCounts[fileStatus.id] > 0 && (
+                        <span>
+                          {filePageCounts[fileStatus.id]} {isRtl ? "صفحة" : filePageCounts[fileStatus.id] === 1 ? "page" : "pages"}
+                        </span>
+                      )}
                       {(() => {
                         const priceInfo = getFilePriceWithDiscount(fileStatus.file, fileStatus.id);
                         if (priceInfo === null && isOfficeFile(fileStatus.file)) {
@@ -434,25 +475,45 @@ export const UploadForm: React.FC<UploadFormProps> = ({
                           <span className="text-muted-foreground">{priceInfo.original.toFixed(0)} DZD</span>
                         );
                       })()}
+                      {fileOverrides[fileStatus.id] && (
+                        <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                          {isRtl ? "مخصص" : "Custom"}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
-                {!isUploading && fileStatus.status !== "success" && (
-                  <button
-                    type="button"
-                    onClick={() => removeFile(fileStatus.id)}
-                    className="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 p-1 -m-1 flex-shrink-0"
-                    aria-label="Remove file"
-                  >
-                    <Icon name="x" className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                )}
-                {fileStatus.status === "success" && (
-                  <Icon name="check" className="w-4 h-4 sm:w-5 sm:h-5 text-green-500 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                )}
-                {fileStatus.status === "error" && (
-                  <Icon name="alert-circle" className="w-4 h-4 sm:w-5 sm:h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
-                )}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {!isUploading && fileStatus.status !== "success" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCustomizingFileId((prev) => (prev === fileStatus.id ? null : fileStatus.id))
+                      }
+                      className={`p-1 -m-1 ${customizingFileId === fileStatus.id ? "text-indigo-600 dark:text-indigo-400" : "text-gray-400 dark:text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400"}`}
+                      aria-label={isRtl ? "تخصيص هذا الملف" : "Customize this file"}
+                      title={isRtl ? "خيارات طباعة خاصة بهذا الملف" : "Print options for this file"}
+                    >
+                      <Icon name="sliders" className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  )}
+                  {!isUploading && fileStatus.status !== "success" && (
+                    <button
+                      type="button"
+                      onClick={() => removeFile(fileStatus.id)}
+                      className="text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 p-1 -m-1"
+                      aria-label="Remove file"
+                    >
+                      <Icon name="x" className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  )}
+                  {fileStatus.status === "success" && (
+                    <Icon name="check" className="w-4 h-4 sm:w-5 sm:h-5 text-green-500 dark:text-green-400 mt-0.5" />
+                  )}
+                  {fileStatus.status === "error" && (
+                    <Icon name="alert-circle" className="w-4 h-4 sm:w-5 sm:h-5 text-red-500 dark:text-red-400 mt-0.5" />
+                  )}
+                </div>
               </div>
               {fileStatus.status === "uploading" && (
                 <div className="w-full bg-muted rounded-full h-1.5 mt-2 overflow-hidden">
@@ -460,6 +521,90 @@ export const UploadForm: React.FC<UploadFormProps> = ({
                     className="bg-indigo-600 h-1.5 transition-all duration-300"
                     style={{ width: `${fileStatus.progress}%` }}
                   />
+                </div>
+              )}
+              {customizingFileId === fileStatus.id && (
+                <div className="mt-3 pt-3 border-t border-border space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                        {isRtl ? "وضع الألوان" : "Color Mode"}
+                      </label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={effectivePreferences(fileStatus.id).colorMode === "color" ? "default" : "outline"}
+                          onClick={() => setFileOverride(fileStatus.id, "colorMode", "color")}
+                          className="flex-1"
+                        >
+                          {isRtl ? "ملون" : "Color"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={effectivePreferences(fileStatus.id).colorMode === "blackWhite" ? "default" : "outline"}
+                          onClick={() => setFileOverride(fileStatus.id, "colorMode", "blackWhite")}
+                          className="flex-1"
+                        >
+                          {isRtl ? "أبيض وأسود" : "B&W"}
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                        {isRtl ? "عدد النسخ" : "Copies"}
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={effectivePreferences(fileStatus.id).copies}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value) || 1;
+                          setFileOverride(fileStatus.id, "copies", Math.max(1, Math.min(100, value)));
+                        }}
+                        className="text-center"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                      {isRtl ? "نوع الورق" : "Paper Type"}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {(shopSettings?.paperTypes && shopSettings.paperTypes.length > 0
+                        ? shopSettings.paperTypes
+                        : [
+                            { id: "normal", name: "Normal", nameAr: "عادي" },
+                            { id: "glossy", name: "Glossy", nameAr: "لامع" },
+                            { id: "cardboard", name: "Cardboard", nameAr: "ورق مقوى" },
+                          ]
+                      ).map((pt) => (
+                        <Button
+                          key={pt.id}
+                          type="button"
+                          size="sm"
+                          variant={effectivePreferences(fileStatus.id).paperType === pt.id ? "default" : "outline"}
+                          onClick={() => setFileOverride(fileStatus.id, "paperType", pt.id)}
+                          className="flex-1 min-w-[5rem]"
+                        >
+                          {isRtl ? pt.nameAr : pt.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  {fileOverrides[fileStatus.id] && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => clearFileOverride(fileStatus.id)}
+                      className="text-muted-foreground"
+                    >
+                      {isRtl ? "استخدام الإعدادات الافتراضية" : "Reset to default"}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -472,6 +617,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({
                 let totalOriginal = 0;
                 let totalDiscount = 0;
                 let totalFinal = 0;
+                let totalPages = 0;
 
                 selectedFiles.forEach((fileStatus) => {
                   const priceInfo = getFilePriceWithDiscount(fileStatus.file, fileStatus.id);
@@ -479,6 +625,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({
                     totalOriginal += priceInfo.original;
                     totalDiscount += priceInfo.discount;
                     totalFinal += priceInfo.final;
+                    totalPages += priceInfo.pages;
                   }
                 });
 
@@ -486,6 +633,14 @@ export const UploadForm: React.FC<UploadFormProps> = ({
 
                 return (
                   <div className="space-y-2">
+                    {totalPages > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">
+                          {isRtl ? "إجمالي الصفحات" : "Total pages"}
+                        </span>
+                        <span className="font-semibold text-foreground">{totalPages}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">
                         {isRtl ? "المجموع الفرعي" : "Subtotal"}

@@ -148,13 +148,15 @@ function paperTypesFor(shopSettings: ShopSettings) {
  */
 export function makeFilePriceCalculator(
   shopSettings: ShopSettings | null,
-  printPreferences: UploadPrintPreferences,
+  getPreferences: (fileId?: string) => UploadPrintPreferences,
   discountRules: DiscountRule[],
   filePageCounts: Record<string, number>,
 ) {
   return (file: File, fileId?: string): FilePriceInfo | null => {
     if (!shopSettings) return null;
     if (isOfficeFile(file)) return null;
+
+    const printPreferences = getPreferences(fileId);
 
     const paperType = paperTypesFor(shopSettings).find(
       (pt) => pt.id === (printPreferences.paperType || "normal"),
@@ -189,6 +191,7 @@ export function makeFilePriceCalculator(
       final: discountResult.finalAmount,
       hasDiscount: discountResult.discountAmount > 0,
       ruleName: discountResult.rule?.name,
+      pages: totalPages,
     };
   };
 }

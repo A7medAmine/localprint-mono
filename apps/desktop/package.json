@@ -1,7 +1,7 @@
 {
   "name": "@atba3li/desktop",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Atba3li — desktop print-shop management app (jobs, native printing, QR uploads).",
   "author": "Atba3li",
   "type": "module",

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { PrintJob, PaperType, DiscountRule, ShopSettings } from "../../../types";
 import {
   calculatePrintPrice,
@@ -17,6 +17,43 @@ import {
 } from "../../../components/ui/select";
 import { isOfficeFile, AdminJobsApi } from "./useAdminJobs";
 import { SourceBadge, StatusBadge, PaymentBadge } from "./JobBadges";
+import { storageService } from "../../../services/storageService";
+
+/** Small image thumbnail for the job row, fetched through the token-protected
+ * review endpoint (public endpoint hides jobs still awaiting review). PDFs
+ * aren't thumbnailed — rendering a first-page preview needs pdf.js per row,
+ * too heavy for a list that can hold hundreds of jobs. */
+const JobThumbnail: React.FC<{ job: PrintJob }> = ({ job }) => {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    storageService.getAdminFileUrl(job.id).then((u) => {
+      if (cancelled) {
+        if (u) URL.revokeObjectURL(u);
+        return;
+      }
+      objectUrl = u;
+      setUrl(u);
+    });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [job.id]);
+
+  if (!url) {
+    return <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-800 animate-pulse flex-shrink-0" />;
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      className="w-10 h-10 rounded-md object-cover border border-border flex-shrink-0"
+    />
+  );
+};
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return "0 B";
@@ -87,22 +124,27 @@ export function makeJobCells({
     const renderFileInfo = (job: PrintJob) => {
       const ext = getFileExtension(job.fileName);
       const officeFile = isOfficeFile(job.fileType);
+      const isImage = job.fileType?.startsWith("image/");
       return (
         <>
           <div className="flex items-center gap-3 w-full">
-            <span
-              className={`text-xs font-bold px-2 py-1 rounded-md border flex-shrink-0 ${
-                ext === "PDF"
-                  ? "bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-100 border-red-100 dark:border-red-800"
-                  : ext === "DOCX" || ext === "DOC"
-                    ? "bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-100 border-blue-100 dark:border-blue-800"
-                    : officeFile
-                      ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-100 border-green-200 dark:border-green-800"
-                      : "bg-indigo-50 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-100 border-indigo-100 dark:border-indigo-800"
-              }`}
-            >
-              {ext}
-            </span>
+            {isImage ? (
+              <JobThumbnail job={job} />
+            ) : (
+              <span
+                className={`text-xs font-bold px-2 py-1 rounded-md border flex-shrink-0 ${
+                  ext === "PDF"
+                    ? "bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-100 border-red-100 dark:border-red-800"
+                    : ext === "DOCX" || ext === "DOC"
+                      ? "bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-100 border-blue-100 dark:border-blue-800"
+                      : officeFile
+                        ? "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-100 border-green-200 dark:border-green-800"
+                        : "bg-indigo-50 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-100 border-indigo-100 dark:border-indigo-800"
+                }`}
+              >
+                {ext}
+              </span>
+            )}
             <div className="flex flex-col flex-1 min-w-0">
               <span className="flex items-center gap-1.5">
                 <span
