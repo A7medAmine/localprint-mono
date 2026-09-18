@@ -4,6 +4,7 @@ import { calculatePrintPrice, formatPrice, calculateJobDiscount } from "../../pr
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Card, CardContent } from "../ui/card";
+import { ContextMenu, ContextMenuEntry, useContextMenu } from "../ui/context-menu";
 
 export interface RecentUploadsProps {
   t: (key: string) => string;
@@ -17,6 +18,12 @@ export interface RecentUploadsProps {
   handlePreviewJob: (job: PrintJob) => void;
   /** Called with the job id the customer asked to cancel. */
   handleCancelJob: (jobId: string) => void;
+  /** Opt-in right-click menu on each card. Only the desktop app turns it on —
+   *  the online portal is used on phones, where a long-press has no menu. */
+  enableContextMenu?: boolean;
+  /** Extra right-click entries appended under the built-in ones. Desktop passes
+   *  shop-side actions here; the online portal leaves it unset. */
+  extraMenuItems?: (job: PrintJob) => ContextMenuEntry[];
 }
 
 /**
@@ -36,7 +43,38 @@ export const RecentUploads: React.FC<RecentUploadsProps> = ({
   isOfficeType,
   handlePreviewJob,
   handleCancelJob,
+  enableContextMenu = false,
+  extraMenuItems,
 }) => {
+  const menu = useContextMenu<PrintJob>();
+
+  const buildMenu = (job: PrintJob): ContextMenuEntry[] => {
+    const items: ContextMenuEntry[] = [
+      { label: isRtl ? "معاينة" : "Preview", icon: "eye", onSelect: () => handlePreviewJob(job) },
+      {
+        label: isRtl ? "نسخ اسم الملف" : "Copy file name",
+        icon: "copy",
+        onSelect: () => {
+          navigator.clipboard?.writeText(job.fileName).catch(() => {});
+        },
+      },
+    ];
+    const extra = extraMenuItems?.(job) ?? [];
+    if (extra.length) items.push({ type: "separator" }, ...extra);
+    if (job.status !== PrintStatus.PRINTED) {
+      items.push(
+        { type: "separator" },
+        {
+          label: isRtl ? "إلغاء الطباعة" : "Cancel print",
+          icon: "trash",
+          destructive: true,
+          onSelect: () => handleCancelJob(job.id),
+        },
+      );
+    }
+    return items;
+  };
+
   if (recentJobs.length === 0) return null;
 
   return (
@@ -48,7 +86,7 @@ export const RecentUploads: React.FC<RecentUploadsProps> = ({
       </div>
       <div className="grid gap-2 sm:gap-3">
         {recentJobs.map((job) => (
-          <Card key={job.id}>
+          <Card key={job.id} onContextMenu={enableContextMenu ? menu.open(job) : undefined}>
             <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               {/* File type icon */}
@@ -163,7 +201,7 @@ export const RecentUploads: React.FC<RecentUploadsProps> = ({
                  aria-label={isRtl ? "معاينة" : "Preview"}>
                   <Icon name="eye" className="w-4 h-4" />
                 </button>
-                {job.status === PrintStatus.PENDING && (
+                {job.status !== PrintStatus.PRINTED && (
                   <button
                     type="button"
                     onClick={() => handleCancelJob(job.id)}
@@ -179,6 +217,16 @@ export const RecentUploads: React.FC<RecentUploadsProps> = ({
         </Card>
         ))}
       </div>
+      {menu.state && (
+        <ContextMenu
+          x={menu.state.x}
+          y={menu.state.y}
+          isRtl={isRtl}
+          title={menu.state.payload.fileName}
+          items={buildMenu(menu.state.payload)}
+          onClose={menu.close}
+        />
+      )}
       {shopSettings?.pricing && (
         <div className="p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/30 flex items-start gap-3 mt-4">
           <Icon name="info" className="w-5 h-5 text-blue-500 dark:text-blue-400 mt-0.5 shrink-0" />

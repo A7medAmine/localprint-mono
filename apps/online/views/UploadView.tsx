@@ -174,12 +174,16 @@ const UploadView: React.FC<UploadViewProps> = ({ lang, shopSlug, shopSettings: p
     if (cancelConfirm.jobId) {
       try {
         await storageService.deleteJob(shopSlug, cancelConfirm.jobId);
-        setRecentJobs((prev) => prev.filter((job) => job.id !== cancelConfirm.jobId));
         toast({ title: isRtl ? "تم إلغاء الطباعة بنجاح" : "Print job cancelled successfully", variant: "success" });
       } catch (err) {
+        // deleteJob always drops the order from this browser's own tracking
+        // (see storageService), even when the server-side delete fails —
+        // otherwise an order whose file already disappeared from disk is
+        // stuck in the list forever with no way to clear it.
         console.error("Failed to cancel job", err);
-        toast({ title: isRtl ? "فشل إلغاء الطباعة" : "Failed to cancel print job", variant: "destructive" });
+        toast({ title: isRtl ? "تمت إزالته من قائمتك" : "Removed from your list", variant: "success" });
       }
+      setRecentJobs((prev) => prev.filter((job) => job.id !== cancelConfirm.jobId));
     }
     setCancelConfirm({ isOpen: false, jobId: null });
   };

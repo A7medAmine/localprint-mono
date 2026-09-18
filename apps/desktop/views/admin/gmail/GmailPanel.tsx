@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from "../../../components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
+import PreviewModal from "../../../components/preview/PreviewModal";
 import { Icon, fileTypeIcon } from "../../../components/ui/icon";
 import { useAdmin } from "../AdminContext";
 import { openAdminEventSource } from "../../../utils/adminEvents";
@@ -76,6 +77,10 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
   const [gmailReplyTemplateLang, setGmailReplyTemplateLang] = useState<"en" | "ar">("en");
   const [gmailReadyTemplate, setGmailReadyTemplate] = useState("");
   const [gmailReadyTemplateLang, setGmailReadyTemplateLang] = useState<"en" | "ar">("en");
+  // Attachment being previewed before import, if any.
+  const [previewAtt, setPreviewAtt] = useState<
+    { url: string; fileName: string; fileType: string; fileSize: number } | null
+  >(null);
   const gmailReplyRef = useRef<HTMLTextAreaElement>(null);
   const gmailReadyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -95,6 +100,19 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
     } catch (err) {
       console.error("Failed to load Gmail status:", err);
     }
+  };
+
+  const openAttachmentPreview = (
+    pendingId: number,
+    attachmentIndex: number,
+    att: GmailAttachmentMeta,
+  ) => {
+    setPreviewAtt({
+      url: storageService.getGmailAttachmentUrl(pendingId, attachmentIndex),
+      fileName: att.filename,
+      fileType: att.mimeType,
+      fileSize: att.size || 0,
+    });
   };
 
   const loadGmailPending = async () => {
@@ -671,11 +689,18 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                                 {email.attachment_meta && email.attachment_meta.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
                                     {email.attachment_meta.map((att, i) => (
-                                      <span key={i} className="px-2 py-0.5 bg-muted text-muted-foreground dark:text-gray-500 rounded text-xs flex items-center gap-1" title={`${att.filename} (${formatFileSize(att.size)})`}>
+                                      <button
+                                        key={i}
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); openAttachmentPreview(email.id, i, att); }}
+                                        className="px-2 py-0.5 bg-muted text-muted-foreground dark:text-gray-500 rounded text-xs flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+                                        title={isRtl ? `معاينة ${att.filename} (${formatFileSize(att.size)})` : `Preview ${att.filename} (${formatFileSize(att.size)})`}
+                                      >
                                         <Icon name={fileTypeIcon(att.mimeType)} className="h-3.5 w-3.5" />
                                         <span className="max-w-[80px] truncate">{att.filename}</span>
                                         {att.size > 0 && <span className="text-muted-foreground">({formatFileSize(att.size)})</span>}
-                                      </span>
+                                        <Icon name="eye" className="h-3.5 w-3.5 opacity-60" />
+                                      </button>
                                     ))}
                                   </div>
                                 ) : (
@@ -717,6 +742,16 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
                         return (
                           <div key={i} className="flex flex-wrap items-center gap-3 p-2 bg-muted/40 rounded-lg">
                             <span className="text-sm font-medium text-foreground min-w-[120px] truncate">{att.filename}</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1"
+                              onClick={() => openAttachmentPreview(email.id, i, att)}
+                            >
+                              <Icon name="eye" className="h-3.5 w-3.5" />
+                              {isRtl ? "معاينة" : "Preview"}
+                            </Button>
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground">{isRtl ? "نسخ" : "Copies"}</label>
                               <Input type="number" min={1} max={99} value={ov.copies} onChange={(e) => updateGmailOverride(key, "copies", parseInt(e.target.value) || 1)} className="w-16 h-8 text-sm" />
@@ -751,6 +786,16 @@ const GmailPanel: React.FC<GmailPanelProps> = ({ paperTypes, onJobsImported }) =
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Attachment preview (pending list + review dialog) */}
+      <PreviewModal
+        open={!!previewAtt}
+        onClose={() => setPreviewAtt(null)}
+        url={previewAtt?.url ?? null}
+        fileName={previewAtt?.fileName ?? ""}
+        fileType={previewAtt?.fileType}
+        fileSize={previewAtt?.fileSize}
+      />
 
       {/* Gmail Disconnect Confirmation */}
       <AlertDialog open={gmailDisconnectConfirm} onOpenChange={setGmailDisconnectConfirm}>

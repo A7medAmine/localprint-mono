@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { Icon } from "../../ui/icon";
 import { errorMessage } from "@atba3li/shared";
+import PdfCanvasRenderer from "./PdfCanvasRenderer";
+
+// Mobile browsers (iOS Safari, Android Chrome) ship no PDF plugin: they swap
+// an <embed>/<iframe> pointed at a PDF for a download button, so the preview
+// below never appears. `navigator.pdfViewerEnabled` is the spec'd way to ask
+// — true on desktop Chromium/Firefox/Safari and in Electron with
+// `plugins: true`, false on mobile. Older engines without the property fall
+// back to the native viewer, which is where they worked before.
+function hasNativePdfViewer(): boolean {
+  if (typeof navigator === "undefined") return true;
+  const flag = (navigator as Navigator & { pdfViewerEnabled?: boolean }).pdfViewerEnabled;
+  return flag === undefined ? true : flag;
+}
 
 interface PdfRendererProps {
   src: string;
@@ -8,6 +21,16 @@ interface PdfRendererProps {
   pageRanges?: { from: number; to: number }[];
   isRtl?: boolean;
 }
+
+const PdfLoadingSkeleton: React.FC = () => (
+  <div className="flex items-center justify-center h-full min-h-[300px]">
+    <div className="flex flex-col items-center gap-4 animate-pulse">
+      <div className="w-14 h-14 rounded-xl bg-muted" />
+      <div className="h-3 w-32 rounded-full bg-muted" />
+      <div className="h-2.5 w-48 rounded-full bg-gray-100 dark:bg-gray-600" />
+    </div>
+  </div>
+);
 
 // Renders through the host's built-in PDF viewer (PDFium in Electron/Chromium,
 // the browser's own viewer on the web) rather than rasterising with pdf.js.
@@ -25,25 +48,38 @@ interface PdfRendererProps {
 // Needs `webPreferences.plugins: true` on the Electron window, and blob: in
 // the CSP's object-src/frame-src — without the CSP entry the viewer frame is
 // dropped silently, with nothing logged.
+//
+// Hosts with no PDF plugin (every mobile browser) get PdfCanvasRenderer
+// instead — see hasNativePdfViewer() above.
 const PdfRenderer: React.FC<PdfRendererProps> = ({ src, pageRanges, isRtl }) => {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Decided once per mount: the host either has a PDF plugin or it doesn't.
+  const [native] = useState(hasNativePdfViewer);
 
   useEffect(() => {
     let cancelled = false;
     let created: string | null = null;
 
     setBlobUrl(null);
+    setBytes(null);
     setError(null);
 
     fetch(src)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.blob();
+        // Without a plugin the bytes go to pdf.js, which wants a buffer, not
+        // an object URL.
+        return (native ? r.blob() : r.arrayBuffer()) as Promise<Blob | ArrayBuffer>;
       })
-      .then((blob) => {
+      .then((payload: Blob | ArrayBuffer) => {
         if (cancelled) return;
-        created = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+        if (payload instanceof ArrayBuffer) {
+          setBytes(payload);
+          return;
+        }
+        created = URL.createObjectURL(new Blob([payload], { type: "application/pdf" }));
         setBlobUrl(created);
       })
       .catch((err) => {
@@ -55,7 +91,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src, pageRanges, isRtl }) => 
       cancelled = true;
       if (created) URL.revokeObjectURL(created);
     };
-  }, [src]);
+  }, [src, native]);
 
   if (error !== null) {
     return (
@@ -66,17 +102,12 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ src, pageRanges, isRtl }) => 
     );
   }
 
-  if (!blobUrl) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-[300px]">
-        <div className="flex flex-col items-center gap-4 animate-pulse">
-          <div className="w-14 h-14 rounded-xl bg-muted" />
-          <div className="h-3 w-32 rounded-full bg-muted" />
-          <div className="h-2.5 w-48 rounded-full bg-gray-100 dark:bg-gray-600" />
-        </div>
-      </div>
-    );
+  if (!native) {
+    if (!bytes) return <PdfLoadingSkeleton />;
+    return <PdfCanvasRenderer data={bytes} pageRanges={pageRanges} isRtl={isRtl} />;
   }
+
+  if (!blobUrl) return <PdfLoadingSkeleton />;
 
   // The native viewer exposes no API to restrict paging, so a page range only
   // decides which page it opens on.

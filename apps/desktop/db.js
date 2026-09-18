@@ -188,6 +188,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_itemId ON inventory_adjustments(itemId, createdAt DESC);
 
   CREATE INDEX IF NOT EXISTS idx_credentials_createdAt ON credentials(createdAt DESC);
+
+  -- Customer CVs built and printed in-shop. The data column holds the full
+  -- structured document (fields, sections, template, language) as JSON;
+  -- fullName/phone are pulled out as real columns so reprint search stays a
+  -- fast LIKE query.
+  CREATE TABLE IF NOT EXISTS cv_profiles (
+    id TEXT PRIMARY KEY,
+    fullName TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    photoFilename TEXT DEFAULT '',
+    data TEXT NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cv_profiles_fullName ON cv_profiles(fullName);
+  CREATE INDEX IF NOT EXISTS idx_cv_profiles_phone ON cv_profiles(phone);
 `);
 
 // Seed default paper types if table is empty
@@ -701,6 +718,70 @@ export const updateCredentialSettings = ({ services, defaultNotice, fontScale })
   if (defaultNotice !== undefined) updateSetting('credentialNotice', defaultNotice || '');
   if (fontScale !== undefined && CREDENTIAL_FONT_SCALES.includes(fontScale)) updateSetting('credentialFontScale', fontScale);
   return getCredentialSettings();
+};
+
+/**
+ * CV Profile Helpers
+ *
+ * `data` is the full structured document (fields toggles, sections, template,
+ * language) stored as JSON — fullName/phone are duplicated as plain columns
+ * purely so reprint search stays a fast indexed LIKE instead of scanning and
+ * parsing JSON on every row.
+ */
+const parseCvRow = (row) => (row ? { ...row, data: JSON.parse(row.data || '{}') } : null);
+
+export const getCvProfiles = (search) => {
+  const rows = search
+    ? db.prepare('SELECT * FROM cv_profiles WHERE fullName LIKE ? OR phone LIKE ? ORDER BY updatedAt DESC')
+        .all(`%${search}%`, `%${search}%`)
+    : db.prepare('SELECT * FROM cv_profiles ORDER BY updatedAt DESC').all();
+  return rows.map(parseCvRow);
+};
+
+export const getCvProfile = (id) => {
+  const row = db.prepare('SELECT * FROM cv_profiles WHERE id = ?').get(id);
+  return parseCvRow(row);
+};
+
+export const createCvProfile = (profile) => {
+  db.prepare(`
+    INSERT INTO cv_profiles (id, fullName, phone, data)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    profile.id,
+    profile.fullName,
+    profile.phone || '',
+    JSON.stringify(profile.data || {}),
+  );
+  return getCvProfile(profile.id);
+};
+
+export const updateCvProfile = (id, updates) => {
+  const existing = db.prepare('SELECT id FROM cv_profiles WHERE id = ?').get(id);
+  if (!existing) return null;
+
+  const fields = ["updatedAt = CURRENT_TIMESTAMP"];
+  const values = [];
+  if (updates.fullName !== undefined) { fields.push('fullName = ?'); values.push(updates.fullName); }
+  if (updates.phone !== undefined) { fields.push('phone = ?'); values.push(updates.phone || ''); }
+  if (updates.data !== undefined) { fields.push('data = ?'); values.push(JSON.stringify(updates.data)); }
+
+  values.push(id);
+  db.prepare(`UPDATE cv_profiles SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getCvProfile(id);
+};
+
+// Used only by the photo upload/replace route — keeps the file-management
+// concern (delete old file, store new filename) in the route, DB layer just
+// records whatever filename it's given.
+export const updateCvProfilePhoto = (id, photoFilename) => {
+  db.prepare('UPDATE cv_profiles SET photoFilename = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(photoFilename || '', id);
+  return getCvProfile(id);
+};
+
+export const deleteCvProfile = (id) => {
+  db.prepare('DELETE FROM cv_profiles WHERE id = ?').run(id);
+  return id;
 };
 
 // Fold the WAL back into the main database file, then close.

@@ -26,6 +26,8 @@ export interface PrintJob {
   orderId?: string;
   customerName: string;
   phoneNumber: string;
+  /** Sender address on email-imported jobs; empty for uploads. */
+  customerEmail?: string;
   notes: string;
   fileName: string;
   fileType: string;

@@ -33,6 +33,7 @@ import { makeJobCells } from "./JobCells";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 import NewJobDialog from "../../../components/NewJobDialog";
 import { Icon, type IconName } from "../../../components/ui/icon";
+import { ContextMenu, useContextMenu } from "../../../components/ui/context-menu";
 
 interface JobsPanelProps {
   jobs: AdminJobsApi;
@@ -224,7 +225,10 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     return groups
       .map((g) => {
         const groupMatchesSearch =
-          !q || g.customerName.toLowerCase().includes(q) || g.phoneNumber.includes(phoneQuery);
+          !q ||
+          g.customerName.toLowerCase().includes(q) ||
+          g.customerEmail.toLowerCase().includes(q) ||
+          g.phoneNumber.includes(phoneQuery);
         const matched = g.jobs.filter(
           (job) =>
             jobMatchesFilters(job) &&
@@ -270,7 +274,11 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
   const defaultPrinterName = currentSettings.defaultPrinterName || "";
 
   // Per-job cells live in JobCells.tsx; both densities render the same ones.
-  const { renderFileInfo, renderSettingsControls, renderCost, renderActions, renderJobCard } =
+  // One menu instance serves every row: the hook remembers which job was
+  // right-clicked and where the pointer was.
+  const jobMenu = useContextMenu<PrintJob>();
+
+  const { renderFileInfo, renderSettingsControls, renderCost, renderActions, renderJobCard, buildJobMenu } =
     makeJobCells({
       jobs,
       paperTypes,
@@ -280,11 +288,28 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
       defaultPrinterName,
       t,
       isRtl,
+      onJobContextMenu: jobMenu.open,
     });
 
 
   return (
     <>
+      {jobMenu.state && (
+        <ContextMenu
+          x={jobMenu.state.x}
+          y={jobMenu.state.y}
+          isRtl={isRtl}
+          title={
+            selectedJobIds.size > 1 && selectedJobIds.has(jobMenu.state.payload.id)
+              ? isRtl
+                ? `${selectedJobIds.size} ملفات محددة`
+                : `${selectedJobIds.size} files selected`
+              : jobMenu.state.payload.fileName
+          }
+          items={buildJobMenu(jobMenu.state.payload)}
+          onClose={jobMenu.close}
+        />
+      )}
             {/* A refresh over existing rows shows this hairline instead of
                 replacing the list with a skeleton. */}
             <div className="h-0.5 -mt-0.5 mb-1 overflow-hidden" aria-hidden={!refreshing}>
@@ -718,10 +743,14 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                             <div className="truncate text-start">
                               <h3 className="text-sm font-bold text-foreground truncate">
                                 {group.customerName ||
+                                  group.customerEmail ||
                                   (isRtl ? "بدون اسم" : "No Name")}
                               </h3>
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs text-muted-foreground truncate">
+                                {/* Email-imported orders have no phone — show
+                                    the sender address there instead. */}
                                 {group.phoneNumber ||
+                                  (group.customerName && group.customerEmail) ||
                                   (isRtl ? "بدون هاتف" : "No Phone")}
                                 {" · "}
                                 <span className="text-muted-foreground">{formatRelativeTime(group.latestDate, lang)}</span>
@@ -816,6 +845,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                                 return (
                                   <tr
                                     key={job.id}
+                                    onContextMenu={jobMenu.open(job)}
                                     className={`group/row transition-all duration-200 border-b border-gray-100 dark:border-white/10 ${
                                       recentlyChanged.has(job.id)
                                         ? "bg-amber-100 dark:bg-amber-900/30"

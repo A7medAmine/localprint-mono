@@ -204,6 +204,25 @@ export async function pollGmail() {
 }
 
 /**
+ * Notes stored on an imported job. "From:" used to be labelled onto the
+ * subject, so the dashboard showed the subject (often the file name) where the
+ * operator expected the sender — keep the sender on the From line and give the
+ * subject its own.
+ */
+function buildJobNotes(pending) {
+  const sender = pending.email_address
+    ? pending.email_from && pending.email_from !== pending.email_address
+      ? `${pending.email_from} <${pending.email_address}>`
+      : pending.email_address
+    : pending.email_from || "";
+  const lines = [];
+  if (sender) lines.push(`From: ${sender}`);
+  if (pending.subject) lines.push(`Subject: ${pending.subject}`);
+  const body = (pending.body_preview || "").trim();
+  return body ? `${lines.join("\n")}\n\n${body}` : lines.join("\n");
+}
+
+/**
  * Import selected pending emails: download attachments and create print jobs.
  */
 export async function importPendingEmails(pendingIds, overrides = {}) {
@@ -306,7 +325,7 @@ export async function importPendingEmails(pendingIds, overrides = {}) {
             jobId,
             pending.email_from,
             pending.email_address,
-            `From: ${pending.subject}\n\n${pending.body_preview}`,
+            buildJobNotes(pending),
             att.filename,
             att.mimeType,
             att.size || 0,

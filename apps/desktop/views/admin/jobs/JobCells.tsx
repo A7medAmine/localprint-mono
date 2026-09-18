@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { PrintJob, PaperType, DiscountRule, ShopSettings } from "../../../types";
+import { PrintJob, PaperType, DiscountRule, ShopSettings, PrintStatus, PaymentStatus } from "../../../types";
 import {
   calculatePrintPrice,
   formatPrice,
@@ -8,6 +8,7 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Icon } from "../../../components/ui/icon";
+import type { ContextMenuEntry } from "../../../components/ui/context-menu";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import {
 import { isOfficeFile, AdminJobsApi } from "./useAdminJobs";
 import { SourceBadge, StatusBadge, PaymentBadge } from "./JobBadges";
 import { storageService } from "../../../services/storageService";
+import { toast } from "../../../components/ui/use-toast";
 
 /** Small image thumbnail for the job row, fetched through the token-protected
  * review endpoint (public endpoint hides jobs still awaiting review). PDFs
@@ -77,6 +79,8 @@ export interface JobCellDeps {
   defaultPrinterName: string;
   t: (key: string) => string;
   isRtl: boolean;
+  /** Right-click handler factory from `useContextMenu`, wired on rows and cards. */
+  onJobContextMenu?: (job: PrintJob) => (e: React.MouseEvent) => void;
 }
 
 /**
@@ -96,6 +100,7 @@ export function makeJobCells({
   defaultPrinterName,
   t,
   isRtl,
+  onJobContextMenu,
 }: JobCellDeps) {
   const {
     jobPageCounts,
@@ -388,11 +393,156 @@ export function makeJobCells({
       );
     };
 
+    /**
+     * The right-click menu for a job row (and for the card in the other density).
+     *
+     * It mirrors the row buttons plus the things that otherwise need a trip to a
+     * badge or the bulk bar: status, payment, copying the file name. Right-clicking
+     * a row inside a multi-row selection acts on the whole selection instead —
+     * that is what every file manager does, and it is the only way to reach the
+     * bulk actions without first hunting for the bar at the top.
+     */
+    const buildJobMenu = (job: PrintJob): ContextMenuEntry[] => {
+      const officeFile = isOfficeFile(job.fileType);
+      const selectedCount = selectedJobIds.size;
+      const bulk = selectedCount > 1 && selectedJobIds.has(job.id);
+
+      const copyToClipboard = async (text: string, label: string) => {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast({ title: label, variant: "success" });
+        } catch {
+          toast({ title: isRtl ? "تعذر النسخ" : "Copy failed", variant: "destructive" });
+        }
+      };
+
+      if (bulk) {
+        return [
+          {
+            label: isRtl ? `طباعة ${selectedCount} ملفات` : `Print ${selectedCount} files`,
+            icon: "zap",
+            disabled: jobs.bulkPrinting,
+            onSelect: () => jobs.handleBulkPrint(),
+          },
+          {
+            label: isRtl ? "تنزيل المحدد" : "Download selected",
+            icon: "download",
+            onSelect: () => jobs.handleBulkDownload(),
+          },
+          { type: "separator" },
+          {
+            label: isRtl ? "تعليم كمطبوع" : "Mark as printed",
+            icon: "check-all",
+            onSelect: () => jobs.handleBulkStatusUpdate(PrintStatus.PRINTED),
+          },
+          {
+            label: isRtl ? "تعليم كجاهز" : "Mark as ready",
+            icon: "check",
+            onSelect: () => jobs.handleBulkStatusUpdate(PrintStatus.READY),
+          },
+          {
+            label: isRtl ? "تعليم كمدفوع" : "Mark as paid",
+            icon: "money",
+            onSelect: () => jobs.handleBulkPaymentStatus(PaymentStatus.PAID),
+          },
+          {
+            label: isRtl ? "تعليم كغير مدفوع" : "Mark as unpaid",
+            icon: "money-off",
+            onSelect: () => jobs.handleBulkPaymentStatus(PaymentStatus.UNPAID),
+          },
+          { type: "separator" },
+          {
+            label: isRtl ? `حذف ${selectedCount} ملفات` : `Delete ${selectedCount} files`,
+            icon: "trash",
+            destructive: true,
+            onSelect: () => jobs.handleBulkDelete(),
+          },
+        ];
+      }
+
+      const printEntries: ContextMenuEntry[] = officeFile
+        ? [
+            {
+              label: isRtl ? "فتح في التطبيق" : "Open in default app",
+              icon: "external",
+              onSelect: () => handleOpenInApp(job),
+            },
+          ]
+        : [
+            {
+              label: isRtl ? "طباعة سريعة" : "Quick print",
+              icon: "zap",
+              hint: defaultPrinterName || undefined,
+              onSelect: () => handleQuickPrint(job),
+            },
+            {
+              label: isRtl ? "خيارات الطباعة…" : "Print options…",
+              icon: "print",
+              onSelect: () => jobs.setPrintOptionsJob(job),
+            },
+          ];
+
+      return [
+        ...printEntries,
+        {
+          label: isRtl ? "معاينة" : "Preview",
+          icon: "eye",
+          onSelect: () => onPreview(job),
+        },
+        { label: t("edit"), icon: "edit", onSelect: () => handleEdit(job) },
+        { label: t("download"), icon: "download", onSelect: () => handleDownload(job) },
+        { type: "separator" },
+        {
+          label: isRtl ? "قيد الانتظار" : "Mark pending",
+          icon: "clock",
+          checked: job.status === PrintStatus.PENDING,
+          onSelect: () => handleStatusChange(job.id, PrintStatus.PENDING),
+        },
+        {
+          label: isRtl ? "جاهز" : "Mark ready",
+          icon: "check",
+          checked: job.status === PrintStatus.READY,
+          onSelect: () => handleStatusChange(job.id, PrintStatus.READY),
+        },
+        {
+          label: isRtl ? "مطبوع" : "Mark printed",
+          icon: "check-all",
+          checked: job.status === PrintStatus.PRINTED,
+          onSelect: () => handleStatusChange(job.id, PrintStatus.PRINTED),
+        },
+        { type: "separator" },
+        {
+          label: isRtl ? "تعديل الدفع…" : "Edit payment…",
+          icon: "money",
+          onSelect: () => handlePaymentClick(job),
+        },
+        {
+          label: isRtl ? "نسخ اسم الملف" : "Copy file name",
+          icon: "copy",
+          onSelect: () =>
+            copyToClipboard(job.fileName, isRtl ? "تم نسخ اسم الملف" : "File name copied"),
+        },
+        {
+          label: isRtl ? "نسخ رقم الطلب" : "Copy job ID",
+          icon: "tag",
+          onSelect: () => copyToClipboard(job.id, isRtl ? "تم نسخ الرقم" : "Job ID copied"),
+        },
+        { type: "separator" },
+        {
+          label: t("delete"),
+          icon: "trash",
+          destructive: true,
+          onSelect: () => handleDelete(job.id),
+        },
+      ];
+    };
+
     const renderJobCard = (job: PrintJob) => {
       const isSelected = selectedJobIds.has(job.id);
       return (
         <div
           key={job.id}
+          onContextMenu={onJobContextMenu?.(job)}
           className={`rounded-2xl border p-3 transition-all duration-200 flex flex-col gap-3 ${
             recentlyChanged.has(job.id)
               ? "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"
@@ -421,5 +571,5 @@ export function makeJobCells({
       );
     };
 
-  return { renderFileInfo, renderSettingsControls, renderCost, renderActions, renderJobCard };
+  return { renderFileInfo, renderSettingsControls, renderCost, renderActions, renderJobCard, buildJobMenu };
 }

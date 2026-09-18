@@ -26,6 +26,7 @@ import { getGmailAccount } from './db.js';
 import { registerAuthRoutes } from './server/routes/auth.js';
 import { registerCatalogRoutes } from './server/routes/catalog.js';
 import { registerCredentialRoutes } from './server/routes/credentials.js';
+import { registerCvRoutes } from './server/routes/cvs.js';
 import { registerFileRoutes } from './server/routes/files.js';
 import { registerGmailRoutes } from './server/routes/gmail.js';
 import { registerInventoryRoutes } from './server/routes/inventory.js';
@@ -118,6 +119,7 @@ registerNetworkRoutes(app);
 registerCatalogRoutes(app);
 registerInventoryRoutes(app);
 registerCredentialRoutes(app);
+registerCvRoutes(app);
 registerGmailRoutes(app);
 
 

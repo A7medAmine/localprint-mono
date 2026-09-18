@@ -11,6 +11,8 @@ export interface CustomerGroup {
   key: string;
   customerName: string;
   phoneNumber: string;
+  /** Sender address, when the group's jobs came in by email. */
+  customerEmail: string;
   jobs: PrintJob[];
   latestDate: string;
 }
@@ -187,8 +189,12 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     const grouped = data.reduce((acc: { [key: string]: CustomerGroup }, job) => {
       const name = job.customerName?.trim() || "";
       const phone = job.phoneNumber?.trim() || "";
+      const email = job.customerEmail?.trim() || "";
       let key = `${name}-${phone}`;
-      if (!name && !phone) {
+      if (!name && !phone && email) {
+        // Email import with no display name: the address is the identity.
+        key = `email-${email.toLowerCase()}`;
+      } else if (!name && !phone) {
         // Anonymous upload: no identity to group on, so fall back to the
         // shared orderId every file from one submission carries — that way
         // files that finish uploading (and so arrive here) at different
@@ -200,8 +206,9 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
           : `anon-${new Date(job.uploadDate).toISOString().slice(0, 16)}`;
       }
       if (!acc[key]) {
-        acc[key] = { key, customerName: name, phoneNumber: phone, jobs: [], latestDate: job.uploadDate };
+        acc[key] = { key, customerName: name, phoneNumber: phone, customerEmail: email, jobs: [], latestDate: job.uploadDate };
       }
+      if (!acc[key].customerEmail && email) acc[key].customerEmail = email;
       acc[key].jobs.push(job);
       if (new Date(job.uploadDate) > new Date(acc[key].latestDate)) acc[key].latestDate = job.uploadDate;
       return acc;

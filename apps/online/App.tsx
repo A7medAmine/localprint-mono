@@ -24,15 +24,18 @@ import { isCustomerAuthConfigured } from "./services/supabaseClient";
 import { Icon } from "./components/ui/icon";
 
 const ShopNotFound: React.FC<{ isRtl: boolean }> = ({ isRtl }) => (
-  <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
-    <p className="text-lg font-semibold">
-      {isRtl ? "المتجر غير موجود" : "Store not found"}
-    </p>
-    <p className="text-sm mt-2">
-      {isRtl
-        ? "تأكد من رابط الرفع الذي حصلت عليه من صاحب المحل."
-        : "Double-check the upload link you were given."}
-    </p>
+  <div>
+    <div className="max-w-md mx-auto mt-16 text-center text-muted-foreground">
+      <p className="text-lg font-semibold">
+        {isRtl ? "المتجر غير موجود" : "Store not found"}
+      </p>
+      <p className="text-sm mt-2">
+        {isRtl
+          ? "تأكد من رابط الرفع الذي حصلت عليه من صاحب المحل، أو اختر محلًا من القائمة أدناه."
+          : "Double-check the upload link you were given, or pick a shop from the list below."}
+      </p>
+    </div>
+    <ShopDirectory isRtl={isRtl} />
   </div>
 );
 

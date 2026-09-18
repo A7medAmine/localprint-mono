@@ -1,4 +1,4 @@
-import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment, Credential, CredentialSettings } from "../types";
+import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment, Credential, CredentialSettings, CvProfile, CvDocument } from "../types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { normalizeLocation } from "@atba3li/shared/geo";
 import { normalizeSocialLinks } from "@atba3li/shared/social";
@@ -369,11 +369,23 @@ class StorageService {
 
   async deleteJob(id: string): Promise<void> {
     const deleteToken = this.getMyDeleteTokens()[id];
-    await this.safeFetch(`/api/jobs/${id}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deleteToken }),
-    });
+    try {
+      await this.safeFetch(`/api/jobs/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deleteToken }),
+      });
+    } finally {
+      // Drop it from this browser's own tracking either way. A stale/missing
+      // deleteToken (e.g. an order whose file already vanished from disk
+      // server-side) must not leave a broken entry the customer can never
+      // clear from their own list — the server row can outlive it harmlessly.
+      this.forgetJob(id);
+    }
+  }
+
+  /** Stop tracking a job in this browser without touching the server row. */
+  forgetJob(id: string): void {
     const myJobs = this.getMyJobIds().filter((mid) => mid !== id);
     localStorage.setItem("my_upload_ids", JSON.stringify(myJobs));
     const tokens = this.getMyDeleteTokens();
@@ -634,6 +646,70 @@ class StorageService {
     }
   }
 
+  // CVs
+  async getCvProfiles(search?: string): Promise<CvProfile[]> {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+    const data = await this.safeFetch(`/api/cvs${qs}`);
+    return Array.isArray(data) ? data : [];
+  }
+
+  async getCvProfile(id: string): Promise<CvProfile> {
+    return this.safeFetch(`/api/cvs/${id}`);
+  }
+
+  async createCvProfile(profile: { fullName: string; phone?: string; data: CvDocument }): Promise<CvProfile> {
+    return this.safeFetch("/api/cvs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    });
+  }
+
+  async updateCvProfile(id: string, updates: { fullName?: string; phone?: string; data?: CvDocument }): Promise<CvProfile> {
+    return this.safeFetch(`/api/cvs/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteCvProfile(id: string): Promise<void> {
+    await this.safeFetch(`/api/cvs/${id}`, { method: "DELETE" });
+  }
+
+  async uploadCvPhoto(id: string, file: File): Promise<CvProfile> {
+    const formData = new FormData();
+    formData.append("photo", file);
+    return this.safeFetch(`/api/cvs/${id}/photo`, {
+      method: "POST",
+      body: formData,
+    });
+  }
+
+  // The photo route requires admin auth, so a plain <img src> can't load it,
+  // and renderHtmlPdf needs a self-contained document anyway (app-relative
+  // URLs don't resolve from the tmp file it renders) — fetch it with the
+  // bearer token and hand back a data: URL for both the editor preview and
+  // the printed document to use directly.
+  async fetchCvPhotoDataUrl(id: string): Promise<string | null> {
+    const token = this.authToken || localStorage.getItem("ps_admin_token");
+    try {
+      const res = await fetch(`/api/cvs/${id}/photo`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async updateCredentialSettings(settings: Partial<CredentialSettings>): Promise<CredentialSettings> {
     return this.safeFetch("/api/credentials/settings", {
       method: "PUT",
@@ -761,6 +837,15 @@ class StorageService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids, overrides }),
     });
+  }
+
+  /**
+   * Preview URL for one attachment of a pending (not yet imported) email. The
+   * server streams it straight from Gmail, caching the bytes on first hit, so
+   * the operator can look at a file before creating a job for it.
+   */
+  getGmailAttachmentUrl(pendingId: number, attachmentIndex: number): string {
+    return `/api/gmail/attachment/${pendingId}/${attachmentIndex}`;
   }
 
   async discardGmailEmail(id: number): Promise<void> {

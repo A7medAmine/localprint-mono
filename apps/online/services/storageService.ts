@@ -235,11 +235,23 @@ class StorageService {
 
   async deleteJob(shopSlug: string, id: string): Promise<void> {
     const deleteToken = this.getMyDeleteTokens(shopSlug)[id];
-    await this.safeFetch(`/api/s/${shopSlug}/orders/${id}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deleteToken }),
-    });
+    try {
+      await this.safeFetch(`/api/s/${shopSlug}/orders/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deleteToken }),
+      });
+    } finally {
+      // Drop it from this browser's own tracking either way. A stale/missing
+      // deleteToken (e.g. an order whose file already vanished from disk
+      // server-side) must not leave a broken entry the customer can never
+      // clear from their own list — the server row can outlive it harmlessly.
+      this.forgetJob(shopSlug, id);
+    }
+  }
+
+  /** Stop tracking an order in this browser without touching the server row. */
+  forgetJob(shopSlug: string, id: string): void {
     const myJobs = this.getMyJobIds(shopSlug).filter((mid) => mid !== id);
     localStorage.setItem(this.myJobIdsKey(shopSlug), JSON.stringify(myJobs));
     const tokens = this.getMyDeleteTokens(shopSlug);

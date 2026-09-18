@@ -62,3 +62,57 @@ export interface CredentialSettings {
   defaultNotice: string;
   fontScale: CredentialCardFontScale;
 }
+
+/** The CV document's own language — independent of the app's ar/en chrome language. */
+export type CvLanguage = "ar" | "en" | "fr";
+export type CvTemplateId = "modern" | "classic" | "minimal" | "azure";
+
+/** One experience/education row. */
+export interface CvEntry {
+  id: string;
+  title: string;
+  subtitle: string;
+  period: string;
+  description: string;
+}
+
+/** A fully freeform extra section, beyond the fixed fields. */
+export interface CvCustomSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface CvDocument {
+  language: CvLanguage;
+  templateId: CvTemplateId;
+  /** Per-block visibility — off hides the block from the printed output without discarding its data. */
+  fields: {
+    photo: boolean;
+    contact: boolean;
+    summary: boolean;
+    experience: boolean;
+    education: boolean;
+    skills: boolean;
+    languages: boolean;
+  };
+  jobTitle: string;
+  email: string;
+  address: string;
+  summary: string;
+  experience: CvEntry[];
+  education: CvEntry[];
+  skills: string[];
+  languagesSpoken: string[];
+  customSections: CvCustomSection[];
+}
+
+export interface CvProfile {
+  id: string;
+  fullName: string;
+  phone: string;
+  photoFilename: string;
+  data: CvDocument;
+  createdAt?: string;
+  updatedAt?: string;
+}
