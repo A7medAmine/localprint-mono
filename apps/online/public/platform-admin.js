@@ -127,10 +127,10 @@ function renderShops() {
     name.textContent = shop.name;
     const slug = document.createElement("a");
     slug.className = "slug";
-    slug.href = `/s/${shop.slug}/upload`;
+    slug.href = `/${shop.slug}/upload`;
     slug.target = "_blank";
     slug.rel = "noopener";
-    slug.textContent = `/s/${shop.slug}/upload`;
+    slug.textContent = `/${shop.slug}/upload`;
     nameCell.append(name, slug);
 
     const statusCell = document.createElement("td");
@@ -206,7 +206,7 @@ async function setActive(shop, isActive) {
 // splits it back into the API base URL and the storefront slug, so the shop
 // never has to be told two separate values.
 function storeLink(slug) {
-  return `${window.location.origin}/s/${encodeURIComponent(slug)}`;
+  return `${window.location.origin}/${encodeURIComponent(slug)}`;
 }
 
 async function copyStoreLink(shop, btn) {

@@ -170,7 +170,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
     <div className="flex items-center justify-between gap-3 mb-4">
       {lastShopSlug ? (
         <Link
-          to={`/s/${lastShopSlug}/upload`}
+          to={`/${lastShopSlug}/upload`}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
         >
           <Icon name="chevron-left" className="w-4 h-4 rtl:rotate-180" />
@@ -242,7 +242,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
               <Card key={s.shopSlug}>
                 <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <Link to={`/s/${s.shopSlug}/upload`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block">
+                    <Link to={`/${s.shopSlug}/upload`} className="font-semibold text-gray-900 dark:text-gray-100 hover:text-indigo-600 dark:hover:text-indigo-400 truncate block">
                       {s.shopName}
                     </Link>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -354,7 +354,7 @@ const AccountView: React.FC<AccountViewProps> = ({ lang, onToggleLang }) => {
                       </p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
                         {order.shopSlug ? (
-                          <Link to={`/s/${order.shopSlug}/upload`} className="hover:underline text-indigo-600 dark:text-indigo-400" dir="auto">
+                          <Link to={`/${order.shopSlug}/upload`} className="hover:underline text-indigo-600 dark:text-indigo-400" dir="auto">
                             {order.shopName || order.shopSlug}
                           </Link>
                         ) : (

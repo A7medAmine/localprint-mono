@@ -51,10 +51,11 @@ const buildLocalUrl = async (lang: Language) => {
 };
 
 /**
- * The public site is multi-tenant: every shop lives under /s/<slug>/upload, and
+ * The public site is multi-tenant: every shop lives under /<slug>/upload, and
  * the platform root is a generic landing page. The slug is owned by the cloud
- * and cached locally (cloudShopSlug) on each settings sync. If the operator
- * already pasted a storefront URL that contains /s/<slug>, honour it as-is.
+ * and cached locally (cloudShopSlug) on each settings sync. Old-style pasted
+ * URLs (/s/<slug>) still resolve server-side, so honour them as-is rather
+ * than rewriting a value the operator typed in themselves.
  */
 const buildOnlineUrl = (shopSettings: ShopSettings | null, lang: Language) => {
   const raw = shopSettings?.cloudSyncUrl?.trim();
@@ -70,7 +71,7 @@ const buildOnlineUrl = (shopSettings: ShopSettings | null, lang: Language) => {
 
   const slug = shopSettings?.cloudShopSlug?.trim();
   if (!slug) return null;
-  return `${cleaned}/s/${encodeURIComponent(slug)}/upload${query}`;
+  return `${cleaned}/${encodeURIComponent(slug)}/upload${query}`;
 };
 
 const QrPosterDialog: React.FC<QrPosterDialogProps> = ({

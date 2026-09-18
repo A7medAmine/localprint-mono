@@ -30,7 +30,7 @@ console.log(`  Cloud URL:  ${host || '<your cloud host, e.g. https://cloud.examp
 console.log(`  API Token:  ${shop.token}`);
 
 console.log('\nPublic upload link (share as-is or encode into a QR code):');
-console.log(`  ${host ? `${host.replace(/\/+$/, '')}/s/${shop.slug}/upload` : `https://<your-cloud-host>/s/${shop.slug}/upload`}`);
+console.log(`  ${host ? `${host.replace(/\/+$/, '')}/${shop.slug}/upload` : `https://<your-cloud-host>/${shop.slug}/upload`}`);
 console.log('');
 
 process.exit(0);

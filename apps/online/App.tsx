@@ -185,7 +185,7 @@ const ShopCard: React.FC<{
 
   return (
     <div className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg dark:hover:border-indigo-800/50">
-      <Link to={`/s/${shop.slug}/upload`} className="block">
+      <Link to={`/${shop.slug}/upload`} className="block">
         <div className="relative flex h-28 items-center justify-center overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-indigo-100/70 dark:from-indigo-950/40 dark:via-gray-900 dark:to-indigo-900/20">
           {showLogo ? (
             <img
@@ -209,7 +209,7 @@ const ShopCard: React.FC<{
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="min-w-0">
-          <Link to={`/s/${shop.slug}/upload`} className="block">
+          <Link to={`/${shop.slug}/upload`} className="block">
             <h2 dir="auto" className="truncate text-base font-bold text-foreground">
               {shop.name}
             </h2>
@@ -286,7 +286,7 @@ const ShopCard: React.FC<{
             for a button that will never appear. */}
         <div className="mt-auto flex items-stretch gap-2">
           <Link
-            to={`/s/${shop.slug}/upload`}
+            to={`/${shop.slug}/upload`}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 active:scale-[0.99]"
           >
             <Icon name="upload" className="h-4 w-4" />
@@ -310,12 +310,20 @@ const ShopCard: React.FC<{
   );
 };
 
-// A bare shop link (/s/:slug) — or anything under it that isn't a real page —
+// A bare shop link (/:slug) — or anything under it that isn't a real page —
 // is a customer who scanned the QR or typed the short URL. Send them to the
 // upload page instead of the "no shop specified" dead end.
 const ShopRootRedirect: React.FC = () => {
   const { shopSlug } = useParams<{ shopSlug: string }>();
-  return <Navigate to={`/s/${shopSlug}/upload`} replace />;
+  return <Navigate to={`/${shopSlug}/upload`} replace />;
+};
+
+// Old links used /s/<slug>(/upload). Keep them working forever by bouncing
+// to the new, shorter path instead of breaking every QR poster and bookmark
+// already printed or saved out there.
+const LegacyShopRedirect: React.FC = () => {
+  const { shopSlug } = useParams<{ shopSlug: string }>();
+  return <Navigate to={`/${shopSlug}/upload`} replace />;
 };
 
 const UploadRoute: React.FC<{
@@ -420,7 +428,7 @@ const App: React.FC = () => {
             </>
           );
           return lastShopSlug ? (
-            <Link to={`/s/${lastShopSlug}/upload`} className="flex items-center gap-3 min-w-0" style={{ direction: "ltr" }}>
+            <Link to={`/${lastShopSlug}/upload`} className="flex items-center gap-3 min-w-0" style={{ direction: "ltr" }}>
               {brand}
             </Link>
           ) : (
@@ -464,10 +472,12 @@ const App: React.FC = () => {
         <div key={lang} className="animate-[langFadeIn_0.25s_ease-out] flex-1 flex flex-col">
           <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/s/:shopSlug/upload" element={<UploadRoute lang={lang} onSettingsLoaded={setSettings} onShopVisited={handleShopVisited} />} />
-            <Route path="/s/:shopSlug" element={<ShopRootRedirect />} />
-            <Route path="/s/:shopSlug/*" element={<ShopRootRedirect />} />
             <Route path="/account" element={<AccountView lang={lang} onToggleLang={setLang} />} />
+            <Route path="/s/:shopSlug/*" element={<LegacyShopRedirect />} />
+            <Route path="/:shopSlug/upload" element={<UploadRoute lang={lang} onSettingsLoaded={setSettings} onShopVisited={handleShopVisited} />} />
+            <Route path="/:shopSlug" element={<ShopRootRedirect />} />
+            <Route path="/:shopSlug/*" element={<ShopRootRedirect />} />
+            <Route path="/" element={<ShopDirectory isRtl={lang === "ar"} />} />
             <Route path="*" element={<ShopDirectory isRtl={lang === "ar"} />} />
           </Routes>
           </Suspense>

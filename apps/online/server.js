@@ -1081,7 +1081,7 @@ app.get("/api/shop/settings", requireShopToken, async (req, res) => {
   const settings = await getSettings(req.shop.id);
   settings.paperTypes = await getPaperTypes(req.shop.id);
   // The desktop app needs the slug to build its public storefront links
-  // (QR posters point at /s/:slug/upload, not the platform root).
+  // (QR posters point at /:slug/upload, not the platform root).
   settings.shopSlug = req.shop.slug;
   res.status(200).json(settings);
 });

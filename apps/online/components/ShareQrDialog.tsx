@@ -24,7 +24,7 @@ interface ShareQrDialogProps {
  * opens in the same language the sharer was using.
  */
 const buildShareUrl = (shopSlug: string, lang: Language) =>
-  `${window.location.origin}/s/${shopSlug}?ref=upload&lang=${lang}`;
+  `${window.location.origin}/${shopSlug}?ref=upload&lang=${lang}`;
 
 const ShareQrDialog: React.FC<ShareQrDialogProps> = ({
   open,
