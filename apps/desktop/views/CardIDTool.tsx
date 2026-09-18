@@ -81,6 +81,14 @@ function containFit(imgW: number, imgH: number, boxW: number, boxH: number) {
   return { w: imgW * scale, h: imgH * scale };
 }
 
+// Same as containFit, but imgW/imgH are the image's OWN (pre-rotation) dimensions
+// and the returned w/h are what to pass to drawImage in that same local frame —
+// the caller doesn't need to swap anything back after rotating the canvas/page.
+function containFitRotated(imgW: number, imgH: number, boxW: number, boxH: number, rotated: boolean) {
+  const scale = rotated ? Math.min(boxW / imgH, boxH / imgW) : Math.min(boxW / imgW, boxH / imgH);
+  return { w: imgW * scale, h: imgH * scale };
+}
+
 const AUTO_MARGIN_MM = 5;
 const AUTO_GAP_MM = 3;
 
@@ -290,7 +298,7 @@ const CardIDTool: React.FC = () => {
         const rotated = rot % 180 !== 0;
         const iw = img.naturalWidth || cw;
         const ih = img.naturalHeight || ch;
-        const fitted = containFit(rotated ? ih : iw, rotated ? iw : ih, cw, ch);
+        const fitted = containFitRotated(iw, ih, cw, ch, rotated);
         ctx.save();
         ctx.beginPath();
         ctx.rect(cx, cy, cw, ch);
@@ -359,7 +367,7 @@ const CardIDTool: React.FC = () => {
         for (const slot of slots) {
           const sx = isFront ? slot.x : PP_W - slot.x - slot.w;
           const rotated = rot % 180 !== 0;
-          const fitted = containFit(rotated ? img.height : img.width, rotated ? img.width : img.height, slot.w, slot.h);
+          const fitted = containFitRotated(img.width, img.height, slot.w, slot.h, rotated);
           page.drawImage(img, {
             x: sx + (slot.w - fitted.w) / 2,
             y: slot.y + (slot.h - fitted.h) / 2,

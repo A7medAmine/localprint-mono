@@ -232,9 +232,14 @@ export function registerJobRoutes(app) {
       const paperType = String(prefs.paperType || "normal");
       const uploadDate = new Date().toISOString();
 
+      // Files from one NewJobDialog submission share a client-generated orderId
+      // so the dashboard groups them as one job with separate files, instead of
+      // merging them into a single PDF.
+      const orderId = typeof metadata.orderId === "string" && metadata.orderId.trim() ? metadata.orderId.trim() : id;
+
       const newJob = {
         id,
-        orderId: id,
+        orderId,
         customerName: String(metadata.customerName || metadata.customer || "").trim(),
         phoneNumber: String(metadata.phoneNumber || metadata.phone || "").trim(),
         notes: String(metadata.notes || "").trim(),
@@ -333,7 +338,19 @@ export function registerJobRoutes(app) {
       updateStmt.run(req.file.filename, newFileName, req.file.size, req.file.mimetype, pageCount, jobId);
 
       const updatedJob = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
-      res.status(200).json({ success: true, job: updatedJob });
+      res.status(200).json({
+        success: true,
+        job: {
+          ...updatedJob,
+          paymentAmount: updatedJob.paymentAmount || 0,
+          paymentStatus: updatedJob.paymentStatus || 'UNPAID',
+          printPreferences: {
+            colorMode: updatedJob.colorMode,
+            copies: updatedJob.copies,
+            paperType: updatedJob.paperType || 'normal',
+          },
+        },
+      });
     } catch (err) {
       console.error("❌ Update File Error:", err);
       res.status(500).json({ success: false, error: "Internal server error" });

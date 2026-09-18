@@ -235,7 +235,6 @@ export const TRANSLATIONS: Translations = {
   newJobTitle: { en: "Create a print job", ar: "إنشاء طلب طباعة" },
   selectFiles: { en: "Select files", ar: "اختر الملفات" },
   separateJobs: { en: "Separate jobs", ar: "طلبات منفصلة" },
-  combineOneJob: { en: "Combine into one job", ar: "دمج في طلب واحد" },
   photoLayoutOption: { en: "Full-page photo layout", ar: "تنسيق صور صفحة كاملة" },
   openInPhotoTool: { en: "Open in Photo Batch tool", ar: "فتح في أداة الصور" },
   creatingJobs: { en: "Creating jobs…", ar: "جارٍ إنشاء الطلبات…" },

@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { PDFDocument } from "pdf-lib";
 import { ALLOWED_TYPES } from "../constants";
 import { useLanguage } from "../lib/useLanguage";
 import { toast } from "../components/ui/use-toast";
@@ -9,19 +8,14 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
-import { decodeImageToBitmap } from "../lib/imageNormalize";
-import { layoutBatch } from "../lib/photoLayout";
-import { buildPhotoPdf } from "../lib/photoPdf";
 import { setPhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType } from "../types";
 import { Icon } from "./ui/icon";
 import { readPref } from "@atba3li/shared/lib/prefs";
-import { errorMessage } from "@atba3li/shared";
 
 const ACCEPT = ALLOWED_TYPES.join(",");
 
 const isImageFile = (f: File) => f.type.startsWith("image/");
-const isPdfFile = (f: File) => f.type === "application/pdf";
 
 interface NewJobDialogProps {
   open: boolean;
@@ -30,7 +24,7 @@ interface NewJobDialogProps {
   onCreated?: () => void;
 }
 
-type Mode = "single" | "separate" | "combine" | null;
+type Mode = "single" | "separate" | null;
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTypes, onCreated }) => {
   const { t, lang } = useLanguage();
@@ -102,18 +96,19 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
     if (dropped.length) onFilesChosen([...files, ...dropped]);
   };
 
-  const meta = () => ({
+  const meta = (orderId: string) => ({
     customerName: customerName.trim(),
     phoneNumber: phone.trim(),
     notes: notes.trim(),
     printPreferences: { colorMode, copies, paperType },
     source: "admin",
+    orderId,
   });
 
-  const postJob = async (file: File, fileName: string) => {
+  const postJob = async (file: File, fileName: string, orderId: string) => {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("metadata", JSON.stringify({ ...meta(), fileName }));
+    formData.append("metadata", JSON.stringify({ ...meta(orderId), fileName }));
     const token = readPref("adminToken");
     const res = await fetch("/api/jobs", {
       method: "POST",
@@ -135,10 +130,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
     setWorking(true);
     let created = 0;
     const failed: string[] = [];
+    const orderId = crypto.randomUUID();
     for (let i = 0; i < files.length; i++) {
       setProgress(isRtl ? `جارٍ الإنشاء ${i + 1} من ${files.length}` : `Creating ${i + 1} of ${files.length}`);
       try {
-        await postJob(files[i], files[i].name);
+        await postJob(files[i], files[i].name, orderId);
         created++;
       } catch {
         failed.push(files[i].name);
@@ -159,60 +155,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
     }
   };
 
-  /** Build one combined PDF: merged PDFs, then full-page photo pages appended. */
-  const buildCombinedPdf = async (): Promise<Blob> => {
-    const doc = await PDFDocument.create();
-    const pdfs = files.filter(isPdfFile);
-    for (const f of pdfs) {
-      const src = await PDFDocument.load(await f.arrayBuffer(), { ignoreEncryption: true });
-      const copied = await doc.copyPages(src, src.getPageIndices());
-      copied.forEach((p) => doc.addPage(p));
-    }
-    const images = files.filter(isImageFile);
-    if (images.length) {
-      const imageMap = new Map<string, ImageBitmap | HTMLImageElement>();
-      const items: { id: string; naturalWidth: number; naturalHeight: number }[] = [];
-      for (const f of images) {
-        const { bitmap, width, height } = await decodeImageToBitmap(f);
-        const id = crypto.randomUUID();
-        imageMap.set(id, bitmap);
-        items.push({ id, naturalWidth: width, naturalHeight: height });
-      }
-      const pages = layoutBatch(items, {
-        page: { widthPt: (210 * 72) / 25.4, heightPt: (297 * 72) / 25.4 },
-        margins: { topMm: 5, rightMm: 5, bottomMm: 5, leftMm: 5 },
-        fit: "cover",
-        autoRotate: true,
-        background: "#ffffff",
-        copies: 1,
-      });
-      const photoBlob = await buildPhotoPdf(pages, imageMap, 1);
-      const photoDoc = await PDFDocument.load(await photoBlob.arrayBuffer());
-      const copied = await doc.copyPages(photoDoc, photoDoc.getPageIndices());
-      copied.forEach((p) => doc.addPage(p));
-    }
-    const bytes = await doc.save();
-    return new Blob([bytes], { type: "application/pdf" });
-  };
-
-  const createCombined = async () => {
-    if (!customerName.trim() || files.length === 0) return;
-    setWorking(true);
-    try {
-      const blob = await buildCombinedPdf();
-      const file = new File([blob], "combined-job.pdf", { type: "application/pdf" });
-      await postJob(file, file.name);
-      toast({ title: t("jobsCreated"), variant: "success" });
-      reset();
-      onOpenChange(false);
-      onCreated?.();
-    } catch (e) {
-      toast({ title: t("jobCreateFailed"), description: errorMessage(e), variant: "destructive" });
-    } finally {
-      setWorking(false);
-    }
-  };
-
   const openPhotoTool = () => {
     const images = files.filter(isImageFile);
     setPhotoBatchHandoff(images);
@@ -222,7 +164,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
   };
 
   const canCreate = !!customerName.trim() && files.length > 0 && !working;
-  const allMergeable = files.length > 0 && files.every((f) => isPdfFile(f) || isImageFile(f));
   const hasImages = files.some(isImageFile);
 
   return (
@@ -340,11 +281,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
                 <Button type="button" variant="outline" size="sm" onClick={() => setMode("separate")}>
                   {t("separateJobs")}
                 </Button>
-                {allMergeable && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setMode("combine")}>
-                    {t("combineOneJob")}
-                  </Button>
-                )}
                 {hasImages && (
                   <Button type="button" variant="outline" size="sm" onClick={openPhotoTool}>
                     {t("photoLayoutOption")} &middot; {t("openInPhotoTool")}
@@ -358,18 +294,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({ open, onOpenChange, paperTy
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={working}>{t("studioCancel")}</Button>
-          {mode === "single" && (
+          {(mode === "single" || mode === "separate") && (
             <Button disabled={!canCreate} onClick={createSeparate}>
-              {working ? t("uploading") : t("addJob")}
-            </Button>
-          )}
-          {mode === "separate" && (
-            <Button disabled={!canCreate} onClick={createSeparate}>
-              {working ? t("uploading") : t("addJob")}
-            </Button>
-          )}
-          {mode === "combine" && (
-            <Button disabled={!canCreate} onClick={createCombined}>
               {working ? t("uploading") : t("addJob")}
             </Button>
           )}
