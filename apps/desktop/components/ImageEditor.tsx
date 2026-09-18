@@ -249,6 +249,51 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [globalMousePos, setGlobalMousePos] = useState<Point>({ x: 0, y: 0 });
 
+  // Sharpness/clarity are expensive pixel-loop passes; debounce them so
+  // slider drag and crop/perspective dragging don't trigger a full
+  // convolution on every frame. Cheap CSS filters (brightness/contrast/
+  // denoise) stay on `filters` directly for instant feedback.
+  const [debouncedFilters, setDebouncedFilters] = useState<FilterValues>(filters);
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedFilters(filters), 120);
+    return () => clearTimeout(id);
+  }, [filters]);
+
+  const processedRef = useRef<{ canvas: HTMLCanvasElement; key: string } | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const pendingZoomDeltaRef = useRef(0);
+
+  const getProcessedSource = useCallback((): CanvasImageSource | null => {
+    if (!image) return null;
+    const { sharpness, clarity } = debouncedFilters;
+    if (sharpness <= 0 && clarity <= 0) return image;
+
+    const key = `${sharpness}|${clarity}|${baseSize.width}|${baseSize.height}|${urlRef.current}`;
+    if (processedRef.current && processedRef.current.key === key) {
+      return processedRef.current.canvas;
+    }
+
+    const w = Math.max(1, Math.round(baseSize.width));
+    const h = Math.max(1, Math.round(baseSize.height));
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const offCtx = off.getContext("2d");
+    if (!offCtx) return image;
+    offCtx.drawImage(image, 0, 0, w, h);
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    if (sharpness > 0) {
+      const s = sharpness / 100;
+      applyConv3x3(imgData, w, h, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
+    }
+    if (clarity > 0) {
+      applyClarity(imgData, w, h, clarity / 100);
+    }
+    offCtx.putImageData(imgData, 0, 0);
+    processedRef.current = { canvas: off, key };
+    return off;
+  }, [image, debouncedFilters, baseSize]);
+
   const loadBlob = useCallback((blob: Blob, resetFilters = true) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -374,29 +419,13 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    const source = getProcessedSource() ?? image;
     ctx.save();
     ctx.filter = filterValuesToCss(filters);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Apply sharpness and clarity via pixel processing on preview
-    if (filters.sharpness > 0 || filters.clarity > 0) {
-      const w = canvas.width;
-      const h = canvas.height;
-      const imgData = ctx.getImageData(0, 0, w, h);
-      if (filters.sharpness > 0) {
-        const s = filters.sharpness / 100;
-        applyConv3x3(imgData, w, h, [0, -s, 0, -s, 1 + 4 * s, -s, 0, -s, 0], 1);
-      }
-      if (filters.clarity > 0) {
-        applyClarity(imgData, w, h, filters.clarity / 100);
-      }
-      ctx.putImageData(imgData, 0, 0);
-    }
-
     if (mode === "edit") {
-      ctx.filter = filterValuesToCss(filters);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       return;
     }
 
@@ -453,7 +482,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
       ctx.clip();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.filter = filterValuesToCss(filters);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
       ctx.restore();
 
       ctx.beginPath();
@@ -488,7 +517,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
       ctx.shadowColor = "transparent";
       ctx.shadowBlur = 0;
     }
-  }, [image, mode, points, cropRect, zoom, baseSize, filters]);
+  }, [image, mode, points, cropRect, zoom, baseSize, filters, getProcessedSource]);
 
   useEffect(() => {
     draw();
@@ -544,8 +573,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((prev) => Math.max(0.5, Math.min(5, prev + delta)));
+    pendingZoomDeltaRef.current += e.deltaY > 0 ? -0.1 : 0.1;
+    if (wheelRafRef.current !== null) return;
+    wheelRafRef.current = requestAnimationFrame(() => {
+      const delta = pendingZoomDeltaRef.current;
+      pendingZoomDeltaRef.current = 0;
+      wheelRafRef.current = null;
+      setZoom((prev) => Math.max(0.5, Math.min(5, prev + delta)));
+    });
   };
 
 
