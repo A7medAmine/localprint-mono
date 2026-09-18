@@ -29,6 +29,7 @@ import { useAdmin } from "../AdminContext";
 import { PasswordCard } from "./PasswordCard";
 import { BackupCard } from "./BackupCard";
 import { PrintersCard } from "./PrintersCard";
+import { StudioCard } from "./StudioCard";
 import { Icon } from "../../../components/ui/icon";
 import { errorMessage } from "@atba3li/shared";
 import type { ShopLocation } from "@atba3li/shared/geo";
@@ -1113,6 +1114,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ discountRules, onRulesCha
             onPersist={persistSection}
             renderSaveBar={renderSaveBar}
           />
+
+          <StudioCard />
 
           {/* Inventory Card */}
           <Card className="border-0">

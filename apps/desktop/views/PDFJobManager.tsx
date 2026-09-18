@@ -4,6 +4,7 @@ import { getPdfjs, PDF_DOC_OPTIONS } from "../lib/pdfRender";
 import LoadJobModal from "../components/LoadJobModal";
 import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { useLanguage } from "../lib/useLanguage";
+import { useStudioSnapshot, useStudioRestore, hasStudioSnapshot } from "../lib/studioPersist";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -62,6 +63,19 @@ interface PersistedSession {
   duplex: boolean;
 }
 
+// What survives an app restart (unless the shop turned Print Studio
+// persistence off in Settings). Unlike the sessionStorage session above this carries the PDF itself, so
+// a manually uploaded file comes back too.
+interface PdfSnapshot {
+  file: File;
+  pages: PageEntry[];
+  copies: number;
+  colorMode: "color" | "bw";
+  paperSize: string;
+  duplex: boolean;
+  sourceJob: PrintJob | null;
+}
+
 function normRotation(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
@@ -92,6 +106,11 @@ const PDFJobManager: React.FC = () => {
   const [printing, setPrinting] = useState(false);
   const [defaultPrinter, setDefaultPrinter] = useState<string>("");
   const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>({});
+  // False until the saved-across-restarts snapshot (if any) has been applied.
+  const [restored, setRestored] = useState(false);
+  // Read on the first render: the legacy session effect below clears this key
+  // before the async restore resolves.
+  const editHandoffRef = useRef(!!sessionStorage.getItem("ps_edit_job"));
 
   useEffect(() => {
     if (!isElectron()) return;
@@ -194,6 +213,9 @@ const PDFJobManager: React.FC = () => {
   useEffect(() => {
     const editJobId = sessionStorage.getItem("ps_edit_job");
     const savedRaw = sessionStorage.getItem(SESSION_KEY);
+    // The studio snapshot carries the PDF bytes themselves and is restored by
+    // the hook above — don't re-fetch the job on top of it.
+    let superseded = false;
     const savedSession: PersistedSession | null = (() => {
       if (!savedRaw) return null;
       try { return JSON.parse(savedRaw) as PersistedSession; }
@@ -207,6 +229,10 @@ const PDFJobManager: React.FC = () => {
 
     (async () => {
       try {
+        if (!editJobId) {
+          superseded = await hasStudioSnapshot("pdf");
+          if (superseded) return;
+        }
         const token = readPref("adminToken");
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -238,6 +264,31 @@ const PDFJobManager: React.FC = () => {
     // Mount-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useStudioRestore<PdfSnapshot>(
+    "pdf",
+    async (snap) => {
+      // An explicit "edit this job" action wins over the previous state.
+      if (editHandoffRef.current) return;
+      if (!snap.file) return;
+      setSourceJob(snap.sourceJob ?? null);
+      setCopies(snap.copies);
+      setColorMode(snap.colorMode);
+      setPaperSize(snap.paperSize);
+      setDuplex(snap.duplex);
+      const buf = await snap.file.arrayBuffer();
+      await loadPdf(snap.file, buf, snap.pages);
+    },
+    () => setRestored(true),
+  );
+
+  useStudioSnapshot<PdfSnapshot>(
+    "pdf",
+    file && pages.length > 0
+      ? { file, pages, copies, colorMode, paperSize, duplex, sourceJob }
+      : null,
+    restored,
+  );
 
   // Persist just enough to restore a job-loaded PDF on refresh/lang change.
   // Manually uploaded PDFs aren't persisted (would need IndexedDB for the

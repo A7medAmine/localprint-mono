@@ -20,6 +20,8 @@ export const PREF_KEYS = {
   myUploadTokens: "my_upload_tokens",
   imageFilterPresets: "ps_image_filter_presets",
   credentialCardPaperSize: "ps_credential_card_paper_size",
+  /** "1" when Print Studio work should survive an app restart. */
+  studioPersist: "ps_studio_persist",
 } as const;
 
 export type PrefKey = keyof typeof PREF_KEYS;

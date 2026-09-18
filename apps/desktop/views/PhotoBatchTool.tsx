@@ -7,6 +7,7 @@ import { decodeImageToBitmap, rotateQuarterTurnsToCanvas } from "../lib/imageNor
 import { isElectron, printData, getPrinters, PrinterInfo } from "../lib/electronPrint";
 import { storageService } from "../services/storageService";
 import { useLanguage } from "../lib/useLanguage";
+import { useStudioSnapshot, useStudioRestore } from "../lib/studioPersist";
 import { toast } from "../components/ui/use-toast";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -33,6 +34,29 @@ interface BatchItem {
   rotateQuarterTurns: 0 | 1 | 2 | 3;
   objectFit: "cover" | "contain" | null;
   error?: string;
+}
+
+// What survives an app restart (unless the shop turned Print Studio
+// persistence off in Settings). Bitmaps are left out and re-decoded from the stored File on restore.
+interface PhotoSnapshot {
+  items: {
+    id: string;
+    file: File;
+    sourceJobId?: string;
+    sourceCustomerName?: string;
+    rotateQuarterTurns: 0 | 1 | 2 | 3;
+    objectFit: "cover" | "contain" | null;
+  }[];
+  paperPreset: PaperPreset;
+  customW: number;
+  customH: number;
+  orientation: Orientation;
+  fit: "cover" | "contain";
+  marginPreset: number | null;
+  customMargins: MarginSpec;
+  colorMode: "color" | "bw";
+  paperType: string;
+  copies: number;
 }
 
 type PaperPreset = "a4" | "a3" | "match" | "custom";
@@ -85,6 +109,11 @@ const PhotoBatchTool: React.FC = () => {
   const [printing, setPrinting] = useState(false);
   const [showJobForm, setShowJobForm] = useState(false);
   const targets = useJobTargets();
+  // False until the saved-across-restarts snapshot (if any) has been applied.
+  const [restored, setRestored] = useState(false);
+  // Read on the first render: the handoff effect above clears this key before
+  // the async restore resolves, so checking it later is too late.
+  const handoffPendingRef = useRef(!!sessionStorage.getItem("ps_batch_jobs"));
   const dragIndexRef = useRef<number | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -239,6 +268,79 @@ const PhotoBatchTool: React.FC = () => {
       }
     }
   }, [isRtl]);
+
+  // Re-decode a restored batch: the File survives the restart, the ImageBitmap
+  // does not.
+  const restoreItems = useCallback(async (saved: PhotoSnapshot["items"]) => {
+    const rebuilt: BatchItem[] = saved.map((it) => ({
+      id: it.id,
+      file: it.file,
+      sourceJobId: it.sourceJobId,
+      sourceCustomerName: it.sourceCustomerName,
+      bitmap: null,
+      naturalWidth: 0,
+      naturalHeight: 0,
+      rotateQuarterTurns: it.rotateQuarterTurns,
+      objectFit: it.objectFit,
+    }));
+    setItems(rebuilt);
+    for (const it of rebuilt) {
+      try {
+        const { bitmap, width, height } = await decodeImageToBitmap(it.file);
+        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, bitmap, naturalWidth: width, naturalHeight: height, error: undefined } : p)));
+      } catch (e) {
+        const message = errorMessage(e) || "Failed to decode";
+        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, error: message } : p)));
+      }
+    }
+  }, []);
+
+  useStudioRestore<PhotoSnapshot>(
+    "photos",
+    async (snap) => {
+      // An explicit handoff from the dashboard wins over the previous run.
+      if (handoffPendingRef.current) return;
+      setPaperPreset(snap.paperPreset);
+      setCustomW(snap.customW);
+      setCustomH(snap.customH);
+      setOrientation(snap.orientation);
+      setFit(snap.fit);
+      setMarginPreset(snap.marginPreset);
+      setCustomMargins(snap.customMargins);
+      setColorMode(snap.colorMode);
+      setPaperType(snap.paperType);
+      setCopies(snap.copies);
+      if (snap.items?.length) await restoreItems(snap.items);
+    },
+    () => setRestored(true),
+  );
+
+  useStudioSnapshot<PhotoSnapshot>(
+    "photos",
+    items.length > 0
+      ? {
+          items: items.map((it) => ({
+            id: it.id,
+            file: it.file,
+            sourceJobId: it.sourceJobId,
+            sourceCustomerName: it.sourceCustomerName,
+            rotateQuarterTurns: it.rotateQuarterTurns,
+            objectFit: it.objectFit,
+          })),
+          paperPreset,
+          customW,
+          customH,
+          orientation,
+          fit,
+          marginPreset,
+          customMargins,
+          colorMode,
+          paperType,
+          copies,
+        }
+      : null,
+    restored,
+  );
 
   const onPickerAdd = useCallback((picked: PickedPhoto[]) => {
     addFiles(

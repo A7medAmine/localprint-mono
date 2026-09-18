@@ -5,6 +5,7 @@ import LoadJobModal from "../components/LoadJobModal";
 import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import ImageEditor from "../components/ImageEditor";
 import { useLanguage } from "../lib/useLanguage";
+import { useStudioSnapshot, useStudioRestore } from "../lib/studioPersist";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -148,6 +149,22 @@ function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph
   return { slots, capacity, cols: best.cols, rows: best.rows };
 }
 
+// What survives an app restart (unless the shop turned Print Studio
+// persistence off in Settings). Files are stored as-is (IndexedDB clones Blobs); previews and canvases
+// are re-derived on restore.
+interface CardSnapshot {
+  frontFile: File | null;
+  backFile: File | null;
+  frontRot: number;
+  backRot: number;
+  multiCard: boolean;
+  copies: number;
+  duplex: boolean;
+  colorMode: "color" | "bw";
+  frontSourceJob: PrintJob | null;
+  backSourceJob: PrintJob | null;
+}
+
 const CardIDTool: React.FC = () => {
   const { t, lang } = useLanguage();
   const isRtl = lang === "ar";
@@ -182,6 +199,14 @@ const CardIDTool: React.FC = () => {
   const [printing, setPrinting] = useState(false);
   const [defaultPrinter, setDefaultPrinter] = useState<string>("");
   const [printerDefaults, setPrinterDefaults] = useState<Record<string, PrinterJobDefaults>>({});
+  // False until the saved-across-restarts snapshot (if any) has been applied,
+  // so the empty initial state never overwrites it.
+  const [restored, setRestored] = useState(false);
+  // Read on the first render: the handoff effect below clears these keys
+  // before the async restore resolves, so checking them later is too late.
+  const handoffPendingRef = useRef(
+    !!(sessionStorage.getItem("ps_card_front") || sessionStorage.getItem("ps_card_back")),
+  );
 
   useEffect(() => {
     if (!isElectron()) return;
@@ -220,6 +245,51 @@ const CardIDTool: React.FC = () => {
       setExportError("Back image: " + (errorMessage(e) || "failed to load"));
     }
   }, []);
+
+  useStudioRestore<CardSnapshot>(
+    "cards",
+    async (snap) => {
+      // An explicit "Print as Card" handoff wins over whatever was left from
+      // the previous run.
+      if (handoffPendingRef.current) return;
+      if (snap.frontFile) {
+        setFrontFile(snap.frontFile);
+        setFrontDataUrl(await readFileAsDataUrl(snap.frontFile));
+      }
+      if (snap.backFile) {
+        setBackFile(snap.backFile);
+        setBackDataUrl(await readFileAsDataUrl(snap.backFile));
+      }
+      setFrontRot(snap.frontRot);
+      setBackRot(snap.backRot);
+      setMultiCard(snap.multiCard);
+      setCopies(snap.copies);
+      setDuplex(snap.duplex);
+      setColorMode(snap.colorMode);
+      setFrontSourceJob(snap.frontSourceJob ?? null);
+      setBackSourceJob(snap.backSourceJob ?? null);
+    },
+    () => setRestored(true),
+  );
+
+  useStudioSnapshot<CardSnapshot>(
+    "cards",
+    frontFile || backFile
+      ? {
+          frontFile,
+          backFile,
+          frontRot,
+          backRot,
+          multiCard,
+          copies,
+          duplex,
+          colorMode,
+          frontSourceJob,
+          backSourceJob,
+        }
+      : null,
+    restored,
+  );
 
   const dataUrlToBlob = (dataUrl: string): Blob => {
     const bytes = dataUrlToBytes(dataUrl);

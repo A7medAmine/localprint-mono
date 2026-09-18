@@ -65,6 +65,13 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
       { replace: true },
     );
   };
+  // Tools that have been opened at least once — they stay mounted from then
+  // on so their in-progress work survives tool switches.
+  const [visited, setVisited] = useState<Set<StudioTab>>(() => new Set<StudioTab>([tab]));
+  useEffect(() => {
+    setVisited((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  }, [tab]);
+
   // Desktop-only: collapse the sidebar to icons.
   const [collapsed, setCollapsed] = useState(false);
   // Mobile-only: open/close the drawer.
@@ -321,7 +328,24 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
                 </div>
               }
             >
-              {tab === "cards" ? <CardIDTool /> : tab === "photos" ? <PhotoBatchTool /> : <PDFJobManager />}
+              {/* Every visited tool stays mounted and is only hidden, so
+                  switching tools never throws away loaded images, pages or
+                  options. Tools are still mounted lazily on first visit. */}
+              {visited.has("cards") && (
+                <div hidden={tab !== "cards"}>
+                  <CardIDTool />
+                </div>
+              )}
+              {visited.has("photos") && (
+                <div hidden={tab !== "photos"}>
+                  <PhotoBatchTool />
+                </div>
+              )}
+              {visited.has("pdf") && (
+                <div hidden={tab !== "pdf"}>
+                  <PDFJobManager />
+                </div>
+              )}
             </Suspense>
           </div>
         </main>
