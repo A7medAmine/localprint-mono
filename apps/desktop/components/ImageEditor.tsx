@@ -1,7 +1,27 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import Upscaler from "upscaler";
 import { Language } from "../types";
 import { TRANSLATIONS } from "../constants";
 import { Icon } from "./ui/icon";
+
+// Local AI super-resolution model (ESRGAN-slim, 4x). Weights ship in
+// public/models/esrgan-slim-x4 and are loaded from disk/localhost — no
+// network call, works fully offline.
+const AI_ENHANCE_MODEL = {
+  scale: 4,
+  modelType: "layers" as const,
+  path: "/models/esrgan-slim-x4/model.json",
+  inputRange: [0, 255] as [number, number],
+  outputRange: [0, 255] as [number, number],
+};
+
+let aiUpscalerInstance: InstanceType<typeof Upscaler> | null = null;
+function getAiUpscaler(): InstanceType<typeof Upscaler> {
+  if (!aiUpscalerInstance) {
+    aiUpscalerInstance = new Upscaler({ model: AI_ENHANCE_MODEL });
+  }
+  return aiUpscalerInstance;
+}
 
 interface Point {
   x: number;
@@ -227,6 +247,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   const [undoStack, setUndoStack] = useState<Blob[]>([]);
   const [redoStack, setRedoStack] = useState<Blob[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [aiProgress, setAiProgress] = useState<number | null>(null);
   const urlRef = useRef<string | null>(null);
 
   const [baseSize, setBaseSize] = useState({ width: 0, height: 0 });
@@ -625,6 +646,45 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
     }
   };
 
+  const enhanceWithAI = useCallback(async () => {
+    if (!image || baseSize.width === 0) return;
+    setIsProcessing(true);
+    setAiProgress(0);
+    setSaveMsg(null);
+    try {
+      // Run on the (viewport-capped) working resolution, not the original
+      // full-res source: a 4x super-resolution pass on a multi-megapixel
+      // photo is far too slow/GPU-heavy to run client-side.
+      const srcCanvas = document.createElement("canvas");
+      srcCanvas.width = baseSize.width;
+      srcCanvas.height = baseSize.height;
+      const srcCtx = srcCanvas.getContext("2d");
+      if (!srcCtx) return;
+      srcCtx.filter = filterValuesToCss(filters);
+      srcCtx.drawImage(image, 0, 0, baseSize.width, baseSize.height);
+
+      const upscaler = getAiUpscaler();
+      const base64 = await upscaler.upscale(srcCanvas, {
+        output: "base64",
+        patchSize: 64,
+        padding: 2,
+        progress: (rate: number) => setAiProgress(Math.round(rate * 100)),
+      });
+      const res = await fetch(base64);
+      const blob = await res.blob();
+      setUndoStack((s) => [...s, currentBlob]);
+      setRedoStack([]);
+      loadBlob(blob, false);
+      setSaveMsg(isRtl ? "تم تحسين الصورة" : "Image enhanced");
+    } catch (err) {
+      console.error("AI enhance failed", err);
+      setSaveMsg(isRtl ? "فشل التحسين" : "Enhance failed");
+    } finally {
+      setIsProcessing(false);
+      setAiProgress(null);
+    }
+  }, [image, baseSize, filters, currentBlob, loadBlob, isRtl]);
+
   const undo = useCallback(() => {
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
@@ -914,6 +974,24 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
           {/* Right sidebar */}
           <div className="w-64 border-l border-border bg-gray-50/30 dark:bg-gray-900/60 flex flex-col overflow-y-auto shrink-0">
             <div className="p-3 border-b border-border">
+              <button
+                onClick={enhanceWithAI}
+                disabled={isProcessing || !image}
+                className="w-full py-2.5 mb-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-bold rounded-xl hover:from-violet-700 hover:to-indigo-700 transition shadow-lg text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+                title={isRtl ? "تحسين الصورة بالذكاء الاصطناعي (محليًا)" : "AI enhance (runs locally, no internet)"}
+              >
+                {aiProgress !== null ? (
+                  <>
+                    <Icon name="spinner" className="animate-spin h-4 w-4 text-white" />
+                    {(isRtl ? "تحسين... " : "Enhancing... ") + aiProgress + "%"}
+                  </>
+                ) : (
+                  <>
+                    <Icon name="wand" className="w-4 h-4" />
+                    {isRtl ? "تحسين بالذكاء الاصطناعي" : "AI Enhance"}
+                  </>
+                )}
+              </button>
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">{isRtl ? "التأثيرات" : "Effects"}</h4>
                 <button onClick={resetFilters} className="text-xs text-indigo-600 font-bold hover:underline">{isRtl ? "إعادة تعيين" : "Reset"}</button>
