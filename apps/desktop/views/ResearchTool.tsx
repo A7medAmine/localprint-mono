@@ -136,7 +136,7 @@ const emptyDraft = (): DraftForm => ({
   subject: "",
   language: "ar",
   targetPages: 4,
-  includeSources: true,
+  includeSources: false,
   customInstructions: "",
 });
 
@@ -149,6 +149,12 @@ function researchLengthLabel(pages: number, isRtl: boolean): string {
   if (pages === 1) return isRtl ? "صفحة واحدة" : "1 page";
   const rounded = Number.isInteger(pages) ? pages : pages.toFixed(1);
   return isRtl ? `${rounded} صفحات` : `${rounded} pages`;
+}
+
+// A "short paragraph" length has no room for citations — sources auto-hide
+// the moment the operator drags into that range.
+function setTargetPages(draft: DraftForm, pages: number): DraftForm {
+  return { ...draft, targetPages: pages, includeSources: pages < 1 ? false : draft.includeSources };
 }
 
 // Rewrites the auth-gated /api/research/:id/images/:imageId/file src's into
@@ -765,7 +771,7 @@ const ResearchTool: React.FC<ResearchToolProps> = ({ lang }) => {
                 </div>
               )}
 
-              <EditorField label={isRtl ? "المقدمة" : "Introduction"} value={doc.introduction} onChange={(v) => patchDoc({ introduction: v })} plain={simple} />
+              <EditorField label={isRtl ? "المقدمة" : "Introduction"} value={doc.introduction} onChange={(v) => patchDoc({ introduction: v })} plain={simple} removeLabel={isRtl ? "حذف" : "Remove"} />
 
               <div className={simple ? "space-y-1" : "space-y-3"}>
                 <div className="flex items-center justify-between">
@@ -850,7 +856,7 @@ const ResearchTool: React.FC<ResearchToolProps> = ({ lang }) => {
                 ))}
               </div>
 
-              <EditorField label={isRtl ? "الخاتمة" : "Conclusion"} value={doc.conclusion} onChange={(v) => patchDoc({ conclusion: v })} plain={simple} />
+              <EditorField label={isRtl ? "الخاتمة" : "Conclusion"} value={doc.conclusion} onChange={(v) => patchDoc({ conclusion: v })} plain={simple} removeLabel={isRtl ? "حذف" : "Remove"} />
 
               {/* Sources */}
               <div className="space-y-2">
@@ -1005,9 +1011,15 @@ const AutoGrowTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElemen
   return <Textarea ref={ref} value={value} className={`overflow-hidden resize-none ${className ?? ""}`} {...props} />;
 };
 
-const EditorField: React.FC<{ label: string; value: string; onChange: (v: string) => void; plain?: boolean }> = ({ label, value, onChange, plain }) => (
+const EditorField: React.FC<{ label: string; value: string; onChange: (v: string) => void; plain?: boolean; removeLabel?: string }> = ({ label, value, onChange, plain, removeLabel }) => (
   <div className="space-y-1.5">
-    <h3 className={plain ? "text-base font-extrabold text-foreground" : "text-sm font-semibold text-foreground"}>{label}</h3>
+    <div className="flex items-center justify-between">
+      <h3 className={plain ? "text-base font-extrabold text-foreground" : "text-sm font-semibold text-foreground"}>{label}</h3>
+      <Button type="button" size="sm" variant="ghost" className="text-xs gap-1 text-red-600 dark:text-red-400" onClick={() => onChange("")}>
+        <Icon name="trash" className="w-3.5 h-3.5" />
+        {removeLabel}
+      </Button>
+    </div>
     {plain ? (
       <AutoGrowTextarea
         value={value}
@@ -1138,7 +1150,7 @@ const CreationForm: React.FC<{
           {isRtl ? `الطول: ${researchLengthLabel(draft.targetPages, isRtl)}` : `Length: ${researchLengthLabel(draft.targetPages, isRtl)}`}
         </label>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="icon" disabled={generating || draft.targetPages <= 0.5} onClick={() => setDraft((p) => ({ ...p, targetPages: Math.max(0.5, Math.round((p.targetPages - 0.5) * 2) / 2) }))}>
+          <Button type="button" variant="outline" size="icon" disabled={generating || draft.targetPages <= 0.5} onClick={() => setDraft((p) => setTargetPages(p, Math.max(0.5, Math.round((p.targetPages - 0.5) * 2) / 2)))}>
             <Icon name="minus" className="w-4 h-4" />
           </Button>
           <input
@@ -1148,10 +1160,10 @@ const CreationForm: React.FC<{
             step={0.5}
             value={draft.targetPages}
             disabled={generating}
-            onChange={(e) => setDraft((p) => ({ ...p, targetPages: Number(e.target.value) }))}
+            onChange={(e) => setDraft((p) => setTargetPages(p, Number(e.target.value)))}
             className="flex-1"
           />
-          <Button type="button" variant="outline" size="icon" disabled={generating || draft.targetPages >= 15} onClick={() => setDraft((p) => ({ ...p, targetPages: Math.min(15, Math.round((p.targetPages + 0.5) * 2) / 2) }))}>
+          <Button type="button" variant="outline" size="icon" disabled={generating || draft.targetPages >= 15} onClick={() => setDraft((p) => setTargetPages(p, Math.min(15, Math.round((p.targetPages + 0.5) * 2) / 2)))}>
             <Icon name="plus" className="w-4 h-4" />
           </Button>
         </div>

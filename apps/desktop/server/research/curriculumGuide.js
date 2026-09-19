@@ -103,14 +103,21 @@ function levelCalibrationText(level) {
         "- Concrete and visual: examples a child sees at home or in the street.",
         "- No statistics, no dates beyond the very well known, no abstract nouns.",
         "- Vowelisation (تشكيل) is not required, but keep words common enough for a child to read.",
+        "",
+        "If the topic is a single animal (e.g. \"la gazelle\", \"الأسد\", \"the cat\"), this is a classic primary \"éveil scientifique\" animal description — follow this exact style, regardless of document language:",
+        "- The section heading is just the animal's name (with its article in French: \"La gazelle\", \"Le lion\"), nothing else.",
+        "- One single descriptive paragraph, in this order: (1) what kind of animal it is and where it lives (mammifère/oiseau/reptile... + habitat), (2) what it eats (herbivore/carnivore/omnivore + concrete foods), (3) physical description — coat colour, body parts, distinguishing features (tail, horns, ears, paws...).",
+        "- Optionally close with one short, separate sentence stating a single striking trait (e.g. \"La gazelle est un animal très rapide.\"). Keep it to one short sentence, its own paragraph.",
+        "- Plain, factual, present tense throughout. No storytelling, no anthropomorphising, no questions to the reader.",
+        "- Do not write an introduction or a conclusion for an animal-description topic — the description paragraph(s) are the whole paper.",
       ].join("\n");
     case "secondary":
       return [
         "Level calibration — secondary (ثانوي, ages 15-18):",
-        "- Expect analysis, not description: compare, weigh advantages and drawbacks.",
-        "- Reference a law, a treaty, or a scientific principle by name where relevant.",
-        "- Statistics must carry a year. Named sources only.",
-        "- The conclusion takes a defended position, not just a summary.",
+        "- Go beyond simple description when the topic allows it: causes, consequences, relationships, comparisons, significance. Don't force advantages/drawbacks onto every topic.",
+        "- Reference a law, a treaty, or a scientific principle by name where genuinely relevant.",
+        "- Statistics should carry a year when available. Named sources only.",
+        "- The conclusion synthesizes findings and, when appropriate, gives a justified outlook — not forced on every topic.",
       ].join("\n");
     case "middle":
     default:
@@ -127,7 +134,7 @@ function localisationRules(language) {
   const lines = [
     "Algerian localisation rules (apply whatever the level and subject allow):",
     "- Prefer Algerian and Maghrebi examples: Algerian cities, rivers, industries, institutions, historical events, currency in دينار جزائري.",
-    "- History defaults to the Algerian frame: الثورة التحريرية 1954-1962, أول نوفمبر, the Évian Accords, national figures. Get dates right or omit them.",
+    "- For Algerian history topics, use the Algerian frame (الثورة التحريرية 1954-1962, أول نوفمبر, the Évian Accords, national figures) when relevant to the topic — don't force it onto unrelated subjects. Get dates right or omit them.",
     "- Geography defaults to Algeria: الصحراء, الأطلس التلي, الهضاب العليا, الساحل, wilayas rather than \"provinces\".",
     "- Civics and religion: respectful, factual tone matching the Algerian curriculum — not devotional prose, not comparative critique.",
     "- Terminology follows the Arabic-language school textbook, not Levantine or Egyptian variants where they differ.",
@@ -140,11 +147,26 @@ function localisationRules(language) {
   return lines.join("\n");
 }
 
+function sourcePriorityRules() {
+  return [
+    "Source priority — when listing sources, prefer higher-ranked ones:",
+    "1. Official Algerian government and public institutions.",
+    "2. Algerian Ministry of Education and official curriculum/textbook materials.",
+    "3. Algerian universities and recognized research institutions.",
+    "4. International governmental and intergovernmental organizations.",
+    "5. Universities, academic publications, recognized scientific organizations.",
+    "6. Established educational reference sources.",
+    "7. Wikipedia is acceptable for background but should not be the only source for an important claim.",
+    "8. Never list blogs, forums, social media, or anonymous sites as sources.",
+  ].join("\n");
+}
+
 function hardRules() {
   return [
     "Hard rules — follow all of these without exception:",
-    "- Never invent a statistic, a date, a named study, or a quotation. If a number is not certain, describe the trend in words instead.",
-    "- Never fabricate a source. The sources list may only contain things that genuinely exist: a textbook name, Wikipedia, a well known institution.",
+    "- Never invent a statistic, a date, a named study, or a quotation. If a number is not certain, describe the trend in words instead — never manufacture false precision.",
+    "- Never fabricate a source. List only sources that genuinely exist and plausibly cover this topic: a real textbook name, Wikipedia, a well known institution. Do not invent titles or URLs.",
+    "- The student must be able to understand and explain every claim orally. Avoid unnecessarily advanced vocabulary; define a technical term simply the first time it appears.",
     "- Never address the reader as a chatbot: no \"سأتحدث في هذا البحث\", no \"Here is your research\", no meta-commentary, no offers to help further.",
     "- Never use markdown syntax in body text (no #, *, -, numbered lists, bold). Plain paragraphs separated by blank lines only. The renderer owns all formatting.",
     "- Write in the requested language throughout. Do not mix languages except for a technical term in parentheses at first use.",
@@ -169,6 +191,7 @@ export function buildOutlineSystemPrompt({ level, subject, language, includeSour
     "",
     hardRules(),
     "",
+    ...(includeSources ? [sourcePriorityRules(), ""] : []),
     "Output a single JSON object with exactly this shape:",
     `{"title": "…", "introduction": "…", "sections": [{"heading": "…", "summary": "…", "imageQuery": "…"}], "conclusion": "…", "sources": [${includeSources ? '"…"' : ""}]}`,
     "",

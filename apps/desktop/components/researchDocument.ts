@@ -306,11 +306,12 @@ function coverPageHtml(doc: ResearchDocument, title: string, dir: string): strin
 // numbers is the simpler, unconditionally-correct choice, so that's what
 // this renders — a numbered list of section titles only.
 function tocPageHtml(doc: ResearchDocument, dir: string): string {
-  const items: string[] = [L("introduction", doc.language)];
+  const items: string[] = [];
+  if (doc.introduction.trim()) items.push(L("introduction", doc.language));
   doc.sections.forEach((s, i) => {
     items.push(`${sectionNumberLabel(i + 1, doc.language)}. ${s.heading}`);
   });
-  items.push(L("conclusion", doc.language));
+  if (doc.conclusion.trim()) items.push(L("conclusion", doc.language));
   if (doc.sources.length) items.push(L("sources", doc.language));
 
   return `<section class="page toc-page" dir="${dir}">
