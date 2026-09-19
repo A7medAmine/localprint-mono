@@ -22,6 +22,7 @@ const PDFJobManager = lazy(() => import("./PDFJobManager"));
 const PhotoBatchTool = lazy(() => import("./PhotoBatchTool"));
 const CredentialsTool = lazy(() => import("./CredentialsTool"));
 const CvTool = lazy(() => import("./CvTool"));
+const ResearchTool = lazy(() => import("./ResearchTool"));
 
 const TabFallback: React.FC = () => (
   <div className="flex items-center justify-center py-16" role="status" aria-live="polite">
@@ -64,7 +65,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
   const isRtl = lang === "ar";
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const validTabs = ["jobs", "settings", "gmail", "review", "inventory", "studio-cards", "studio-pdf", "studio-photos", "studio-credentials", "studio-cv"] as const;
+  const validTabs = ["jobs", "settings", "gmail", "review", "inventory", "studio-cards", "studio-pdf", "studio-photos", "studio-credentials", "studio-cv", "studio-research"] as const;
   type AdminTab = (typeof validTabs)[number];
   const urlTab = searchParams.get("tab") as AdminTab | null;
   const activeTab: AdminTab = urlTab && validTabs.includes(urlTab) ? urlTab : "jobs";
@@ -171,6 +172,7 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
     { id: "studio-photos", label: t("photosTab"), icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" },
     { id: "studio-credentials", label: isRtl ? "حسابات الزبائن" : "Customer Accounts", icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" },
     { id: "studio-cv", label: isRtl ? "السير الذاتية" : "CVs", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
+    { id: "studio-research", label: isRtl ? "البحوث المدرسية" : "Research Papers", icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" },
   ] as const;
 
   const activeNav = activeTab === "gmail" ? "gmail" : activeTab === "settings" ? "settings" : activeTab === "review" ? "review" : activeTab === "inventory" ? "inventory" : activeTab.startsWith("studio-") ? activeTab : "dashboard";
@@ -350,6 +352,8 @@ const AdminViewInner: React.FC<AdminViewProps> = ({
           <CredentialsTool lang={lang} />
         ) : activeTab === "studio-cv" ? (
           <CvTool lang={lang} />
+        ) : activeTab === "studio-research" ? (
+          <ResearchTool lang={lang} />
         ) : (
           <SettingsPanel
             discountRules={discountRules}

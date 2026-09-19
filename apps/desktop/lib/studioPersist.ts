@@ -17,7 +17,7 @@
 import { useEffect, useRef } from "react";
 import { readPref, writePref } from "@atba3li/shared/lib/prefs";
 
-export type StudioToolId = "cards" | "photos" | "pdf";
+export type StudioToolId = "cards" | "photos" | "pdf" | "research";
 
 const DB_NAME = "printstudio";
 const DB_VERSION = 1;

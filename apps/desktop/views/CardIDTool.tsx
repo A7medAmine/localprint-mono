@@ -77,18 +77,19 @@ function embedImageInPdf(pdfDoc: PDFDocument, dataUrl: string) {
   return isJpeg ? pdfDoc.embedJpg(bytes) : pdfDoc.embedPng(bytes);
 }
 
-function containFit(imgW: number, imgH: number, boxW: number, boxH: number) {
-  const scale = Math.min(boxW / imgW, boxH / imgH);
-  return { w: imgW * scale, h: imgH * scale };
-}
-
-// Same as containFit, but imgW/imgH are the image's OWN (pre-rotation) dimensions
+// Contain-fit, where imgW/imgH are the image's OWN (pre-rotation) dimensions
 // and the returned w/h are what to pass to drawImage in that same local frame —
 // the caller doesn't need to swap anything back after rotating the canvas/page.
 function containFitRotated(imgW: number, imgH: number, boxW: number, boxH: number, rotated: boolean) {
   const scale = rotated ? Math.min(boxW / imgH, boxH / imgW) : Math.min(boxW / imgW, boxH / imgH);
   return { w: imgW * scale, h: imgH * scale };
 }
+
+// Only a sanity ceiling — a sheet's capacity no longer caps the count, extra
+// copies spill onto new sheets.
+const MAX_COPIES = 999;
+const clampCopies = (n: number) =>
+  Math.max(1, Math.min(MAX_COPIES, Math.floor(Number.isFinite(n) ? n : 1) || 1));
 
 const AUTO_MARGIN_MM = 5;
 const AUTO_GAP_MM = 3;
@@ -114,19 +115,12 @@ function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph
   const capacity = maxCols * maxRows;
   const wanted = Math.max(1, Math.min(copies, capacity));
 
-  // Among equal-waste splits, prefer the most balanced grid (cols close to
-  // rows) so cards cluster into a compact block instead of a long single
-  // row/column with empty space down the sides.
-  let best = { cols: maxCols, rows: 1, waste: Infinity, balance: Infinity };
-  for (let cols = 1; cols <= maxCols; cols++) {
-    const rows = Math.min(maxRows, Math.ceil(wanted / cols));
-    if (cols * rows < wanted) continue;
-    const waste = cols * rows - wanted;
-    const balance = Math.abs(cols - rows);
-    if (waste < best.waste || (waste === best.waste && balance < best.balance)) {
-      best = { cols, rows, waste, balance };
-    }
-  }
+  // Fill row-major at the sheet's full width: as many cards per row as fit,
+  // then wrap to the next row. A "compact/balanced" split was tried before and
+  // read wrong — 3 copies became a single centred column instead of 2 + 1.
+  const cols = Math.min(maxCols, wanted);
+  const rows = Math.min(maxRows, Math.ceil(wanted / cols));
+  const best = { cols, rows };
 
   const hGapPt = best.cols > 1 ? gap : 0;
   const vGapPt = best.rows > 1 ? gap : 0;
@@ -147,6 +141,23 @@ function autoLayout(copies: number, cardW: number, cardH: number, pw: number, ph
     }
   }
   return { slots, capacity, cols: best.cols, rows: best.rows };
+}
+
+// Copies are no longer capped at what one sheet holds: fill a sheet, then spawn
+// another and keep going from its top row. Every full sheet uses the same
+// densest grid; only the last one is re-balanced for the leftover count.
+function paginateLayout(copies: number, cardW: number, cardH: number, pw: number, ph: number) {
+  const first = autoLayout(copies, cardW, cardH, pw, ph);
+  const capacity = Math.max(1, first.capacity);
+  const total = Math.max(1, copies);
+  const pages: { x: number; y: number; w: number; h: number }[][] = [];
+  let remaining = total;
+  while (remaining > 0) {
+    const count = Math.min(remaining, capacity);
+    pages.push(autoLayout(count, cardW, cardH, pw, ph).slots);
+    remaining -= count;
+  }
+  return { pages, capacity, cols: first.cols, rows: first.rows };
 }
 
 // What survives an app restart (unless the shop turned Print Studio
@@ -220,7 +231,15 @@ const CardIDTool: React.FC = () => {
   const PAD = 10 * MM_TO_PT;
   const cardW = CARD_SIZES[sizeIdx].w * MM_TO_PT;
   const cardH = CARD_SIZES[sizeIdx].h * MM_TO_PT;
-  const { capacity: maxCapacity, cols: layoutCols, rows: layoutRows } = autoLayout(copies, cardW, cardH, PP_W, PP_H);
+  const { pages: layoutPages, capacity: perSheet, cols: layoutCols, rows: layoutRows } =
+    paginateLayout(copies, cardW, cardH, PP_W, PP_H);
+  const sheetCount = multiCard ? layoutPages.length : 1;
+  // Which sheet the preview shows; clamped whenever the count shrinks.
+  const [sheetIdx, setSheetIdx] = useState(0);
+  const activeSheet = Math.min(sheetIdx, sheetCount - 1);
+  useEffect(() => {
+    if (sheetIdx > sheetCount - 1) setSheetIdx(sheetCount - 1);
+  }, [sheetIdx, sheetCount]);
   const frontCanvasRef = useRef<HTMLCanvasElement>(null);
   const backCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -346,7 +365,7 @@ const CardIDTool: React.FC = () => {
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, pw, ph);
     const slots = multiCard
-      ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
+      ? layoutPages[activeSheet] || []
       : [{
           x: isFront ? PAD : PP_W - PAD - cardW,
           y: PP_H - PAD - cardH,
@@ -382,8 +401,8 @@ const CardIDTool: React.FC = () => {
     img.src = dataUrl;
   };
 
-  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true, frontRot); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx, frontRot]);
-  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false, backRot); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx, backRot]);
+  useEffect(() => { drawPreview(frontCanvasRef.current, frontDataUrl, true, frontRot); }, [frontDataUrl, multiCard, copies, sizeIdx, paperIdx, frontRot, activeSheet]);
+  useEffect(() => { drawPreview(backCanvasRef.current, backDataUrl, false, backRot); }, [backDataUrl, multiCard, copies, sizeIdx, paperIdx, backRot, activeSheet]);
 
   // Auto-load front/back images from bulk "Print as Card" action
   useEffect(() => {
@@ -422,16 +441,21 @@ const CardIDTool: React.FC = () => {
     setExporting(true);
     try {
       const pdfDoc = await PDFDocument.create();
-      const slots = multiCard
-        ? autoLayout(copies, cardW, cardH, PP_W, PP_H).slots
-        : [{
+      const sheets = multiCard
+        ? layoutPages
+        : [[{
             x: PAD,
             y: PP_H - PAD - cardH,
             w: cardW,
             h: cardH,
-          }];
+          }]];
 
-      const addPage = async (dataUrl: string, isFront: boolean, rot: number) => {
+      const addPage = async (
+        dataUrl: string,
+        isFront: boolean,
+        rot: number,
+        slots: { x: number; y: number; w: number; h: number }[],
+      ) => {
         const page = pdfDoc.addPage([PP_W, PP_H]);
         const img = await embedImageInPdf(pdfDoc, dataUrl);
         for (const slot of slots) {
@@ -448,8 +472,12 @@ const CardIDTool: React.FC = () => {
         }
       };
 
-      if (frontDataUrl) await addPage(frontDataUrl, true, frontRot);
-      if (backDataUrl) await addPage(backDataUrl, false, backRot);
+      // Front/back are interleaved per sheet (F1,B1,F2,B2…) so duplex keeps
+      // each sheet's own back on its own reverse side.
+      for (const slots of sheets) {
+        if (frontDataUrl) await addPage(frontDataUrl, true, frontRot, slots);
+        if (backDataUrl) await addPage(backDataUrl, false, backRot, slots);
+      }
 
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -564,7 +592,7 @@ const CardIDTool: React.FC = () => {
           copies: 1,
           paperType: "cardboard",
         },
-        pageCount: (frontDataUrl ? 1 : 0) + (backDataUrl ? 1 : 0),
+        pageCount: ((frontDataUrl ? 1 : 0) + (backDataUrl ? 1 : 0)) * sheetCount,
         sourceJobIds,
         source: "card-tool",
       });
@@ -719,17 +747,42 @@ const CardIDTool: React.FC = () => {
         {multiCard && (
           <div className="rounded-xl border border-input px-3 py-3 space-y-2">
             <Label className="text-xs">{isRtl ? "عدد النسخ" : "Number of copies"}</Label>
-            <Input
-              type="number"
-              min={1}
-              max={maxCapacity}
-              value={copies}
-              onChange={(e) => setCopies(Math.max(1, Math.min(maxCapacity, Number(e.target.value) || 1)))}
-            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                disabled={copies <= 1}
+                onClick={() => setCopies((c) => Math.max(1, c - 1))}
+                aria-label={isRtl ? "إنقاص" : "Decrease"}
+              >
+                <Icon name="minus" className="h-4 w-4" />
+              </Button>
+              <Input
+                type="number"
+                min={1}
+                max={MAX_COPIES}
+                className="text-center"
+                value={copies}
+                onChange={(e) => setCopies(clampCopies(Number(e.target.value)))}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                disabled={copies >= MAX_COPIES}
+                onClick={() => setCopies((c) => clampCopies(c + 1))}
+                aria-label={isRtl ? "زيادة" : "Increase"}
+              >
+                <Icon name="plus" className="h-4 w-4" />
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               {isRtl
-                ? `أقصى عدد يناسب الصفحة: ${maxCapacity} (${layoutCols}×${layoutRows})`
-                : `Fits up to ${maxCapacity} per sheet (${layoutCols}×${layoutRows} layout), packed automatically`}
+                ? `${perSheet} لكل ورقة (${layoutCols}×${layoutRows}) · ${sheetCount} ${sheetCount === 1 ? "ورقة" : "أوراق"}`
+                : `${perSheet} per sheet (${layoutCols}×${layoutRows} layout) · ${sheetCount} sheet${sheetCount === 1 ? "" : "s"}`}
             </p>
           </div>
         )}
@@ -797,7 +850,38 @@ const CardIDTool: React.FC = () => {
       <div className="lg:col-span-2">
         <Card className="shadow-none">
           <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-semibold">{t("preview")}</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold">{t("preview")}</CardTitle>
+              {sheetCount > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={activeSheet <= 0}
+                    onClick={() => setSheetIdx(activeSheet - 1)}
+                    aria-label={isRtl ? "الورقة السابقة" : "Previous sheet"}
+                  >
+                    <Icon name={isRtl ? "chevron-right" : "chevron-left"} className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {isRtl ? `ورقة ${activeSheet + 1}/${sheetCount}` : `Sheet ${activeSheet + 1}/${sheetCount}`}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={activeSheet >= sheetCount - 1}
+                    onClick={() => setSheetIdx(activeSheet + 1)}
+                    aria-label={isRtl ? "الورقة التالية" : "Next sheet"}
+                  >
+                    <Icon name={isRtl ? "chevron-left" : "chevron-right"} className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
             {!frontDataUrl && !backDataUrl ? (

@@ -21,6 +21,9 @@ export const PUBLIC_SETTINGS_KEYS = new Set([
 // Keys that must NEVER be serialized into any HTTP response, even for admins.
 export const SECRET_SETTINGS_KEYS = new Set([
   "gmailTokens", "gmailToken",
+  // Research Generator's AI (Omniroute) and image search (SearXNG gateway)
+  // provider credentials — read server-side only via server/providerConfig.js.
+  "aiApiKey", "imageSearchKey",
 ]);
 
 // Operators hand out ONE link per store: https://cloud.example.com/s/<slug>

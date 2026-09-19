@@ -262,6 +262,24 @@ export function registerSettingsRoutes(app) {
       if (req.body.shopApiToken !== undefined) {
         updateSetting('shopApiToken', req.body.shopApiToken);
       }
+      // Research Generator providers — Omniroute (AI text) and the shop's
+      // SearXNG gateway (images). Keys are stripped from every GET response
+      // by SECRET_SETTINGS_KEYS; see server/providerConfig.js for the reads.
+      if (req.body.aiBaseUrl !== undefined) {
+        updateSetting('aiBaseUrl', String(req.body.aiBaseUrl || '').trim());
+      }
+      if (req.body.aiApiKey !== undefined) {
+        updateSetting('aiApiKey', String(req.body.aiApiKey || '').trim());
+      }
+      if (req.body.aiModel !== undefined) {
+        updateSetting('aiModel', String(req.body.aiModel || '').trim());
+      }
+      if (req.body.imageSearchUrl !== undefined) {
+        updateSetting('imageSearchUrl', String(req.body.imageSearchUrl || '').trim());
+      }
+      if (req.body.imageSearchKey !== undefined) {
+        updateSetting('imageSearchKey', String(req.body.imageSearchKey || '').trim());
+      }
       if (req.body.cloudSyncPollInterval !== undefined) {
         updateSetting('cloudSyncPollInterval', req.body.cloudSyncPollInterval);
       }
@@ -270,6 +288,18 @@ export function registerSettingsRoutes(app) {
       }
       if (req.body.autoDeductStock !== undefined) {
         updateSetting('autoDeductStock', !!req.body.autoDeductStock);
+      }
+      // Research Generator cover-page defaults (phase 5) — the same school
+      // comes in all week, so school name/teacher/year are remembered here
+      // and prefilled on every new paper instead of retyped.
+      if (req.body.researchSchoolName !== undefined) {
+        updateSetting('researchSchoolName', String(req.body.researchSchoolName || '').trim());
+      }
+      if (req.body.researchTeacherName !== undefined) {
+        updateSetting('researchTeacherName', String(req.body.researchTeacherName || '').trim());
+      }
+      if (req.body.researchSchoolYear !== undefined) {
+        updateSetting('researchSchoolYear', String(req.body.researchSchoolYear || '').trim());
       }
       // Printer settings — see electron/main.js for the print IPC that
       // consumes these. defaultPrinterName is a plain string (Chromium's

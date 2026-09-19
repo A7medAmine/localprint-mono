@@ -22,6 +22,8 @@ export const PREF_KEYS = {
   credentialCardPaperSize: "ps_credential_card_paper_size",
   /** "1" when Print Studio work should survive an app restart. */
   studioPersist: "ps_studio_persist",
+  /** Recent free-text subject values typed into the Research tool's subject combobox. */
+  researchRecentSubjects: "ps_research_recent_subjects",
 } as const;
 
 export type PrefKey = keyof typeof PREF_KEYS;

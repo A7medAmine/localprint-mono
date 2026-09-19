@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 const CardIDTool = lazy(() => import("./CardIDTool"));
 const PhotoBatchTool = lazy(() => import("./PhotoBatchTool"));
 const PDFJobManager = lazy(() => import("./PDFJobManager"));
+const ResearchTool = lazy(() => import("./ResearchTool"));
 import { useLanguage } from "../lib/useLanguage";
 import { Toaster } from "../components/ui/toaster";
 import LanguageToggle from "../components/LanguageToggle";
@@ -11,7 +12,7 @@ import type { Language, ShopSettings } from "../types";
 import { TRANSLATIONS } from "../constants";
 import { Icon } from "../components/ui/icon";
 
-type StudioTab = "cards" | "pdf" | "photos";
+type StudioTab = "cards" | "pdf" | "photos" | "research";
 
 const studioNavItems: { id: StudioTab; icon: string; labelKey: string }[] = [
   {
@@ -28,6 +29,11 @@ const studioNavItems: { id: StudioTab; icon: string; labelKey: string }[] = [
     id: "photos",
     icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z",
     labelKey: "photosTab",
+  },
+  {
+    id: "research",
+    icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
+    labelKey: "researchTab",
   },
 ];
 
@@ -53,7 +59,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
   const isRtl = lang === "ar";
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab") as StudioTab | null;
-  const tab: StudioTab = urlTab === "pdf" || urlTab === "cards" || urlTab === "photos" ? urlTab : "cards";
+  const tab: StudioTab = urlTab === "pdf" || urlTab === "cards" || urlTab === "photos" || urlTab === "research" ? urlTab : "cards";
   const setTab = (next: StudioTab) => {
     setSearchParams(
       (prev) => {
@@ -95,7 +101,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
     <>
       {/* Brand + collapse (desktop) / close (mobile) */}
       <div className="flex items-center gap-3 px-4 py-4 h-16 shrink-0">
-        <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white overflow-hidden shadow-sm flex-shrink-0">
+        <div className="w-9 h-9 bg-primary text-primary-foreground rounded-lg flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
           {currentSettings.logoUrl ? (
             <img src={currentSettings.logoUrl} alt="Logo" className="w-full h-full object-contain" />
           ) : (
@@ -141,11 +147,10 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {/* STUDIO */}
         {!collapsed && (
           <div className="px-4 pt-2 pb-1">
-            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {isRtl ? "الاستوديو" : "STUDIO"}
+            <span className="text-xs font-semibold text-muted-foreground">
+              {isRtl ? "الاستوديو" : "Studio"}
             </span>
           </div>
         )}
@@ -160,7 +165,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
                   collapsed ? "px-2.5 py-2.5 justify-center" : "px-3.5 py-2.5"
                 } ${
                   isActive
-                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                    ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
                     : "text-gray-600 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/[0.06]"
                 }`}
                 title={collapsed ? t(item.labelKey) : undefined}
@@ -174,15 +179,13 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           })}
         </nav>
 
-        {/* TOOLS */}
-        {!collapsed && (
-          <div className="px-4 pt-3 pb-1">
-            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {isRtl ? "أدوات" : "TOOLS"}
-            </span>
-          </div>
-        )}
-        <nav className={collapsed ? "px-2 py-2 space-y-1" : "px-3 py-2 space-y-0.5"}>
+        {/* Leaving the studio — separated from the tool list by a rule rather
+            than grouped under a heading, since it isn't a tool. */}
+        <nav
+          className={`mt-2 border-t border-border pt-2 ${
+            collapsed ? "px-2 py-2 space-y-1" : "px-3 py-2 space-y-0.5"
+          }`}
+        >
           <button
             onClick={() => navigate("/admin/dashboard")}
             className={`w-full flex items-center gap-3 rounded-xl text-sm font-medium text-muted-foreground hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors ${
@@ -195,27 +198,6 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
           </button>
         </nav>
 
-        {/* Help card — hide when collapsed */}
-        {!collapsed && (
-          <div className="px-3 mt-4">
-            <div className="bg-white/60 dark:bg-white/[0.06] rounded-xl p-3.5 border border-gray-200 dark:border-white/10">
-              <div className="flex items-start gap-2.5 mb-2.5">
-                <Icon name="alert-circle" className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-medium text-foreground leading-tight">
-                    {isRtl ? "تحتاج مساعدة؟" : "Need help?"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-tight">
-                    {isRtl ? "فريقنا جاهز للمساعدة" : "Our team is here to help"}
-                  </p>
-                </div>
-              </div>
-              <button className="w-full text-xs font-semibold py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">
-                {isRtl ? "اتصل بالدعم" : "Contact Support"}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Bottom toggles */}
@@ -313,7 +295,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             <Icon name="menu" className="w-5 h-5" />
           </button>
           <span className="text-sm font-semibold text-foreground truncate">
-            {t(tab === "cards" ? "cardsTab" : tab === "photos" ? "photosTab" : "pdfTab")}
+            {t(tab === "cards" ? "cardsTab" : tab === "photos" ? "photosTab" : tab === "research" ? "researchTab" : "pdfTab")}
           </span>
           <div className="w-9" />
         </header>
@@ -324,7 +306,7 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
             <Suspense
               fallback={
                 <div className="flex items-center justify-center py-16" role="status" aria-live="polite">
-                  <div className="w-7 h-7 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin dark:border-indigo-900 dark:border-t-indigo-400" />
+                  <div className="w-7 h-7 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
                 </div>
               }
             >
@@ -344,6 +326,11 @@ const PrintStudio: React.FC<PrintStudioProps> = ({
               {visited.has("pdf") && (
                 <div hidden={tab !== "pdf"}>
                   <PDFJobManager />
+                </div>
+              )}
+              {visited.has("research") && (
+                <div hidden={tab !== "research"}>
+                  <ResearchTool lang={lang} />
                 </div>
               )}
             </Suspense>

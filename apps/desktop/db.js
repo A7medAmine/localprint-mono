@@ -205,6 +205,28 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_cv_profiles_fullName ON cv_profiles(fullName);
   CREATE INDEX IF NOT EXISTS idx_cv_profiles_phone ON cv_profiles(phone);
+
+  CREATE TABLE IF NOT EXISTS research_papers (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    subject     TEXT NOT NULL DEFAULT '',
+    level       TEXT NOT NULL DEFAULT 'middle',
+    language    TEXT NOT NULL DEFAULT 'ar',
+    data        TEXT NOT NULL DEFAULT '{}',
+    createdAt   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updatedAt   DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_research_title ON research_papers(title);
+  CREATE INDEX IF NOT EXISTS idx_research_subject ON research_papers(subject);
+
+  -- 30-day disk cache of filtered/ranked image-search candidates, keyed by a
+  -- hash of the normalized query. See migrations/005_image_search_cache.sql.
+  CREATE TABLE IF NOT EXISTS image_search_cache (
+    queryHash  TEXT PRIMARY KEY,
+    query      TEXT NOT NULL,
+    results    TEXT NOT NULL,
+    fetchedAt  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Seed default paper types if table is empty
@@ -782,6 +804,101 @@ export const updateCvProfilePhoto = (id, photoFilename) => {
 export const deleteCvProfile = (id) => {
   db.prepare('DELETE FROM cv_profiles WHERE id = ?').run(id);
   return id;
+};
+
+/**
+ * Research Paper Helpers
+ *
+ * Same shape as CV profiles: `data` holds the full structured document
+ * (outline, sections, images, typography — see ResearchDocument in types.ts)
+ * as JSON, while title/subject/level/language are duplicated as plain
+ * columns so search and listing stay fast indexed lookups.
+ */
+const parseResearchRow = (row) => (row ? { ...row, data: JSON.parse(row.data || '{}') } : null);
+
+export const getResearchPapers = (search) => {
+  const rows = search
+    ? db.prepare('SELECT * FROM research_papers WHERE title LIKE ? OR subject LIKE ? ORDER BY updatedAt DESC')
+        .all(`%${search}%`, `%${search}%`)
+    : db.prepare('SELECT * FROM research_papers ORDER BY updatedAt DESC').all();
+  return rows.map(parseResearchRow);
+};
+
+export const getResearchPaper = (id) => {
+  const row = db.prepare('SELECT * FROM research_papers WHERE id = ?').get(id);
+  return parseResearchRow(row);
+};
+
+export const createResearchPaper = (paper) => {
+  db.prepare(`
+    INSERT INTO research_papers (id, title, subject, level, language, data)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    paper.id,
+    paper.title,
+    paper.subject || '',
+    paper.level || 'middle',
+    paper.language || 'ar',
+    JSON.stringify(paper.data || {}),
+  );
+  return getResearchPaper(paper.id);
+};
+
+export const updateResearchPaper = (id, updates) => {
+  const existing = db.prepare('SELECT id FROM research_papers WHERE id = ?').get(id);
+  if (!existing) return null;
+
+  const fields = ["updatedAt = CURRENT_TIMESTAMP"];
+  const values = [];
+  if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
+  if (updates.subject !== undefined) { fields.push('subject = ?'); values.push(updates.subject || ''); }
+  if (updates.level !== undefined) { fields.push('level = ?'); values.push(updates.level); }
+  if (updates.language !== undefined) { fields.push('language = ?'); values.push(updates.language); }
+  if (updates.data !== undefined) { fields.push('data = ?'); values.push(JSON.stringify(updates.data)); }
+
+  values.push(id);
+  db.prepare(`UPDATE research_papers SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getResearchPaper(id);
+};
+
+// Unlinks every image file the paper references before deleting the row.
+// Each unlink is guarded on its own — a missing file must not block the delete.
+export const deleteResearchPaper = (id) => {
+  const paper = getResearchPaper(id);
+  if (paper?.data?.images?.length) {
+    const uploadsDir = process.env.ATBA3LI_UPLOADS_DIR || path.join(__dirname, 'uploads');
+    for (const image of paper.data.images) {
+      if (!image?.filename) continue;
+      try { fs.unlinkSync(path.join(uploadsDir, image.filename)); } catch { /* ignored */ }
+    }
+  }
+  db.prepare('DELETE FROM research_papers WHERE id = ?').run(id);
+  return id;
+};
+
+// ── Image search cache (phase 3) ──────────────────────────────────────────
+// 30-day disk cache of the filtered/ranked ImageCandidate list per
+// normalized query hash. Server-side only — see server/research/imageSearch.js.
+
+export const getImageSearchCache = (queryHash) => {
+  const row = db.prepare('SELECT * FROM image_search_cache WHERE queryHash = ?').get(queryHash);
+  if (!row) return null;
+  try {
+    return { ...row, results: JSON.parse(row.results || '[]') };
+  } catch {
+    return null;
+  }
+};
+
+export const setImageSearchCache = (queryHash, query, results) => {
+  db.prepare(`
+    INSERT INTO image_search_cache (queryHash, query, results, fetchedAt)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(queryHash) DO UPDATE SET
+      query = excluded.query,
+      results = excluded.results,
+      fetchedAt = CURRENT_TIMESTAMP
+  `).run(queryHash, query, JSON.stringify(results || []));
 };
 
 // Fold the WAL back into the main database file, then close.

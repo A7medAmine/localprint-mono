@@ -36,8 +36,20 @@ import { errorMessage } from "@atba3li/shared";
 
 interface PageEntry {
   id: string;
+  // Which loaded PDF this page comes from. Pages from several files live in
+  // one list, which is what makes merging work.
+  srcId: string;
+  // Page index inside that source document.
   index: number;
   rotation: number;
+}
+
+// One loaded PDF. The studio keeps the bytes of every source around because
+// pages are copied out of them lazily, at export/print time.
+interface PdfSource {
+  id: string;
+  file: File;
+  bytes: ArrayBuffer;
 }
 
 const PAPER_SIZES = [
@@ -64,10 +76,13 @@ interface PersistedSession {
 }
 
 // What survives an app restart (unless the shop turned Print Studio
-// persistence off in Settings). Unlike the sessionStorage session above this carries the PDF itself, so
-// a manually uploaded file comes back too.
+// persistence off in Settings). Unlike the sessionStorage session above this carries the PDFs themselves, so
+// manually uploaded files come back too.
 interface PdfSnapshot {
-  file: File;
+  // `files` is the current shape (one entry per merged source). `file` is the
+  // pre-merge single-PDF shape, still read so older snapshots restore.
+  files?: File[];
+  file?: File;
   pages: PageEntry[];
   copies: number;
   colorMode: "color" | "bw";
@@ -86,9 +101,10 @@ const PDFJobManager: React.FC = () => {
   const { t, lang } = useLanguage();
   const isRtl = lang === "ar";
 
-  const [file, setFile] = useState<File | null>(null);
-  const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
+  const [sources, setSources] = useState<PdfSource[]>([]);
   const [pages, setPages] = useState<PageEntry[]>([]);
+  // The first loaded PDF names the output and is the one a job save maps to.
+  const file = sources[0]?.file ?? null;
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
   const [sourceJob, setSourceJob] = useState<PrintJob | null>(null);
@@ -99,6 +115,9 @@ const PDFJobManager: React.FC = () => {
   const [duplex, setDuplex] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showJobLoader, setShowJobLoader] = useState(false);
+  // "replace" starts a fresh document, "add" merges the picked job's PDF into
+  // the page list that is already open.
+  const [jobLoaderMode, setJobLoaderMode] = useState<"replace" | "add">("replace");
   const [showNewJobDialog, setShowNewJobDialog] = useState(false);
   const [addJobUploading, setAddJobUploading] = useState(false);
   const targets = useJobTargets();
@@ -132,13 +151,26 @@ const PDFJobManager: React.FC = () => {
 
   const tPages = t("studioPagesLabel");
 
-  const renderThumbnails = useCallback(async (buf: ArrayBuffer, pageEntries: PageEntry[]) => {
+  const renderThumbnails = useCallback(async (srcs: PdfSource[], pageEntries: PageEntry[]) => {
     try {
       const pdfjsLib = await getPdfjs();
-      const pdf = await pdfjsLib.getDocument({ data: buf.slice(0), ...PDF_DOC_OPTIONS }).promise;
+      // One pdf.js document per source, opened lazily and shared by every page
+      // that comes from it.
+      const docs = new Map<string, any>();
+      const docFor = async (srcId: string) => {
+        const cached = docs.get(srcId);
+        if (cached) return cached;
+        const src = srcs.find((s) => s.id === srcId);
+        if (!src) return null;
+        const doc = await pdfjsLib.getDocument({ data: src.bytes.slice(0), ...PDF_DOC_OPTIONS }).promise;
+        docs.set(srcId, doc);
+        return doc;
+      };
       const results: Record<string, string> = {};
       for (const entry of pageEntries) {
         try {
+          const pdf = await docFor(entry.srcId);
+          if (!pdf) continue;
           const page = await pdf.getPage(entry.index + 1);
           // Rotation must live on the viewport — pdf.js's RenderParameters
           // has no top-level `rotation` field, so passing it there was a no-op.
@@ -156,6 +188,9 @@ const PDFJobManager: React.FC = () => {
         }
       }
       setThumbnails((prev) => ({ ...prev, ...results }));
+      for (const doc of docs.values()) {
+        try { doc.destroy(); } catch { /* noop */ }
+      }
     } catch (err) {
       console.error("pdf.js failed to open document:", err);
       toast({
@@ -166,24 +201,100 @@ const PDFJobManager: React.FC = () => {
     }
   }, [isRtl]);
 
-  const loadPdf = useCallback(async (f: File, buf: ArrayBuffer, restoredPages?: PageEntry[]) => {
-    setFile(f);
-    const pdf = await PDFDocument.load(buf);
-    const count = pdf.getPageCount();
-    const entries: PageEntry[] =
-      restoredPages && restoredPages.length > 0
-        ? restoredPages.filter((p) => p.index < count)
-        : Array.from({ length: count }, (_, i) => ({
-            id: crypto.randomUUID(),
-            index: i,
-            rotation: 0,
-          }));
+  /** Replace everything currently open with these files, in order. */
+  const loadPdfs = useCallback(async (
+    files: File[],
+    buffers: ArrayBuffer[],
+    restoredPages?: PageEntry[],
+  ) => {
+    const srcs: PdfSource[] = [];
+    const counts: number[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const pdf = await PDFDocument.load(buffers[i]);
+      srcs.push({ id: crypto.randomUUID(), file: files[i], bytes: buffers[i] });
+      counts.push(pdf.getPageCount());
+    }
+    let entries: PageEntry[];
+    if (restoredPages && restoredPages.length > 0) {
+      // A restored list is positional: its srcId values are from the previous
+      // session, so remap them onto the sources just rebuilt, in the same
+      // order. Snapshots taken before merging existed carry no srcId at all
+      // and land on the single source.
+      const oldIds: string[] = [];
+      for (const p of restoredPages) {
+        const key = p.srcId ?? "";
+        if (!oldIds.includes(key)) oldIds.push(key);
+      }
+      entries = restoredPages
+        .map((p) => {
+          const slot = Math.max(0, oldIds.indexOf(p.srcId ?? ""));
+          const src = srcs[slot];
+          return src && p.index < counts[slot] ? { ...p, srcId: src.id } : null;
+        })
+        .filter((p): p is PageEntry => p !== null);
+    } else {
+      entries = srcs.flatMap((src, i) =>
+        Array.from({ length: counts[i] }, (_, p) => ({
+          id: crypto.randomUUID(),
+          srcId: src.id,
+          index: p,
+          rotation: 0,
+        })),
+      );
+    }
+    setSources(srcs);
     setPages(entries);
-    setPdfBytes(buf);
     setSelectedPages(new Set());
     setThumbnails({});
-    renderThumbnails(buf, entries);
+    renderThumbnails(srcs, entries);
   }, [renderThumbnails]);
+
+  const loadPdf = useCallback(
+    (f: File, buf: ArrayBuffer, restoredPages?: PageEntry[]) =>
+      loadPdfs([f], [buf], restoredPages),
+    [loadPdfs],
+  );
+
+  const clearFile = () => {
+    setSources([]);
+    setPages([]);
+    setThumbnails({});
+    setSelectedPages(new Set());
+    setSourceJob(null);
+    sessionStorage.removeItem(SESSION_KEY);
+  };
+
+  /** Merge: append these PDFs' pages to the end of the current page list. */
+  const appendPdfs = useCallback(async (files: File[]) => {
+    const pdfFiles = files.filter((f) => f.type === "application/pdf");
+    if (pdfFiles.length === 0) {
+      toast({ title: t("studioNotAPdf"), variant: "destructive" });
+      return;
+    }
+    const added: PdfSource[] = [];
+    const addedPages: PageEntry[] = [];
+    for (const f of pdfFiles) {
+      try {
+        const buf = await f.arrayBuffer();
+        const pdf = await PDFDocument.load(buf);
+        const src: PdfSource = { id: crypto.randomUUID(), file: f, bytes: buf };
+        added.push(src);
+        for (let i = 0; i < pdf.getPageCount(); i++) {
+          addedPages.push({ id: crypto.randomUUID(), srcId: src.id, index: i, rotation: 0 });
+        }
+      } catch (err) {
+        toast({
+          title: t("studioNotAPdf"),
+          description: `${f.name}: ${errorMessage(err)}`,
+          variant: "destructive",
+        });
+      }
+    }
+    if (added.length === 0) return;
+    // Thumbnails follow from the effect that watches `sources`/`pages`.
+    setSources((prev) => [...prev, ...added]);
+    setPages((prev) => [...prev, ...addedPages]);
+  }, [t]);
 
   const handleFile = async (f: File | null | undefined) => {
     if (!f || f.type !== "application/pdf") return;
@@ -199,14 +310,27 @@ const PDFJobManager: React.FC = () => {
     await loadPdf(f, buf);
   };
 
-  // Re-render thumbnails on rotation / reorder — pdfBytes stays stable so the
+  /** Drop one merged source and every page that came from it. */
+  const removeSource = (srcId: string) => {
+    const remaining = sources.filter((s) => s.id !== srcId);
+    if (remaining.length === 0) {
+      clearFile();
+      return;
+    }
+    setSources(remaining);
+    const dropped = new Set(pages.filter((p) => p.srcId === srcId).map((p) => p.id));
+    setPages((prev) => prev.filter((p) => p.srcId !== srcId));
+    setSelectedPages((prev) => new Set([...prev].filter((id) => !dropped.has(id))));
+  };
+
+  // Re-render thumbnails on rotation / reorder — `sources` stays stable so the
   // dep set is intentionally narrow (avoids the `renderThumbnails` dep loop
   // the previous version had).
   useEffect(() => {
-    if (pdfBytes && pages.length > 0) {
-      renderThumbnails(pdfBytes, pages);
+    if (sources.length > 0 && pages.length > 0) {
+      renderThumbnails(sources, pages);
     }
-  }, [pages, pdfBytes, renderThumbnails]);
+  }, [pages, sources, renderThumbnails]);
 
   // On mount: restore a session (either from admin's "Edit" action, or
   // sessionStorage if we were mid-work before a refresh / lang toggle).
@@ -270,22 +394,23 @@ const PDFJobManager: React.FC = () => {
     async (snap) => {
       // An explicit "edit this job" action wins over the previous state.
       if (editHandoffRef.current) return;
-      if (!snap.file) return;
+      const files = snap.files?.length ? snap.files : snap.file ? [snap.file] : [];
+      if (files.length === 0) return;
       setSourceJob(snap.sourceJob ?? null);
       setCopies(snap.copies);
       setColorMode(snap.colorMode);
       setPaperSize(snap.paperSize);
       setDuplex(snap.duplex);
-      const buf = await snap.file.arrayBuffer();
-      await loadPdf(snap.file, buf, snap.pages);
+      const buffers = await Promise.all(files.map((f) => f.arrayBuffer()));
+      await loadPdfs(files, buffers, snap.pages);
     },
     () => setRestored(true),
   );
 
   useStudioSnapshot<PdfSnapshot>(
     "pdf",
-    file && pages.length > 0
-      ? { file, pages, copies, colorMode, paperSize, duplex, sourceJob }
+    sources.length > 0 && pages.length > 0
+      ? { files: sources.map((s) => s.file), pages, copies, colorMode, paperSize, duplex, sourceJob }
       : null,
     restored,
   );
@@ -294,7 +419,10 @@ const PDFJobManager: React.FC = () => {
   // Manually uploaded PDFs aren't persisted (would need IndexedDB for the
   // bytes) — clearing here also handles the "user removed the file" case.
   useEffect(() => {
-    if (!sourceJob || pages.length === 0) {
+    // This session only re-fetches the source job's own PDF, so it can't
+    // describe a merged document — the IndexedDB snapshot above covers that
+    // case instead.
+    if (!sourceJob || pages.length === 0 || sources.length !== 1) {
       sessionStorage.removeItem(SESSION_KEY);
       return;
     }
@@ -307,7 +435,7 @@ const PDFJobManager: React.FC = () => {
       duplex,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
-  }, [sourceJob, pages, copies, colorMode, paperSize, duplex]);
+  }, [sourceJob, sources, pages, copies, colorMode, paperSize, duplex]);
 
   const toggleSelect = (id: string) => {
     setSelectedPages((prev) => {
@@ -348,11 +476,26 @@ const PDFJobManager: React.FC = () => {
     });
   };
 
+  /** Load each source document once, on demand, for a build pass. */
+  const makeSourceLoader = () => {
+    const loaded = new Map<string, Promise<PDFDocument>>();
+    return (srcId: string): Promise<PDFDocument> => {
+      const cached = loaded.get(srcId);
+      if (cached) return cached;
+      const src = sources.find((s) => s.id === srcId);
+      if (!src) return Promise.reject(new Error("Missing source PDF"));
+      const p = PDFDocument.load(src.bytes.slice(0));
+      loaded.set(srcId, p);
+      return p;
+    };
+  };
+
   const buildPdfFromPages = async (): Promise<Uint8Array> => {
-    if (!pdfBytes) throw new Error("No PDF loaded");
-    const sourcePdf = await PDFDocument.load(pdfBytes.slice(0));
+    if (sources.length === 0) throw new Error("No PDF loaded");
+    const sourceFor = makeSourceLoader();
     const newDoc = await PDFDocument.create();
     for (const entry of pages) {
+      const sourcePdf = await sourceFor(entry.srcId);
       const [copiedPage] = await newDoc.copyPages(sourcePdf, [entry.index]);
       const rot = normRotation(entry.rotation);
       if (rot !== 0) copiedPage.setRotation(degrees(rot));
@@ -367,16 +510,17 @@ const PDFJobManager: React.FC = () => {
   };
 
   const exportPDF = async () => {
-    if (!pdfBytes) return;
+    if (sources.length === 0) return;
     setExporting(true);
     try {
-      const sourcePdf = await PDFDocument.load(pdfBytes.slice(0));
+      const sourceFor = makeSourceLoader();
       const newDoc = await PDFDocument.create();
       const sizeKey = paperSize as keyof typeof PageSizes;
       const targetSize = PageSizes[sizeKey] || PageSizes.A4;
 
       for (let c = 0; c < copies; c++) {
         for (const entry of pages) {
+          const sourcePdf = await sourceFor(entry.srcId);
           const [copiedPage] = await newDoc.copyPages(sourcePdf, [entry.index]);
           const rot = normRotation(entry.rotation);
           if (rot !== 0) copiedPage.setRotation(degrees(rot));
@@ -412,14 +556,25 @@ const PDFJobManager: React.FC = () => {
   };
 
   const exportAsImages = async () => {
-    if (!pdfBytes || pages.length === 0) return;
+    if (sources.length === 0 || pages.length === 0) return;
     setExporting(true);
     try {
       const pdfjsLib = await getPdfjs();
-      const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0), ...PDF_DOC_OPTIONS }).promise;
+      const docs = new Map<string, any>();
+      const docFor = async (srcId: string) => {
+        const cached = docs.get(srcId);
+        if (cached) return cached;
+        const src = sources.find((s) => s.id === srcId);
+        if (!src) return null;
+        const doc = await pdfjsLib.getDocument({ data: src.bytes.slice(0), ...PDF_DOC_OPTIONS }).promise;
+        docs.set(srcId, doc);
+        return doc;
+      };
       const scale = 2;
       for (let i = 0; i < pages.length; i++) {
         const entry = pages[i];
+        const pdf = await docFor(entry.srcId);
+        if (!pdf) continue;
         const page = await pdf.getPage(entry.index + 1);
         const viewport = page.getViewport({ scale, rotation: entry.rotation });
         const canvas = document.createElement("canvas");
@@ -439,6 +594,9 @@ const PDFJobManager: React.FC = () => {
           URL.revokeObjectURL(url);
         }
       }
+      for (const doc of docs.values()) {
+        try { doc.destroy(); } catch { /* noop */ }
+      }
       toast({ title: t("studioExported"), variant: "success" });
     } catch {
       toast({ title: t("studioExportFailed"), variant: "destructive" });
@@ -448,7 +606,7 @@ const PDFJobManager: React.FC = () => {
   };
 
   const printDirectly = async () => {
-    if (!pdfBytes || pages.length === 0) return;
+    if (sources.length === 0 || pages.length === 0) return;
     try {
       const output = await buildPdfFromPages();
       // Browser fallback — no native bridge available.
@@ -495,7 +653,7 @@ const PDFJobManager: React.FC = () => {
   };
 
   const addToNewJob = async () => {
-    if (!file || !pdfBytes) return;
+    if (!file || sources.length === 0) return;
     if (!targets.targetJob && !targets.name.trim()) return;
     setAddJobUploading(true);
     try {
@@ -532,7 +690,7 @@ const PDFJobManager: React.FC = () => {
   };
 
   const saveToSourceJob = async () => {
-    if (!sourceJob || !file || !pdfBytes) return;
+    if (!sourceJob || !file || sources.length === 0) return;
     setSaving(true);
     try {
       const output = await buildPdfFromPages();
@@ -552,16 +710,6 @@ const PDFJobManager: React.FC = () => {
     }
   };
 
-  const clearFile = () => {
-    setFile(null);
-    setPdfBytes(null);
-    setPages([]);
-    setThumbnails({});
-    setSelectedPages(new Set());
-    setSourceJob(null);
-    sessionStorage.removeItem(SESSION_KEY);
-  };
-
   const selectAll = () => {
     if (selectedPages.size === pages.length) setSelectedPages(new Set());
     else setSelectedPages(new Set(pages.map((p) => p.id)));
@@ -575,8 +723,17 @@ const PDFJobManager: React.FC = () => {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4" dir={isRtl ? "rtl" : "ltr"}>
-      {/* Sidebar */}
-      <aside className="w-full lg:w-[320px] lg:shrink-0 space-y-3">
+      {/* Settings rail. On phones it sits *below* the page grid — otherwise the
+          operator has to scroll past every settings card to see the PDF they
+          just loaded. On desktop it sticks so Print stays reachable however far
+          down the page grid is scrolled. */}
+      <aside
+        className={cn(
+          "w-full lg:w-[280px] lg:shrink-0 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto space-y-3",
+          // Before a PDF is loaded the rail *is* the uploader, so it leads.
+          pages.length > 0 && "order-2 lg:order-none",
+        )}
+      >
         {/* Source PDF */}
         <Card>
           <CardHeader className="p-4 pb-3">
@@ -597,33 +754,80 @@ const PDFJobManager: React.FC = () => {
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                   />
                 </label>
-                <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => setShowJobLoader(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => { setJobLoaderMode("replace"); setShowJobLoader(true); }}
+                >
                   <Icon name="folder" />
                   {t("loadFromPrintJobs")}
                 </Button>
               </>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-2.5">
-                  <Icon name="file-doc" className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate" title={file.name}>{file.name}</div>
-                    {sourceJob && (
-                      <div className="text-xs text-muted-foreground truncate mt-0.5">
-                        {t("studioFromJob")}: {sourceJob.customerName || (isRtl ? "بدون اسم" : "Unknown")}
+                {/* One row per merged source. The first one carries the job
+                    label, since that's the job a save writes back to. */}
+                {sources.map((src, i) => (
+                  <div key={src.id} className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-2.5">
+                    <Icon name="file-doc" className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate" title={src.file.name}>
+                        {sources.length > 1 && (
+                          <span className="text-muted-foreground font-normal me-1">{i + 1}.</span>
+                        )}
+                        {src.file.name}
                       </div>
-                    )}
+                      {i === 0 && sourceJob && (
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                          {t("studioFromJob")}: {sourceJob.customerName || (isRtl ? "بدون اسم" : "Unknown")}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => (sources.length > 1 ? removeSource(src.id) : clearFile())}
+                      className="text-muted-foreground hover:text-destructive p-1 -m-1 shrink-0"
+                      aria-label={sources.length > 1 ? t("studioRemoveFile") : t("remove")}
+                      title={sources.length > 1 ? t("studioRemoveFile") : t("remove")}
+                    >
+                      <Icon name="x" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={clearFile}
-                    className="text-muted-foreground hover:text-destructive p-1 -m-1 shrink-0"
-                    aria-label={t("remove")}
-                    title={t("remove")}
+                ))}
+
+                {/* Merge — appends another PDF's pages to the same list. */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <label className="inline-flex items-center justify-center gap-1.5 h-9 px-2 rounded-md border border-input bg-background text-xs font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors">
+                    <Icon name="plus" className="w-3.5 h-3.5" />
+                    <span className="truncate">{t("studioAddPdf")}</span>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const picked = Array.from(e.target.files ?? []);
+                        e.target.value = "";
+                        if (picked.length > 0) void appendPdfs(picked);
+                      }}
+                    />
+                  </label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 px-2 text-xs"
+                    onClick={() => { setJobLoaderMode("add"); setShowJobLoader(true); }}
                   >
-                    <Icon name="x" />
-                  </button>
+                    <Icon name="folder" className="w-3.5 h-3.5" />
+                    <span className="truncate">{t("studioAddFromJobs")}</span>
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {sources.length > 1
+                    ? t("studioMergedFiles").replace("{n}", String(sources.length))
+                    : t("studioMergeHint")}
+                </p>
               </div>
             )}
           </CardContent>
@@ -651,7 +855,7 @@ const PDFJobManager: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 px-0 flex-col gap-0.5"
+                    className="h-11 px-0 flex-col gap-0.5"
                     disabled={selectedPages.size === 0}
                     onClick={() => rotatePages([...selectedPages], 90)}
                     title={t("studioRotate90CW")}
@@ -662,7 +866,7 @@ const PDFJobManager: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 px-0 flex-col gap-0.5"
+                    className="h-11 px-0 flex-col gap-0.5"
                     disabled={selectedPages.size === 0}
                     onClick={() => rotatePages([...selectedPages], -90)}
                     title={t("studioRotate90CCW")}
@@ -673,7 +877,7 @@ const PDFJobManager: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 px-0 flex-col gap-0.5"
+                    className="h-11 px-0 flex-col gap-0.5"
                     disabled={selectedPages.size === 0}
                     onClick={() => rotatePages([...selectedPages], 180)}
                     title={t("studioRotate180")}
@@ -701,11 +905,15 @@ const PDFJobManager: React.FC = () => {
               <CardHeader className="p-4 pb-3">
                 <CardTitle className="text-sm font-semibold">{t("printOptions")}</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-3">
-                {/* Copies stepper */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">{t("copies")}</Label>
-                  <div className="flex items-center gap-1.5">
+              {/* One row shape for every setting — label on the start edge,
+                  control on the end edge — so the four different widgets read
+                  as one list instead of four unrelated blocks. */}
+              <CardContent className="p-4 pt-0 divide-y divide-border">
+                <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0">
+                  <Label htmlFor="studio-copies" className="text-xs font-medium text-muted-foreground">
+                    {t("copies")}
+                  </Label>
+                  <div className="flex items-center gap-1 w-[124px] shrink-0">
                     <Button
                       type="button"
                       variant="outline"
@@ -718,12 +926,13 @@ const PDFJobManager: React.FC = () => {
                       <Icon name="minus" />
                     </Button>
                     <Input
+                      id="studio-copies"
                       type="number"
                       min={1}
                       max={999}
                       value={copies}
                       onChange={(e) => setCopies(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))}
-                      className="h-8 text-center"
+                      className="h-8 min-w-0 text-center px-1"
                     />
                     <Button
                       type="button"
@@ -739,16 +948,15 @@ const PDFJobManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Color mode */}
-                <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3 py-2.5">
                   <Label className="text-xs font-medium text-muted-foreground">{t("colorMode")}</Label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1 w-[124px] shrink-0">
                     <Button
                       type="button"
                       size="sm"
                       variant={colorMode === "color" ? "default" : "outline"}
                       onClick={() => setColorMode("color")}
-                      className="h-8"
+                      className="h-8 px-1 text-xs"
                     >
                       {t("color")}
                     </Button>
@@ -757,18 +965,17 @@ const PDFJobManager: React.FC = () => {
                       size="sm"
                       variant={colorMode === "bw" ? "default" : "outline"}
                       onClick={() => setColorMode("bw")}
-                      className="h-8"
+                      className="h-8 px-1 text-xs"
                     >
                       {t("bw")}
                     </Button>
                   </div>
                 </div>
 
-                {/* Paper size */}
-                <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3 py-2.5">
                   <Label className="text-xs font-medium text-muted-foreground">{t("studioPaperSize")}</Label>
                   <Select value={paperSize} onValueChange={setPaperSize}>
-                    <SelectTrigger className="h-8">
+                    <SelectTrigger className="h-8 w-[124px] shrink-0">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -779,9 +986,8 @@ const PDFJobManager: React.FC = () => {
                   </Select>
                 </div>
 
-                {/* Duplex */}
-                <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
-                  <Label htmlFor="duplex-switch" className="text-xs font-medium cursor-pointer">
+                <div className="flex items-center justify-between gap-3 py-2.5 last:pb-0">
+                  <Label htmlFor="duplex-switch" className="text-xs font-medium text-muted-foreground cursor-pointer">
                     {t("studioDuplex")}
                   </Label>
                   <Switch id="duplex-switch" checked={duplex} onCheckedChange={setDuplex} />
@@ -789,44 +995,46 @@ const PDFJobManager: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Actions */}
-            <Card>
-              <CardHeader className="p-4 pb-3">
-                <CardTitle className="text-sm font-semibold">{t("studioActions")}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0 space-y-2">
-                <Button className="w-full gap-2" size="sm" onClick={printDirectly} disabled={printing}>
-                  <Icon name="print" />
-                  {printing ? (isRtl ? "جارٍ الإرسال..." : "Sending...") : t("studioPrintDirect")}
+            {/* Actions are the end of the rail, not another settings card —
+                dropping the card chrome lets Print read as the one thing that
+                finishes the job. */}
+            <div className="space-y-2 pt-1">
+              <Button className="w-full gap-2" onClick={printDirectly} disabled={printing}>
+                <Icon name="print" />
+                {printing ? (isRtl ? "جارٍ الإرسال..." : "Sending...") : t("studioPrintDirect")}
+              </Button>
+              {sourceJob && (
+                <Button className="w-full gap-2" size="sm" variant="secondary" onClick={saveToSourceJob} disabled={saving}>
+                  <Icon name="save" />
+                  {saving ? t("uploading") : t("studioSaveToJob")}
                 </Button>
-                <Button className="w-full gap-2" size="sm" variant="outline" onClick={exportPDF} disabled={exporting}>
+              )}
+              <Button
+                className="w-full gap-2"
+                size="sm"
+                variant={sourceJob ? "outline" : "secondary"}
+                onClick={openNewJobDialog}
+              >
+                <Icon name="plus" />
+                {t("studioSaveAsNewJob")}
+              </Button>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Button variant="outline" size="sm" className="gap-1.5 px-1 text-xs" onClick={exportPDF} disabled={exporting}>
                   <Icon name="download" />
                   {exporting ? t("exporting") : t("studioExportPDF")}
                 </Button>
-                <Button className="w-full gap-2" size="sm" variant="outline" onClick={exportAsImages} disabled={exporting}>
+                <Button variant="outline" size="sm" className="gap-1.5 px-1 text-xs" onClick={exportAsImages} disabled={exporting}>
                   <Icon name="file-image" />
                   {exporting ? t("exporting") : t("studioExportImages")}
                 </Button>
-                <div className="pt-1 space-y-2">
-                  {sourceJob && (
-                    <Button className="w-full gap-2" size="sm" variant="secondary" onClick={saveToSourceJob} disabled={saving}>
-                      <Icon name="save" />
-                      {saving ? t("uploading") : t("studioSaveToJob")}
-                    </Button>
-                  )}
-                  <Button className="w-full gap-2" size="sm" variant={sourceJob ? "outline" : "secondary"} onClick={openNewJobDialog}>
-                    <Icon name="plus" />
-                    {t("studioSaveAsNewJob")}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </>
         )}
       </aside>
 
       {/* Main */}
-      <section className="flex-1 min-w-0">
+      <section className={cn("flex-1 min-w-0", pages.length > 0 && "order-1 lg:order-none")}>
         <Card>
           <CardHeader className="p-4 pb-3 flex-row items-center justify-between gap-3">
             <div className="min-w-0">
@@ -902,6 +1110,17 @@ const PDFJobManager: React.FC = () => {
                         </div>
                       )}
 
+                      {/* Which merged file this page came from — only worth
+                          showing once more than one file is loaded. */}
+                      {sources.length > 1 && (
+                        <div
+                          className="absolute bottom-1.5 start-1.5 bg-background/90 backdrop-blur border text-muted-foreground text-xs font-medium px-1.5 py-0.5 rounded max-w-[70%] truncate"
+                          title={sources.find((s) => s.id === entry.srcId)?.file.name}
+                        >
+                          {sources.findIndex((s) => s.id === entry.srcId) + 1}
+                        </div>
+                      )}
+
                       {/* Hover quick actions */}
                       <div className="absolute top-1.5 end-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -933,7 +1152,11 @@ const PDFJobManager: React.FC = () => {
       <LoadJobModal
         isOpen={showJobLoader}
         onClose={() => setShowJobLoader(false)}
-        onSelect={(job, f) => { if (f) handleLoadFromJob(job, f); }}
+        onSelect={(job, f) => {
+          if (!f) return;
+          if (jobLoaderMode === "add" && sources.length > 0) void appendPdfs([f]);
+          else void handleLoadFromJob(job, f);
+        }}
         filterType="pdf"
       />
 

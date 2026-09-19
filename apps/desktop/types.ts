@@ -116,3 +116,98 @@ export interface CvProfile {
   createdAt?: string;
   updatedAt?: string;
 }
+
+/** Maps to ابتدائي / متوسط / ثانوي — the Arabic label is a UI concern. */
+export type ResearchLevel = "primary" | "middle" | "secondary";
+export type ResearchLanguage = "ar" | "en" | "fr";
+
+/** One block of the document. Images are referenced by id, never inlined. */
+export interface ResearchSection {
+  id: string;
+  heading: string;
+  /** Plain text, paragraphs separated by newlines. No HTML — phase 4 renders it. */
+  body: string;
+  /** Ids of images placed under this section, in order. */
+  imageIds: string[];
+}
+
+/** An image the operator picked and the app downloaded. */
+export interface ResearchImage {
+  id: string;
+  /** Filename under UPLOADS_DIR. The original remote URL is kept for provenance. */
+  filename: string;
+  sourceUrl: string;
+  sourcePage: string;
+  width: number;
+  height: number;
+  /** Operator-editable caption, rendered under the image. */
+  caption: string;
+}
+
+export interface ResearchTypography {
+  /** Body font size in pt. Range 10–18, default 14. */
+  fontSize: number;
+  /** Multiplier, not a length. Range 1.0–2.5, default 1.6. */
+  lineHeight: number;
+  /** Named family the renderer maps to a real font stack. */
+  fontFamily: "sans" | "serif" | "naskh";
+  /** Undefined means true — older saved papers had no cover/TOC toggle. */
+  showCoverPage?: boolean;
+  showToc?: boolean;
+  /** Page padding preset. Undefined means "default" — older saved papers had no margin toggle. */
+  margin?: "none" | "narrow" | "default" | "large";
+  /** Figure width preset. Undefined means "default" — older saved papers had no image-size toggle. */
+  imageSize?: "small" | "default" | "large";
+  /** "simple" forces no cover/toc, default margin, unnumbered sections, and hides those controls in the UI. Undefined means "advanced" — older saved papers had no mode toggle. */
+  mode?: "simple" | "advanced";
+}
+
+export interface ResearchDocument {
+  level: ResearchLevel;
+  language: ResearchLanguage;
+  subject: string;
+  /** Requested length, in pages. Drives the outline size. */
+  targetPages: number;
+  /** Free text from the operator, passed verbatim to the model. */
+  customInstructions: string;
+  /** Fixed front matter, all optional at render time. */
+  studentName: string;
+  schoolName: string;
+  schoolYear: string;
+  teacherName: string;
+  introduction: string;
+  sections: ResearchSection[];
+  conclusion: string;
+  /** Source URLs the model cited or the images came from. */
+  sources: string[];
+  images: ResearchImage[];
+  typography: ResearchTypography;
+  /** Set by phase 2 so the UI can show which model produced the text. */
+  generatedBy?: string;
+  generatedAt?: string;
+}
+
+export interface ResearchPaper {
+  id: string;
+  title: string;
+  subject: string;
+  level: ResearchLevel;
+  language: ResearchLanguage;
+  data: ResearchDocument;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** One SearXNG image search result, as GET /api/research/images/search returns
+ *  it (see server/research/imageSearch.js normalizeAndFilter). Not persisted —
+ *  becomes a ResearchImage only once downloaded via POST .../images. */
+export interface ResearchImageCandidate {
+  id: string;
+  url: string;
+  thumbnail: string;
+  title: string;
+  sourcePage: string;
+  width: number | null;
+  height: number | null;
+  engine: string;
+}

@@ -1,4 +1,4 @@
-import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment, Credential, CredentialSettings, CvProfile, CvDocument } from "../types";
+import { PrintJob, PrintStatus, ShopSettings, DiscountRule, InventoryItem, InventoryAdjustment, Credential, CredentialSettings, CvProfile, CvDocument, ResearchPaper, ResearchDocument, ResearchLevel, ResearchLanguage, ResearchImageCandidate } from "../types";
 import { emitAppEvent } from "@atba3li/shared/lib/appEvents";
 import { normalizeLocation } from "@atba3li/shared/geo";
 import { normalizeSocialLinks } from "@atba3li/shared/social";
@@ -708,6 +708,137 @@ class StorageService {
     } catch {
       return null;
     }
+  }
+
+  // Research Generator (Print Studio "research" tool)
+  async getResearchPapers(search?: string): Promise<ResearchPaper[]> {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+    const data = await this.safeFetch(`/api/research${qs}`);
+    return Array.isArray(data) ? data : [];
+  }
+
+  async getResearchPaper(id: string): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}`);
+  }
+
+  async createResearchPaper(paper: { title: string; subject?: string; level?: ResearchLevel; language?: ResearchLanguage; data?: Partial<ResearchDocument> }): Promise<ResearchPaper> {
+    return this.safeFetch("/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(paper),
+    });
+  }
+
+  async updateResearchPaper(id: string, updates: { title?: string; subject?: string; level?: ResearchLevel; language?: ResearchLanguage; data?: ResearchDocument }): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteResearchPaper(id: string): Promise<void> {
+    await this.safeFetch(`/api/research/${id}`, { method: "DELETE" });
+  }
+
+  /** The long call (20-60s) — no SSE in phase 2, just a raised server timeout. Callers pass an AbortSignal for the visible cancel button. */
+  async generateResearchPaper(
+    body: { topic: string; level: ResearchLevel; subject?: string; language: ResearchLanguage; targetPages: number; includeSources?: boolean; customInstructions?: string },
+    signal?: AbortSignal,
+  ): Promise<ResearchPaper> {
+    return this.safeFetch("/api/research/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  }
+
+  async extendResearchPaper(id: string, sectionCount: number): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}/extend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sectionCount }),
+    });
+  }
+
+  async expandResearchSection(id: string, sectionId: string, wordTarget: number): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}/sections/${sectionId}/expand`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wordTarget }),
+    });
+  }
+
+  async searchResearchImages(query: string, windowIndex: number): Promise<{ results: ResearchImageCandidate[]; window: number; exhausted: boolean }> {
+    return this.safeFetch(`/api/research/images/search?q=${encodeURIComponent(query)}&window=${windowIndex}`);
+  }
+
+  async saveResearchImages(id: string, candidates: ResearchImageCandidate[]): Promise<ResearchPaper & { failures: { id?: string; url?: string; error: string }[] }> {
+    return this.safeFetch(`/api/research/${id}/images`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidates }),
+    });
+  }
+
+  async updateResearchImage(id: string, imageId: string, updates: { caption?: string; sectionId?: string | null }): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}/images/${imageId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteResearchImage(id: string, imageId: string): Promise<ResearchPaper> {
+    return this.safeFetch(`/api/research/${id}/images/${imageId}`, { method: "DELETE" });
+  }
+
+  // The image-file route requires admin auth, so a plain <img src> in the
+  // preview iframe can't load it — same reasoning as fetchCvPhotoDataUrl.
+  // Fetch it with the bearer token and hand back a data: URL.
+  async fetchResearchImageDataUrl(paperId: string, imageId: string): Promise<string | null> {
+    const token = this.authToken || localStorage.getItem("ps_admin_token");
+    try {
+      const res = await fetch(`/api/research/${paperId}/images/${imageId}/file`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  // Cover-page defaults (school name, teacher, school year) — persisted as shop
+  // settings so the operator doesn't retype the same school fifty times a week.
+  // Not in the shared ShopSettings type (desktop-only, research-specific), so
+  // read/written directly against the admin settings endpoints.
+  async getResearchCoverDefaults(): Promise<{ researchSchoolName: string; researchTeacherName: string; researchSchoolYear: string }> {
+    try {
+      const settings = await this.safeFetch("/api/settings/admin");
+      return {
+        researchSchoolName: settings?.researchSchoolName || "",
+        researchTeacherName: settings?.researchTeacherName || "",
+        researchSchoolYear: settings?.researchSchoolYear || "",
+      };
+    } catch {
+      return { researchSchoolName: "", researchTeacherName: "", researchSchoolYear: "" };
+    }
+  }
+
+  async saveResearchCoverDefaults(defaults: { researchSchoolName?: string; researchTeacherName?: string; researchSchoolYear?: string }): Promise<void> {
+    await this.safeFetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(defaults),
+    });
   }
 
   async updateCredentialSettings(settings: Partial<CredentialSettings>): Promise<CredentialSettings> {

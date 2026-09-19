@@ -73,6 +73,7 @@ export const TRANSLATIONS: Translations = {
   studioTitle: { en: "Print Studio", ar: "استوديو الطباعة" },
   cardsTab: { en: "Cards & IDs", ar: "بطاقات وبطاقات تعريف" },
   pdfTab: { en: "PDF Jobs", ar: "ملفات PDF" },
+  researchTab: { en: "Research Papers", ar: "البحوث المدرسية" },
   frontImage: { en: "Front Image", ar: "الصورة الأمامية" },
   backImage: { en: "Back Image", ar: "الصورة الخلفية" },
   uploadFront: { en: "Upload front image", ar: "رفع الصورة الأمامية" },
@@ -159,6 +160,16 @@ export const TRANSLATIONS: Translations = {
   studioNoPdfYet: { en: "No PDF loaded", ar: "لم يتم تحميل أي ملف PDF" },
   studioNoPdfHint: { en: "Upload a file or open one from your saved print jobs to get started.", ar: "ارفع ملفًا أو افتح واحدًا من طلباتك المحفوظة للبدء." },
   studioDropOrChoose: { en: "Click to upload a PDF", ar: "انقر لرفع ملف PDF" },
+  // PDF Studio — merging several PDFs into one page list
+  studioAddPdf: { en: "Add PDF", ar: "إضافة PDF" },
+  studioAddFromJobs: { en: "Add from print jobs", ar: "إضافة من طلبات الطباعة" },
+  studioMergedFiles: { en: "{n} files merged", ar: "تم دمج {n} ملفات" },
+  studioMergeHint: {
+    en: "Pages from every added file share one list — reorder, rotate or delete them together.",
+    ar: "صفحات كل الملفات المضافة في قائمة واحدة — رتبها أو أدرها أو احذفها معًا.",
+  },
+  studioRemoveFile: { en: "Remove file", ar: "إزالة الملف" },
+  studioNotAPdf: { en: "Only PDF files can be added", ar: "يمكن إضافة ملفات PDF فقط" },
   up: { en: "Up", ar: "أعلى" },
   down: { en: "Down", ar: "أسفل" },
   // Bulk actions
