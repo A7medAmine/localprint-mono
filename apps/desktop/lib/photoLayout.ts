@@ -1,18 +1,21 @@
-// Pure full-page photo layout engine. No React, no DOM (an offscreen canvas may
-// be passed in by consumers for rendering, but the math here is framework-free
+// Pure photo-page layout engine. No React, no DOM (an offscreen canvas may be
+// passed in by consumers for rendering, but the math here is framework-free
 // and unit-tested).
 //
-// Concept: one photo per page. For each photo the engine decides whether the
-// page should be portrait or landscape (auto-rotate), applies any manual 90°
-// rotation, computes the printable area from the margins, then places the
-// photo with `cover` (crop) or `contain` (letterbox). Consumers render the
-// result — the preview grid and the PDF builder — from the emitted LaidOutPage.
+// Concept: a page is a `PageGroup` of one or more photos. Each photo gets a
+// `Placement` — a manual position + size in page points. A group with a
+// single photo defaults to filling the whole printable area (today's
+// full-page behavior); a group with several photos gets an initial
+// equal-width column split that the UI then lets the operator drag/resize
+// freely. Consumers (the preview grid and the PDF builder) resolve each
+// placement's crop/letterbox via `resolvePlacementDraw`.
 
 export type ObjectFit = "cover" | "contain";
 
 export interface PageSpec {
   // Printable page in points (1pt = 1/72in), portrait values by convention.
-  // The engine swaps them when auto-rotate decides the photo wants landscape.
+  // The engine swaps them when auto-rotate decides a single-photo page wants
+  // landscape.
   widthPt: number;
   heightPt: number;
 }
@@ -30,7 +33,7 @@ export interface PhotoItem {
   bitmap?: ImageBitmap | HTMLImageElement;
   naturalWidth: number;
   naturalHeight: number;
-  // Per-photo overrides (undefined = use the batch default).
+  // Per-photo defaults (used only when no placement override exists).
   rotateQuarterTurns?: 0 | 1 | 2 | 3; // manual, applied ON TOP of auto-rotate
   objectFit?: ObjectFit;
 }
@@ -57,9 +60,9 @@ export interface DrawSpec {
   y: number;
   w: number;
   h: number;
-  // Printable area (page minus margins). For `cover` the photo fills it; for
-  // `contain` the letterbox background fills the leftover around `draw`.
-  clipRect: { x: number; y: number; w: number; h: number } | null;
+  // The placement's own rect (its "cell"). For `cover` the photo fills it;
+  // for `contain` the letterbox background fills the leftover around `draw`.
+  clipRect: { x: number; y: number; w: number; h: number };
   // For `cover`: the visible region of the source, in rotated source pixels.
   sourceCropRect: SourceCropRect | null;
   // Manual quarter turns × 90°, for the renderer to pre-rotate the source.
@@ -68,12 +71,40 @@ export interface DrawSpec {
   background: string;
 }
 
-export interface LaidOutPage {
+// One photo's manual position + size on its page, in page points.
+export interface Placement {
   photoId: string;
-  // Effective page size — already swapped to landscape when auto-rotate fired.
+  xPt: number;
+  yPt: number;
+  wPt: number;
+  hPt: number;
+  rotateQuarterTurns: 0 | 1 | 2 | 3;
+  objectFit: ObjectFit;
+}
+
+// A manual edit to a placement — undefined fields fall back to the
+// auto-computed value. Keyed by photoId in the caller's state.
+export interface PlacementOverride {
+  xPt?: number;
+  yPt?: number;
+  wPt?: number;
+  hPt?: number;
+  rotateQuarterTurns?: 0 | 1 | 2 | 3;
+  objectFit?: ObjectFit;
+}
+
+// The photos sharing one physical page.
+export interface PageGroup {
+  id: string;
+  itemIds: string[];
+}
+
+export interface LaidOutPage {
+  // Effective page size — already swapped to landscape for a single-photo
+  // group when auto-rotate fired.
   pageWidthPt: number;
   pageHeightPt: number;
-  draw: DrawSpec;
+  placements: Placement[];
 }
 
 export const MM_TO_PT = 72 / 25.4;
@@ -84,8 +115,13 @@ export function mmToPt(mm: number): number {
 
 // Auto-rotate threshold: rotate the page to landscape only when it gains at
 // least 1% in rendered photo area. Near-square photos therefore keep the page
-// portrait instead of flipping pointlessly.
+// portrait instead of flipping pointlessly. Only applies to single-photo
+// pages — a multi-photo page's orientation is ambiguous, so it always uses
+// the base page orientation.
 const AUTO_ROTATE_GAIN = 0.01;
+
+// Smallest a placement may be resized to, in page points (~7mm).
+export const MIN_PLACEMENT_PT = 20;
 
 /**
  * Printable rect = page minus margins (mm→pt). If the margins would swallow
@@ -114,88 +150,145 @@ export function computePrintableRect(
   return { x: left, y: top, w, h };
 }
 
-function effectiveDims(item: PhotoItem): { w: number; h: number } {
-  const manualOdd = (item.rotateQuarterTurns ?? 0) % 2 === 1;
-  return manualOdd
-    ? { w: item.naturalHeight, h: item.naturalWidth }
-    : { w: item.naturalWidth, h: item.naturalHeight };
+function effectiveDims(naturalWidth: number, naturalHeight: number, rotateQuarterTurns: number): { w: number; h: number } {
+  const manualOdd = (rotateQuarterTurns ?? 0) % 2 === 1;
+  return manualOdd ? { w: naturalHeight, h: naturalWidth } : { w: naturalWidth, h: naturalHeight };
 }
 
-export function layoutBatch(items: PhotoItem[], options: BatchOptions): LaidOutPage[] {
-  const pages: LaidOutPage[] = [];
-  for (const item of items) {
-    const { w: effW, h: effH } = effectiveDims(item);
-    const manual = (item.rotateQuarterTurns ?? 0) % 4;
+/**
+ * Resolves one placement's crop/letterbox draw spec. Shared by the preview
+ * canvas and the PDF baker so the two never drift apart.
+ */
+export function resolvePlacementDraw(item: PhotoItem, placement: Placement, background: string): DrawSpec {
+  const clipRect = { x: placement.xPt, y: placement.yPt, w: placement.wPt, h: placement.hPt };
+  const rotationDeg = (placement.rotateQuarterTurns % 4) * 90;
+  const { w: effW, h: effH } = effectiveDims(item.naturalWidth, item.naturalHeight, placement.rotateQuarterTurns);
 
-    // Auto-rotate decision — swap the page to landscape when the photo is
-    // landscape-ish and gains rendered area by doing so.
+  if (effW <= 0 || effH <= 0) {
+    return { x: clipRect.x, y: clipRect.y, w: clipRect.w, h: clipRect.h, clipRect, sourceCropRect: null, rotationDeg, background };
+  }
+
+  if (placement.objectFit === "cover") {
+    const scale = Math.max(clipRect.w / effW, clipRect.h / effH);
+    const rW = effW * scale;
+    const rH = effH * scale;
+    return {
+      x: clipRect.x,
+      y: clipRect.y,
+      w: clipRect.w,
+      h: clipRect.h,
+      clipRect,
+      sourceCropRect: {
+        sx: (rW - clipRect.w) / 2 / scale,
+        sy: (rH - clipRect.h) / 2 / scale,
+        sw: clipRect.w / scale,
+        sh: clipRect.h / scale,
+      },
+      rotationDeg,
+      background,
+    };
+  }
+
+  const scale = Math.min(clipRect.w / effW, clipRect.h / effH);
+  const rW = effW * scale;
+  const rH = effH * scale;
+  return {
+    x: clipRect.x + (clipRect.w - rW) / 2,
+    y: clipRect.y + (clipRect.h - rH) / 2,
+    w: rW,
+    h: rH,
+    clipRect,
+    sourceCropRect: null,
+    rotationDeg,
+    background,
+  };
+}
+
+function resolvePlacement(
+  item: PhotoItem,
+  fallbackRect: { x: number; y: number; w: number; h: number },
+  override: PlacementOverride | undefined,
+  batchFit: ObjectFit,
+): Placement {
+  return {
+    photoId: item.id,
+    xPt: override?.xPt ?? fallbackRect.x,
+    yPt: override?.yPt ?? fallbackRect.y,
+    wPt: override?.wPt ?? fallbackRect.w,
+    hPt: override?.hPt ?? fallbackRect.h,
+    rotateQuarterTurns: override?.rotateQuarterTurns ?? item.rotateQuarterTurns ?? 0,
+    objectFit: override?.objectFit ?? item.objectFit ?? batchFit,
+  };
+}
+
+/**
+ * Lays out one page group. Single-photo groups auto-rotate the page and fill
+ * the whole printable rect (unless a manual placement override exists,
+ * e.g. from a drag). Multi-photo groups get an initial equal-width column
+ * split across the printable rect, again overridable per photo.
+ */
+export function layoutGroups(
+  groups: PageGroup[],
+  itemsById: Record<string, PhotoItem>,
+  overridesById: Record<string, PlacementOverride>,
+  options: BatchOptions,
+): LaidOutPage[] {
+  const pages: LaidOutPage[] = [];
+
+  for (const group of groups) {
+    const groupItems = group.itemIds.map((id) => itemsById[id]).filter((it): it is PhotoItem => !!it);
+    if (groupItems.length === 0) continue;
+
     let pageW = options.page.widthPt;
     let pageH = options.page.heightPt;
-    if (options.autoRotate && effW > 0 && effH > 0) {
-      const pw = options.page.widthPt;
-      const ph = options.page.heightPt;
-      const sPortrait = Math.min(pw / effW, ph / effH);
-      const sLandscape = Math.min(ph / effW, pw / effH);
-      if (sLandscape > sPortrait * (1 + AUTO_ROTATE_GAIN)) {
-        pageW = ph;
-        pageH = pw;
+
+    if (groupItems.length === 1) {
+      const item = groupItems[0];
+      const override = overridesById[item.id];
+      const rotate = override?.rotateQuarterTurns ?? item.rotateQuarterTurns ?? 0;
+      const { w: effW, h: effH } = effectiveDims(item.naturalWidth, item.naturalHeight, rotate);
+      if (options.autoRotate && effW > 0 && effH > 0) {
+        const pw = options.page.widthPt;
+        const ph = options.page.heightPt;
+        const sPortrait = Math.min(pw / effW, ph / effH);
+        const sLandscape = Math.min(ph / effW, pw / effH);
+        if (sLandscape > sPortrait * (1 + AUTO_ROTATE_GAIN)) {
+          pageW = ph;
+          pageH = pw;
+        }
       }
     }
 
     const printable = computePrintableRect(pageW, pageH, options.margins);
-    const fit = item.objectFit ?? options.fit;
-    const rotationDeg = manual * 90;
+    const placements: Placement[] = [];
 
-    let draw: DrawSpec;
-    if (fit === "cover") {
-      const scale = Math.max(printable.w / effW, printable.h / effH);
-      const rW = effW * scale;
-      const rH = effH * scale;
-      draw = {
-        x: printable.x,
-        y: printable.y,
-        w: printable.w,
-        h: printable.h,
-        clipRect: { x: printable.x, y: printable.y, w: printable.w, h: printable.h },
-        sourceCropRect: {
-          sx: (rW - printable.w) / 2 / scale,
-          sy: (rH - printable.h) / 2 / scale,
-          sw: printable.w / scale,
-          sh: printable.h / scale,
-        },
-        rotationDeg,
-        background: options.background,
-      };
+    if (groupItems.length === 1) {
+      const item = groupItems[0];
+      placements.push(resolvePlacement(item, printable, overridesById[item.id], options.fit));
     } else {
-      const scale = Math.min(printable.w / effW, printable.h / effH);
-      const rW = effW * scale;
-      const rH = effH * scale;
-      draw = {
-        x: printable.x + (printable.w - rW) / 2,
-        y: printable.y + (printable.h - rH) / 2,
-        w: rW,
-        h: rH,
-        clipRect: { x: printable.x, y: printable.y, w: printable.w, h: printable.h },
-        sourceCropRect: null,
-        rotationDeg,
-        background: options.background,
-      };
+      const colW = printable.w / groupItems.length;
+      groupItems.forEach((item, i) => {
+        const fallback = { x: printable.x + i * colW, y: printable.y, w: colW, h: printable.h };
+        placements.push(resolvePlacement(item, fallback, overridesById[item.id], options.fit));
+      });
     }
 
-    pages.push({ photoId: item.id, pageWidthPt: pageW, pageHeightPt: pageH, draw });
+    pages.push({ pageWidthPt: pageW, pageHeightPt: pageH, placements });
   }
+
   return pages;
 }
 
 /**
- * Rendered pixels-per-inch of the photo on paper. The visible source pixels
- * (the crop for `cover`, the whole image for `contain`) are stretched across
- * the printed width, so DPI = visiblePx × 72 / printedPt.
+ * Rendered pixels-per-inch of a placed photo. The visible source pixels (the
+ * crop for `cover`, the whole image for `contain`) are stretched across the
+ * printed width, so DPI = visiblePx × 72 / printedPt.
  */
-export function estimateDpi(item: PhotoItem, page: LaidOutPage): number {
+export function estimateDpi(item: PhotoItem, placement: Placement): number {
   if (item.naturalWidth <= 0 || item.naturalHeight <= 0) return 0;
-  const { w: effW } = effectiveDims(item);
-  const visW = page.draw.sourceCropRect ? page.draw.sourceCropRect.sw : effW;
-  if (visW <= 0 || page.draw.w <= 0) return 0;
-  return (visW * 72) / page.draw.w;
+  const draw = resolvePlacementDraw(item, placement, "#ffffff");
+  const { w: effW } = effectiveDims(item.naturalWidth, item.naturalHeight, placement.rotateQuarterTurns);
+  const visW = draw.sourceCropRect ? draw.sourceCropRect.sw : effW;
+  if (visW <= 0 || draw.w <= 0) return 0;
+  return (visW * 72) / draw.w;
 }

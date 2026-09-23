@@ -28,6 +28,7 @@ import { registerCatalogRoutes } from './server/routes/catalog.js';
 import { registerCredentialRoutes } from './server/routes/credentials.js';
 import { registerCvRoutes } from './server/routes/cvs.js';
 import { registerResearchRoutes } from './server/routes/research.js';
+import { registerPhotoStudioRoutes } from './server/routes/photoStudio.js';
 import { registerFileRoutes } from './server/routes/files.js';
 import { registerGmailRoutes } from './server/routes/gmail.js';
 import { registerInventoryRoutes } from './server/routes/inventory.js';
@@ -122,6 +123,7 @@ registerInventoryRoutes(app);
 registerCredentialRoutes(app);
 registerCvRoutes(app);
 registerResearchRoutes(app);
+registerPhotoStudioRoutes(app);
 registerGmailRoutes(app);
 
 

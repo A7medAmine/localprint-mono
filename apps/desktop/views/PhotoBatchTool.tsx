@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import type { PageSpec, MarginSpec, LaidOutPage, PhotoItem as LayoutItem } from "../lib/photoLayout";
-import { layoutBatch, estimateDpi, mmToPt } from "../lib/photoLayout";
+import type { PageSpec, MarginSpec, LaidOutPage, PhotoItem as LayoutItem, PageGroup, PlacementOverride } from "../lib/photoLayout";
+import { layoutGroups, estimateDpi, computePrintableRect, mmToPt, MIN_PLACEMENT_PT } from "../lib/photoLayout";
 import { buildPhotoPdf } from "../lib/photoPdf";
-import { decodeImageToBitmap, rotateQuarterTurnsToCanvas } from "../lib/imageNormalize";
+import { drawPlacements } from "../lib/photoRender";
+import { decodeImageToBitmap } from "../lib/imageNormalize";
 import { isElectron, printData, getPrinters, PrinterInfo } from "../lib/electronPrint";
 import { storageService } from "../services/storageService";
 import { useLanguage } from "../lib/useLanguage";
@@ -16,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import PhotoSourceModal, { PickedPhoto } from "../components/PhotoSourceModal";
+import ImageSearchModal from "../components/ImageSearchModal";
 import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { consumePhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType, PrinterJobDefaults, ShopSettings } from "../types";
@@ -47,6 +49,8 @@ interface PhotoSnapshot {
     rotateQuarterTurns: 0 | 1 | 2 | 3;
     objectFit: "cover" | "contain" | null;
   }[];
+  groups: PageGroup[];
+  overrides: Record<string, PlacementOverride>;
   paperPreset: PaperPreset;
   customW: number;
   customH: number;
@@ -82,13 +86,34 @@ function parsePrinterPageSize(info: PrinterInfo | undefined): { wmm: number; hmm
   return null;
 }
 
+function defaultGroups(itemIds: string[]): PageGroup[] {
+  return itemIds.map((id) => ({ id, itemIds: [id] }));
+}
+
+const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max));
+
+interface DragState {
+  itemId: string;
+  mode: "move" | "resize";
+  startX: number;
+  startY: number;
+  startRect: { xPt: number; yPt: number; wPt: number; hPt: number };
+  pageWidthPt: number;
+  pageHeightPt: number;
+  scale: number;
+}
+
 const PhotoBatchTool: React.FC = () => {
   const { t, lang } = useLanguage();
   const isRtl = lang === "ar";
   const navigate = useNavigate();
 
   const [items, setItems] = useState<BatchItem[]>([]);
+  const [groups, setGroups] = useState<PageGroup[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, PlacementOverride>>({});
+  const [combineSelection, setCombineSelection] = useState<Set<string>>(new Set());
   const [showPicker, setShowPicker] = useState(false);
+  const [showImageSearch, setShowImageSearch] = useState(false);
   const [paperPreset, setPaperPreset] = useState<PaperPreset>("a4");
   const [customW, setCustomW] = useState(210);
   const [customH, setCustomH] = useState(297);
@@ -115,6 +140,7 @@ const PhotoBatchTool: React.FC = () => {
   // the async restore resolves, so checking it later is too late.
   const handoffPendingRef = useRef(!!sessionStorage.getItem("ps_batch_jobs"));
   const dragIndexRef = useRef<number | null>(null);
+  const placementDragRef = useRef<DragState | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -210,22 +236,29 @@ const PhotoBatchTool: React.FC = () => {
     return customMargins;
   }, [marginPreset, customMargins]);
 
-  const layoutInputs = useMemo<LayoutItem[]>(
+  const itemsById = useMemo<Record<string, LayoutItem>>(
     () =>
-      items.map((it) => ({
-        id: it.id,
-        bitmap: it.bitmap || undefined,
-        naturalWidth: it.naturalWidth,
-        naturalHeight: it.naturalHeight,
-        rotateQuarterTurns: it.rotateQuarterTurns,
-        objectFit: it.objectFit ?? undefined,
-      })),
+      Object.fromEntries(
+        items.map((it) => [
+          it.id,
+          {
+            id: it.id,
+            bitmap: it.bitmap || undefined,
+            naturalWidth: it.naturalWidth,
+            naturalHeight: it.naturalHeight,
+            rotateQuarterTurns: it.rotateQuarterTurns,
+            objectFit: it.objectFit ?? undefined,
+          },
+        ]),
+      ),
     [items],
   );
 
+  const itemsMap = useMemo(() => new Map(Object.entries(itemsById)), [itemsById]);
+
   const pages = useMemo<LaidOutPage[]>(
     () =>
-      layoutBatch(layoutInputs, {
+      layoutGroups(groups, itemsById, overrides, {
         page: pageSpec,
         margins,
         fit,
@@ -233,7 +266,7 @@ const PhotoBatchTool: React.FC = () => {
         background: "#ffffff",
         copies,
       }),
-    [layoutInputs, pageSpec, margins, fit, orientation, copies],
+    [groups, itemsById, overrides, pageSpec, margins, fit, orientation, copies],
   );
 
   const addFiles = useCallback(async (files: { file: File; sourceJobId?: string; sourceCustomerName?: string }[]) => {
@@ -255,6 +288,7 @@ const PhotoBatchTool: React.FC = () => {
       return;
     }
     setItems((prev) => [...prev, ...incoming]);
+    setGroups((prev) => [...prev, ...defaultGroups(incoming.map((it) => it.id))]);
     for (const it of incoming) {
       try {
         const { bitmap, width, height } = await decodeImageToBitmap(it.file);
@@ -310,7 +344,11 @@ const PhotoBatchTool: React.FC = () => {
       setColorMode(snap.colorMode);
       setPaperType(snap.paperType);
       setCopies(snap.copies);
-      if (snap.items?.length) await restoreItems(snap.items);
+      if (snap.items?.length) {
+        await restoreItems(snap.items);
+        setGroups(snap.groups?.length ? snap.groups : defaultGroups(snap.items.map((it) => it.id)));
+        setOverrides(snap.overrides || {});
+      }
     },
     () => setRestored(true),
   );
@@ -327,6 +365,8 @@ const PhotoBatchTool: React.FC = () => {
             rotateQuarterTurns: it.rotateQuarterTurns,
             objectFit: it.objectFit,
           })),
+          groups,
+          overrides,
           paperPreset,
           customW,
           customH,
@@ -352,6 +392,10 @@ const PhotoBatchTool: React.FC = () => {
     );
   }, [addFiles]);
 
+  const onSearchAdd = useCallback((files: File[]) => {
+    addFiles(files.map((file) => ({ file })));
+  }, [addFiles]);
+
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files || []);
@@ -362,39 +406,150 @@ const PhotoBatchTool: React.FC = () => {
     setItems((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }, []);
 
-  const move = useCallback((from: number, to: number) => {
-    setItems((prev) => {
+  const moveGroup = useCallback((from: number, to: number) => {
+    setGroups((prev) => {
       if (from < 0 || from >= prev.length || to < 0 || to >= prev.length || from === to) return prev;
       const next = [...prev];
-      const [movedItem] = next.splice(from, 1);
-      next.splice(to, 0, movedItem);
+      const [movedGroup] = next.splice(from, 1);
+      next.splice(to, 0, movedGroup);
       return next;
     });
   }, []);
 
   const removeItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((p) => p.id !== id));
+    setGroups((prev) => prev.map((g) => ({ ...g, itemIds: g.itemIds.filter((x) => x !== id) })).filter((g) => g.itemIds.length > 0));
+    setOverrides((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setCombineSelection((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
 
+  const toggleGroupSelection = useCallback((group: PageGroup) => {
+    setCombineSelection((prev) => {
+      const next = new Set(prev);
+      const allSelected = group.itemIds.every((id) => next.has(id));
+      if (allSelected) group.itemIds.forEach((id) => next.delete(id));
+      else group.itemIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, []);
+
+  const combineSelected = useCallback(() => {
+    if (combineSelection.size < 2) return;
+    setGroups((prev) => {
+      const selectedIds = combineSelection;
+      const firstIndex = prev.findIndex((g) => g.itemIds.some((id) => selectedIds.has(id)));
+      const allSelectedInOrder = prev.flatMap((g) => g.itemIds).filter((id) => selectedIds.has(id));
+      const rest = prev
+        .map((g) => ({ ...g, itemIds: g.itemIds.filter((id) => !selectedIds.has(id)) }))
+        .filter((g) => g.itemIds.length > 0);
+      const insertAt = prev.slice(0, firstIndex).filter((g) => g.itemIds.some((id) => !selectedIds.has(id))).length;
+      const newGroup: PageGroup = { id: crypto.randomUUID(), itemIds: allSelectedInOrder };
+      const next = [...rest];
+      next.splice(insertAt, 0, newGroup);
+      return next;
+    });
+    setOverrides((prev) => {
+      const next = { ...prev };
+      combineSelection.forEach((id) => delete next[id]);
+      return next;
+    });
+    setCombineSelection(new Set());
+  }, [combineSelection]);
+
+  const splitGroup = useCallback((groupId: string) => {
+    setGroups((prev) => {
+      const idx = prev.findIndex((g) => g.id === groupId);
+      if (idx === -1) return prev;
+      const group = prev[idx];
+      if (group.itemIds.length <= 1) return prev;
+      const singles = group.itemIds.map((id) => ({ id: crypto.randomUUID(), itemIds: [id] }));
+      const next = [...prev];
+      next.splice(idx, 1, ...singles);
+      return next;
+    });
+    setOverrides((prev) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group) return prev;
+      const next = { ...prev };
+      group.itemIds.forEach((id) => delete next[id]);
+      return next;
+    });
+  }, [groups]);
+
+  const snapFullPage = useCallback((itemId: string, printable: { x: number; y: number; w: number; h: number }) => {
+    setOverrides((prev) => ({ ...prev, [itemId]: { xPt: printable.x, yPt: printable.y, wPt: printable.w, hPt: printable.h } }));
+  }, []);
+
+  const beginPlacementDrag = (
+    e: React.PointerEvent,
+    itemId: string,
+    mode: "move" | "resize",
+    rect: { xPt: number; yPt: number; wPt: number; hPt: number },
+    pageWidthPt: number,
+    pageHeightPt: number,
+    scale: number,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignored */ }
+    placementDragRef.current = { itemId, mode, startX: e.clientX, startY: e.clientY, startRect: { ...rect }, pageWidthPt, pageHeightPt, scale };
+  };
+
+  const onPlacementDragMove = (e: React.PointerEvent) => {
+    const d = placementDragRef.current;
+    if (!d) return;
+    e.preventDefault();
+    const dxPt = (e.clientX - d.startX) / d.scale;
+    const dyPt = (e.clientY - d.startY) / d.scale;
+    if (d.mode === "move") {
+      const xPt = clamp(d.startRect.xPt + dxPt, 0, Math.max(0, d.pageWidthPt - d.startRect.wPt));
+      const yPt = clamp(d.startRect.yPt + dyPt, 0, Math.max(0, d.pageHeightPt - d.startRect.hPt));
+      setOverrides((prev) => ({ ...prev, [d.itemId]: { ...prev[d.itemId], xPt, yPt } }));
+    } else {
+      const wPt = clamp(d.startRect.wPt + dxPt, MIN_PLACEMENT_PT, Math.max(MIN_PLACEMENT_PT, d.pageWidthPt - d.startRect.xPt));
+      const hPt = clamp(d.startRect.hPt + dyPt, MIN_PLACEMENT_PT, Math.max(MIN_PLACEMENT_PT, d.pageHeightPt - d.startRect.yPt));
+      setOverrides((prev) => ({ ...prev, [d.itemId]: { ...prev[d.itemId], xPt: d.startRect.xPt, yPt: d.startRect.yPt, wPt, hPt } }));
+    }
+  };
+
+  const endPlacementDrag = () => {
+    placementDragRef.current = null;
+  };
+
+  const failedItems = items.filter((it) => it.error);
+  const failedIds = useMemo(() => new Set(failedItems.map((it) => it.id)), [failedItems]);
   const totalMB = items.reduce((sum, it) => sum + it.file.size, 0) / (1024 * 1024);
   const decodedCount = items.filter((it) => it.bitmap).length;
-  const failedItems = items.filter((it) => it.error);
   const allDecoded = items.length > 0 && decodedCount === items.length && failedItems.length === 0;
 
   // Per-photo DPI from the layout, for the low-res badge.
   const dpiByPhoto = useMemo(() => {
     const map: Record<string, number> = {};
     for (const page of pages) {
-      const it = layoutInputs.find((x) => x.id === page.photoId);
-      if (it) map[page.photoId] = estimateDpi(it, page);
+      for (const placement of page.placements) {
+        const it = itemsById[placement.photoId];
+        if (it) map[placement.photoId] = estimateDpi(it, placement);
+      }
     }
     return map;
-  }, [pages, layoutInputs]);
+  }, [pages, itemsById]);
 
-  // Live price preview.
+  // Live price preview — billed per physical sheet, not per photo, since a
+  // page can now hold several combined images.
   const paper = paperTypes.find((pt) => pt.id === paperType);
   const perPageRate = paper ? (colorMode === "bw" ? paper.blackWhitePerPage : paper.colorPerPage) : 0;
-  const sheetCount = (items.length - failedItems.length) * copies;
+  const billablePages = groups.filter((g) => g.itemIds.some((id) => !failedIds.has(id))).length;
+  const sheetCount = billablePages * copies;
   const price = perPageRate * sheetCount;
   const currency = settings.currency || "DZD";
 
@@ -414,15 +569,16 @@ const PhotoBatchTool: React.FC = () => {
     if (building) return null;
     setBuilding(true);
     try {
+      const layoutItemsMap = new Map(items.map((it) => [it.id, itemsById[it.id]]));
       const imageMap = new Map(items.map((it) => [it.id, it.bitmap!]));
-      return await buildPhotoPdf(pages, imageMap, copies);
+      return await buildPhotoPdf(pages, layoutItemsMap, imageMap, copies);
     } catch (e) {
       toast({ title: isRtl ? "فشل إنشاء الملف" : "Failed to build PDF", description: errorMessage(e), variant: "destructive" });
       return null;
     } finally {
       setBuilding(false);
     }
-  }, [items, failedItems, building, pages, copies, isRtl]);
+  }, [items, failedItems, building, pages, itemsById, copies, isRtl]);
 
   const handlePrint = async () => {
     const blob = await buildPdf();
@@ -509,45 +665,19 @@ const PhotoBatchTool: React.FC = () => {
     }
   };
 
-  const drawPreview = (canvas: HTMLCanvasElement | null, page: LaidOutPage, item: BatchItem) => {
+  const drawGroupPreview = (canvas: HTMLCanvasElement | null, page: LaidOutPage, w: number, h: number, scale: number) => {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const scale = Math.min(200 / page.pageWidthPt, 260 / page.pageHeightPt);
-    canvas.width = Math.max(1, Math.round(page.pageWidthPt * scale));
-    canvas.height = Math.max(1, Math.round(page.pageHeightPt * scale));
-    ctx.save();
-    ctx.scale(scale, scale);
+    canvas.width = w;
+    canvas.height = h;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, page.pageWidthPt, page.pageHeightPt);
+    ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#d1d5db";
-    ctx.lineWidth = 1 / scale;
-    ctx.strokeRect(0, 0, page.pageWidthPt, page.pageHeightPt);
-    const clip = page.draw.clipRect!;
-    if (!item.bitmap) {
-      ctx.fillStyle = "#f3f4f6";
-      ctx.fillRect(clip.x, clip.y, clip.w, clip.h);
-      ctx.restore();
-      return;
-    }
-    const drawSrc = page.draw.rotationDeg ? rotateQuarterTurnsToCanvas(item.bitmap, page.draw.rotationDeg / 90) : item.bitmap;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(clip.x, clip.y, clip.w, clip.h);
-    ctx.clip();
-    if (page.draw.sourceCropRect) {
-      const { sx, sy, sw, sh } = page.draw.sourceCropRect;
-      ctx.drawImage(drawSrc, sx, sy, sw, sh, clip.x, clip.y, clip.w, clip.h);
-    } else {
-      const s = Math.min(clip.w / drawSrc.width, clip.h / drawSrc.height);
-      const rw = drawSrc.width * s;
-      const rh = drawSrc.height * s;
-      ctx.fillStyle = page.draw.background;
-      ctx.fillRect(clip.x, clip.y, clip.w, clip.h);
-      ctx.drawImage(drawSrc, clip.x + (clip.w - rw) / 2, clip.y + (clip.h - rh) / 2, rw, rh);
-    }
-    ctx.restore();
-    ctx.restore();
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    const sourcesById = new Map(items.map((it) => [it.id, it.bitmap || undefined]));
+    drawPlacements(ctx, page, itemsMap, sourcesById, scale);
   };
 
   const marginButtons: { mm: number; label: string }[] = [
@@ -558,7 +688,7 @@ const PhotoBatchTool: React.FC = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       {/* Controls */}
       <div className="lg:col-span-1 space-y-4">
         <Card className="shadow-none">
@@ -566,9 +696,14 @@ const PhotoBatchTool: React.FC = () => {
             <CardTitle className="text-sm font-semibold">{t("addPhotos")}</CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0 space-y-3">
-            <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setShowPicker(true)}>
-              {t("fromCustomer")}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowPicker(true)}>
+                {t("fromCustomer")}
+              </Button>
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowImageSearch(true)}>
+                {t("searchImages")}
+              </Button>
+            </div>
             <div
               role="button"
               tabIndex={0}
@@ -793,94 +928,162 @@ const PhotoBatchTool: React.FC = () => {
       </div>
 
       {/* Preview grid */}
-      <div className="lg:col-span-2">
+      <div className="lg:col-span-3">
         <Card className="shadow-none">
           <CardHeader className="p-4 pb-2 flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold">
-              {t("preview")} &middot; {items.length} {t("pages")}
+              {t("preview")} &middot; {groups.length} {t("pages")}
             </CardTitle>
-            {items.length > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs text-destructive h-auto px-2 py-1" onClick={() => setItems([])}>
-                {t("clearAll")}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {combineSelection.size >= 2 && (
+                <Button variant="outline" size="sm" className="text-xs h-auto px-2 py-1" onClick={combineSelected}>
+                  {t("combineIntoPage")} ({combineSelection.size})
+                </Button>
+              )}
+              {items.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-destructive h-auto px-2 py-1"
+                  onClick={() => { setItems([]); setGroups([]); setOverrides({}); setCombineSelection(new Set()); }}
+                >
+                  {t("clearAll")}
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            {items.length === 0 ? (
+            {groups.length === 0 ? (
               <div className="flex items-center justify-center h-[300px] bg-muted/30 rounded-xl text-muted-foreground text-sm">{t("noPhotos")}</div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {pages.map((page, i) => {
-                  const item = items.find((it) => it.id === page.photoId)!;
-                  const dpi = dpiByPhoto[page.photoId];
-                  const lowRes = !!item.bitmap && dpi > 0 && dpi < 150;
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                {groups.map((group, i) => {
+                  const page = pages[i];
+                  if (!page) return null;
+                  const scale = Math.min(420 / page.pageWidthPt, 520 / page.pageHeightPt);
+                  const canvasW = Math.max(1, Math.round(page.pageWidthPt * scale));
+                  const canvasH = Math.max(1, Math.round(page.pageHeightPt * scale));
+                  const printable = computePrintableRect(page.pageWidthPt, page.pageHeightPt, margins);
+                  const groupSelected = group.itemIds.every((id) => combineSelection.has(id));
+                  const names = group.itemIds.map((id) => items.find((it) => it.id === id)?.file.name).filter(Boolean).join(", ");
+
                   return (
                     <div
-                      key={page.photoId}
+                      key={group.id}
                       role="listitem"
                       draggable
                       onDragStart={() => { dragIndexRef.current = i; }}
                       onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.preventDefault(); const from = dragIndexRef.current; if (from !== null && from !== i) move(from, i); dragIndexRef.current = null; }}
-                      className="rounded-xl border border-border bg-card p-2 cursor-grab active:cursor-grabbing"
+                      onDrop={(e) => { e.preventDefault(); const from = dragIndexRef.current; if (from !== null && from !== i) moveGroup(from, i); dragIndexRef.current = null; }}
+                      className="rounded-xl border border-border bg-card p-2"
                     >
-                      <div className="relative">
-                        <canvas ref={(el) => drawPreview(el, page, item)} className="w-full h-auto rounded-lg border border-border" />
-                        {item.error && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/80 rounded-lg text-xs text-red-700 dark:text-red-200 p-2 text-center">
-                            {item.error}
-                          </div>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <input
+                          type="checkbox"
+                          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 cursor-pointer"
+                          checked={groupSelected}
+                          onChange={() => toggleGroupSelection(group)}
+                          title={t("selectMode")}
+                        />
+                        {group.itemIds.length > 1 && (
+                          <span className="text-xs text-muted-foreground">{group.itemIds.length}&times;</span>
                         )}
-                        {lowRes && (
-                          <span
-                            className="absolute top-1.5 left-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold"
-                            title={isRtl ? `دقة منخفضة — قد تبدو الصورة مشوشة (~${Math.round(dpi)} DPI)` : `Low resolution — may look pixelated at this size (~${Math.round(dpi)} DPI)`}
-                          >
-                            !
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 mt-1.5">
-                        <div className="flex flex-col me-auto">
-                          <button
-                            className="text-gray-400 hover:text-foreground p-0.5"
-                            title={isRtl ? "لأعلى" : "Move up"}
-                            onClick={() => move(i, i - 1)}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            className="text-gray-400 hover:text-foreground p-0.5"
-                            title={isRtl ? "لأسفل" : "Move down"}
-                            onClick={() => move(i, i + 1)}
-                          >
-                            ▼
-                          </button>
+                        <div className="ms-auto flex items-center gap-0.5">
+                          {group.itemIds.length > 1 && (
+                            <button
+                              className="px-1.5 py-0.5 rounded text-xs text-muted-foreground hover:bg-muted"
+                              onClick={() => splitGroup(group.id)}
+                            >
+                              {t("splitPage")}
+                            </button>
+                          )}
+                          <button className="text-gray-400 hover:text-foreground p-0.5 cursor-grab active:cursor-grabbing" title={isRtl ? "لأعلى" : "Move up"} onClick={() => moveGroup(i, i - 1)}>▲</button>
+                          <button className="text-gray-400 hover:text-foreground p-0.5" title={isRtl ? "لأسفل" : "Move down"} onClick={() => moveGroup(i, i + 1)}>▼</button>
                         </div>
-                        <button
-                          className="p-1 rounded-lg text-gray-400 hover:text-foreground hover:bg-muted"
-                          title={t("rotate90")}
-                          onClick={() => updateItem(page.photoId, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 })}
-                         aria-label={t("rotate90")}>
-                          <Icon name="refresh" className="w-4 h-4" />
-                        </button>
-                        <button
-                          className="p-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted"
-                          title={t("fillMode")}
-                          onClick={() => updateItem(page.photoId, { objectFit: (item.objectFit ?? fit) === "cover" ? "contain" : "cover" })}
-                        >
-                          {(item.objectFit ?? fit) === "cover" ? t("fillCover") : t("fitContain")}
-                        </button>
-                        <button
-                          className="p-1 ms-auto rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                          title={t("remove")}
-                          onClick={() => removeItem(page.photoId)}
-                         aria-label={t("remove")}>
-                          <Icon name="x" className="w-4 h-4" />
-                        </button>
                       </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground truncate" title={item.file.name}>
-                        {item.file.name}
+
+                      <div
+                        className="relative bg-white border border-border rounded-lg overflow-hidden mx-auto"
+                        style={{ width: canvasW, height: canvasH }}
+                      >
+                        <canvas ref={(el) => drawGroupPreview(el, page, canvasW, canvasH, scale)} className="absolute inset-0" style={{ width: canvasW, height: canvasH }} />
+                        {page.placements.map((placement) => {
+                          const item = items.find((it) => it.id === placement.photoId);
+                          if (!item) return null;
+                          const dpi = dpiByPhoto[placement.photoId];
+                          const lowRes = !!item.bitmap && dpi > 0 && dpi < 150;
+                          const left = placement.xPt * scale;
+                          const top = placement.yPt * scale;
+                          const w = placement.wPt * scale;
+                          const h = placement.hPt * scale;
+                          return (
+                            <div
+                              key={placement.photoId}
+                              className="absolute border border-dashed border-indigo-400/70 group/placement select-none"
+                              style={{ left, top, width: w, height: h, touchAction: "none" }}
+                              onPointerDown={(e) => beginPlacementDrag(e, placement.photoId, "move", { xPt: placement.xPt, yPt: placement.yPt, wPt: placement.wPt, hPt: placement.hPt }, page.pageWidthPt, page.pageHeightPt, scale)}
+                              onPointerMove={onPlacementDragMove}
+                              onPointerUp={endPlacementDrag}
+                            >
+                              {item.error && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/80 text-xs text-red-700 dark:text-red-200 p-1 text-center">
+                                  {item.error}
+                                </div>
+                              )}
+                              {lowRes && (
+                                <span
+                                  className="absolute top-0.5 start-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold"
+                                  title={isRtl ? `دقة منخفضة (~${Math.round(dpi)} DPI)` : `Low resolution (~${Math.round(dpi)} DPI)`}
+                                >
+                                  !
+                                </span>
+                              )}
+                              <div className="absolute -top-6 start-0 hidden group-hover/placement:flex items-center gap-0.5 bg-card border border-border rounded-md shadow px-1 py-0.5 z-10 whitespace-nowrap">
+                                <button
+                                  className="p-0.5 rounded text-gray-400 hover:text-foreground hover:bg-muted"
+                                  title={t("rotate90")}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); updateItem(item.id, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 }); }}
+                                >
+                                  <Icon name="refresh" className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
+                                  title={t("fillMode")}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); updateItem(item.id, { objectFit: (item.objectFit ?? fit) === "cover" ? "contain" : "cover" }); }}
+                                >
+                                  {(item.objectFit ?? fit) === "cover" ? t("fillCover") : t("fitContain")}
+                                </button>
+                                <button
+                                  className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
+                                  title={t("fullPage")}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); snapFullPage(item.id, printable); }}
+                                >
+                                  {t("fullPage")}
+                                </button>
+                                <button
+                                  className="p-0.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  title={t("remove")}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
+                                >
+                                  <Icon name="x" className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <div
+                                className="absolute bottom-0 end-0 w-3 h-3 bg-indigo-500 cursor-se-resize opacity-0 group-hover/placement:opacity-100"
+                                onPointerDown={(e) => beginPlacementDrag(e, placement.photoId, "resize", { xPt: placement.xPt, yPt: placement.yPt, wPt: placement.wPt, hPt: placement.hPt }, page.pageWidthPt, page.pageHeightPt, scale)}
+                                onPointerMove={onPlacementDragMove}
+                                onPointerUp={endPlacementDrag}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground truncate" title={names}>
+                        {names}
                       </div>
                     </div>
                   );
@@ -892,6 +1095,7 @@ const PhotoBatchTool: React.FC = () => {
       </div>
 
       <PhotoSourceModal isOpen={showPicker} onClose={() => setShowPicker(false)} onAdd={onPickerAdd} />
+      <ImageSearchModal isOpen={showImageSearch} onClose={() => setShowImageSearch(false)} onAdd={onSearchAdd} />
 
       <Dialog open={showJobForm} onOpenChange={setShowJobForm}>
         <DialogContent>
