@@ -1,12 +1,9 @@
 // Operator login, logout, password change and forgotten-password recovery.
-import { getSettings, setInternalState } from "../../db.js";
+import { setInternalState } from "../../db.js";
 import {
-  consumeEmailCode,
   generateRecoveryCode,
   recoveryCodeStatus,
   recoveryOptions,
-  sendEmailResetCode,
-  verifyEmailCode,
   verifyRecoveryCode,
 } from "../passwordRecovery.js";
 import {
@@ -81,66 +78,39 @@ export function registerAuthRoutes(app) {
 
   // ── Forgotten password ──────────────────────────────────────────────────
   // Which recovery routes this install can offer. Public: the login screen
-  // needs it before anyone is signed in, and it only says yes/no plus a
-  // masked address.
+  // needs it before anyone is signed in, and it only says yes/no.
   app.get("/api/auth/recovery-options", (req, res) => {
     try {
       res.status(200).json(recoveryOptions());
     } catch (err) {
       console.error("❌ Recovery options error:", err);
-      res.status(200).json({ recoveryCode: false, email: null });
+      res.status(200).json({ recoveryCode: false });
     }
   });
 
-  // Mail a 6-digit reset code to the connected Gmail account (never to an
-  // address from the request). Behind the login lockout like any guessable
-  // credential path.
-  app.post("/api/auth/forgot/send-email", loginGuard, async (req, res) => {
-    try {
-      const { sendEmail } = await import("../../services/gmailService.js");
-      const result = await sendEmailResetCode(sendEmail, { shopName: getSettings().shopName || "" });
-      if (!result.ok) {
-        if (result.retryMs) res.set("Retry-After", String(Math.ceil(result.retryMs / 1000)));
-        return res.status(result.status).json({ success: false, error: result.error, retryMs: result.retryMs });
-      }
-      res.status(200).json({ success: true, sentTo: result.sentTo });
-    } catch (err) {
-      console.error("❌ Reset email error:", err);
-      res.status(502).json({ success: false, error: "Could not send the email. Check the Gmail connection." });
-    }
-  });
-
-  // Set a new password with a recovery code or an emailed code. On success
-  // every old session dies, the caller is signed in, and — when the recovery
-  // code was spent — a replacement code is handed back to be saved.
+  // Set a new password with the recovery code. On success every old session
+  // dies, the caller is signed in, and the spent code is replaced by a new one
+  // that is handed back to be saved.
   app.post("/api/auth/forgot/reset", loginGuard, (req, res) => {
     try {
-      const { method, code, newPassword } = req.body || {};
-      if (method !== "recovery" && method !== "email") {
-        return res.status(400).json({ success: false, error: "Unknown recovery method" });
-      }
+      const { code, newPassword } = req.body || {};
       const policyError = passwordPolicyError(newPassword);
       if (policyError) {
         return res.status(400).json({ success: false, error: policyError });
       }
-      const valid = method === "recovery" ? verifyRecoveryCode(code) : verifyEmailCode(code);
-      if (!valid) {
+      if (!verifyRecoveryCode(code)) {
         recordLoginFailure(req);
-        return res.status(400).json({
-          success: false,
-          error: method === "recovery" ? "Invalid recovery code" : "Invalid or expired code",
-        });
+        return res.status(400).json({ success: false, error: "Invalid recovery code" });
       }
 
       clearLoginFailures(req);
       setInternalState("adminPassword", hashPassword(newPassword));
       setMustChangePassword(false);
-      if (method === "email") consumeEmailCode();
-      const newRecoveryCode = method === "recovery" ? generateRecoveryCode() : undefined;
+      const newRecoveryCode = generateRecoveryCode();
 
       revokeOtherTokens(null);
       const token = generateToken();
-      console.log(`🔑 Admin password reset via ${method === "recovery" ? "recovery code" : "email code"}; all sessions invalidated`);
+      console.log("🔑 Admin password reset via recovery code; all sessions invalidated");
       res.status(200).json({ success: true, token, newRecoveryCode });
     } catch (err) {
       console.error("❌ Password reset error:", err);

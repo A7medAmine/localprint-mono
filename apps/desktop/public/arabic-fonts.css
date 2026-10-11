@@ -38,8 +38,9 @@
   text-align: right;
 }
 
-/* An explicitly LTR island inside the RTL page (phone, email, URL fields). */
-[dir="rtl"] [dir="ltr"] {
+/* An explicitly LTR island inside the RTL page (phone, email, URL fields).
+   :where() keeps it at zero specificity so utilities like .text-center win. */
+:where([dir="rtl"] [dir="ltr"]) {
   text-align: left;
 }
 

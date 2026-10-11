@@ -139,13 +139,6 @@ function encodeHeaderWord(value) {
 const toBase64Url = (text) =>
   Buffer.from(text, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-/** Send a new plain-text email from the connected account. */
-export async function sendEmail({ to, subject, text }) {
-  const gmail = await getGmailClient();
-  const message = [`To: ${to}`, `Subject: ${encodeHeaderWord(subject)}`, ...UTF8_TEXT_HEADERS, '', text].join('\r\n');
-  await gmail.users.messages.send({ userId: 'me', requestBody: { raw: toBase64Url(message) } });
-}
-
 export async function sendReply(originalMessageId, replyBody) {
   const gmail = await getGmailClient();
 

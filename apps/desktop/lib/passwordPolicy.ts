@@ -19,13 +19,8 @@ export function translateAuthError(message: string, isRtl: boolean): string {
     "Password must be at least 8 characters": "يجب أن تكون كلمة المرور 8 أحرف على الأقل.",
     "Password cannot be all digits": "لا يمكن أن تتكون كلمة المرور من أرقام فقط.",
     "Choose a password other than the default": "اختر كلمة مرور مختلفة عن الافتراضية.",
-    "Invalid recovery code": "رمز الاسترداد غير صحيح.",
-    "Invalid or expired code": "الرمز غير صحيح أو انتهت صلاحيته.",
+    "Invalid recovery code": "مفتاح الاسترداد غير صحيح.",
     "Too many failed attempts. Try again later.": "محاولات فاشلة كثيرة. حاول لاحقًا.",
-    "No Gmail account is connected to receive a reset code": "لا يوجد حساب Gmail مربوط لاستقبال الرمز.",
-    "A code was sent less than a minute ago. Check your inbox or wait a moment.":
-      "أُرسل رمز منذ أقل من دقيقة. تفقّد بريدك أو انتظر قليلًا.",
-    "Could not send the email. Check the Gmail connection.": "تعذّر إرسال البريد. تحقّق من ربط Gmail.",
   };
   return map[message] ?? message;
 }

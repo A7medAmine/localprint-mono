@@ -71,9 +71,8 @@ owns the translation. A single shared mapper for both apps is still open.
 | `/settings/logo` | POST | Upload shop logo |
 | `/paper-types` | GET, POST, PUT, DELETE | Granular per-type CRUD |
 | `/auth/verify` | POST | `{password}` → `{success}` |
-| `/auth/recovery-options` | GET | Public: `{recoveryCode: bool, email: masked \| null}` for the login screen |
-| `/auth/forgot/send-email` | POST | Mails a 6-digit reset code to the connected Gmail account (never a request-supplied address) |
-| `/auth/forgot/reset` | POST | `{method: "recovery"\|"email", code, newPassword}` → new token; recovery codes are single-use and rotated |
+| `/auth/recovery-options` | GET | Public: `{recoveryCode: bool}` for the login screen |
+| `/auth/forgot/reset` | POST | `{code, newPassword}` → new token + `newRecoveryCode`; recovery keys are single-use and rotated. There is no email reset — the key is handed out (download + save) by the setup wizard, or at the first sign-in of an install that has none |
 | `/auth/recovery-code` | GET, POST | Admin: status / regenerate (POST needs `currentPassword`). Stored as a scrypt hash only — see `server/passwordRecovery.js` |
 | `/discount-rules` | GET, POST, PUT, DELETE | CRUD |
 | `/cvs` | GET, POST, PUT, DELETE | Customer CVs; `/cvs/:id/photo` GET/POST/DELETE, `/cvs/:id/duplicate` POST (copies the photo too) |

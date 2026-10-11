@@ -15,7 +15,6 @@ interface LoginPageProps {
 }
 
 type Mode = "login" | "forgot";
-type RecoveryMethod = "recovery" | "email";
 
 const inputClass =
   "w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500";
@@ -35,14 +34,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
 
   // Forgot-password state
-  const [options, setOptions] = useState<{ recoveryCode: boolean; email: string | null } | null>(null);
-  const [method, setMethod] = useState<RecoveryMethod>("recovery");
+  const [hasRecoveryKey, setHasRecoveryKey] = useState<boolean | null>(null);
   const [code, setCode] = useState("");
-  const [emailSentTo, setEmailSentTo] = useState("");
-  const [sendingEmail, setSendingEmail] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetError, setResetError] = useState("");
+
+  // A freshly issued key is shown before entering the app; the sign-in waits
+  // until the operator confirms they saved it.
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
@@ -55,18 +54,41 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
     navigate(mustChangePassword ? "/admin/setup" : "/admin/dashboard", { replace: true });
   };
 
+  const showKeyThenLogin = (token: string, key: string) => {
+    setPendingToken(token);
+    setNewRecoveryCode(key);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
     setLoginError("");
     const result = await storageService.verifyPassword(password);
-    setSubmitting(false);
-    if (result.success && result.token) {
-      finishLogin(result.token, result.mustChangePassword);
-    } else {
+    if (!result.success || !result.token) {
+      setSubmitting(false);
       setLoginError(result.error ? translateAuthError(result.error, isRtl) : tr("كلمة المرور خاطئة", "Incorrect password"));
+      return;
     }
+    // An install without a recovery key (set up before keys existed) gets one
+    // now, while we still hold the password that authorises it. The default
+    // password goes through the setup wizard instead, which hands one out.
+    if (!result.mustChangePassword) {
+      try {
+        storageService.setAuthToken(result.token);
+        const status = await storageService.getRecoveryCodeStatus();
+        if (!status.hasCode) {
+          const { code: key } = await storageService.createRecoveryCode(password);
+          setSubmitting(false);
+          showKeyThenLogin(result.token, key);
+          return;
+        }
+      } catch {
+        /* best effort — Settings → Password can still make one */
+      }
+    }
+    setSubmitting(false);
+    finishLogin(result.token, result.mustChangePassword);
   };
 
   const openForgot = async () => {
@@ -75,10 +97,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
     setCode("");
     setNewPassword("");
     setConfirmPassword("");
-    setEmailSentTo("");
+    setHasRecoveryKey(null);
     const opts = await storageService.getRecoveryOptions();
-    setOptions(opts);
-    setMethod(opts.recoveryCode || !opts.email ? "recovery" : "email");
+    setHasRecoveryKey(opts.recoveryCode);
   };
 
   const backToLogin = () => {
@@ -86,25 +107,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
     setResetError("");
   };
 
-  const sendEmailCode = async () => {
-    setSendingEmail(true);
-    setResetError("");
-    try {
-      const { sentTo } = await storageService.sendPasswordResetEmail();
-      setEmailSentTo(sentTo);
-    } catch (err) {
-      setResetError(translateAuthError(errorMessage(err), isRtl));
-    } finally {
-      setSendingEmail(false);
-    }
-  };
-
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
     setResetError("");
     if (!code.trim()) {
-      setResetError(method === "recovery" ? tr("أدخل رمز الاسترداد.", "Enter your recovery code.") : tr("أدخل الرمز المرسل إلى بريدك.", "Enter the code from your email."));
+      setResetError(tr("أدخل مفتاح الاسترداد.", "Enter your recovery key."));
       return;
     }
     const policy = passwordPolicyMessage(newPassword, confirmPassword, isRtl);
@@ -114,22 +122,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
     }
     setSubmitting(true);
     try {
-      const result = await storageService.resetForgottenPassword(method, code, newPassword);
-      if (result.newRecoveryCode) {
-        // The old code is spent; show the replacement before entering the app.
-        setPendingToken(result.token);
-        setNewRecoveryCode(result.newRecoveryCode);
-      } else {
-        finishLogin(result.token);
-      }
+      const result = await storageService.resetForgottenPassword(code, newPassword);
+      // The old key is spent; hand out the replacement before entering the app.
+      showKeyThenLogin(result.token, result.newRecoveryCode);
     } catch (err) {
       setResetError(translateAuthError(errorMessage(err), isRtl));
     } finally {
       setSubmitting(false);
     }
   };
-
-  const noRecoveryRoute = options && !options.recoveryCode && !options.email;
 
   return (
     <div className="max-w-md mx-auto mt-16 px-4">
@@ -177,21 +178,24 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
           <>
             <h2 className="text-2xl font-bold mb-2 text-center text-foreground">{tr("استعادة الدخول", "Reset your password")}</h2>
             <p className="text-sm text-muted-foreground text-center mb-6">
-              {tr("أثبت أنك صاحب المتجر ثم اختر كلمة مرور جديدة.", "Prove it's you, then choose a new password.")}
+              {tr(
+                "أدخل مفتاح الاسترداد الذي نزّلته وحفظته، ثم اختر كلمة مرور جديدة.",
+                "Enter the recovery key you downloaded and saved, then choose a new password.",
+              )}
             </p>
 
-            {!options ? (
+            {hasRecoveryKey === null ? (
               <div className="flex justify-center py-6">
                 <Icon name="spinner" className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
-            ) : noRecoveryRoute ? (
+            ) : !hasRecoveryKey ? (
               <div className="space-y-4">
                 <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-2">
-                  <p className="font-semibold">{tr("لم يتم إعداد أي وسيلة استرداد بعد.", "No recovery method has been set up yet.")}</p>
+                  <p className="font-semibold">{tr("لا يوجد مفتاح استرداد لهذا التطبيق.", "This app has no recovery key yet.")}</p>
                   <p>
                     {tr(
-                      "لاستعادة الدخول، يجب أن يكون لديك رمز استرداد (يُنشأ من الإعدادات ← كلمة المرور) أو حساب Gmail مربوط بالتطبيق. تواصل مع الدعم الفني لإعادة التعيين يدويًا.",
-                      "To recover access you need a recovery code (created in Settings → Password) or a Gmail account connected to the app. Contact support for a manual reset.",
+                      "يُعطى المفتاح عند أول تسجيل دخول. تواصل مع الدعم الفني لإعادة تعيين كلمة المرور يدويًا.",
+                      "A key is handed out at the first sign-in. Contact support for a manual password reset.",
                     )}
                   </p>
                 </div>
@@ -201,90 +205,37 @@ const LoginPage: React.FC<LoginPageProps> = ({ lang, onLoginSuccess }) => {
               </div>
             ) : (
               <form onSubmit={handleReset} className="space-y-4">
-                {options.recoveryCode && options.email && (
-                  <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted" role="tablist">
-                    {(["recovery", "email"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        role="tab"
-                        aria-selected={method === m}
-                        onClick={() => { setMethod(m); setCode(""); setResetError(""); }}
-                        className={`py-1.5 rounded-md text-sm font-medium transition ${method === m ? "bg-card shadow text-foreground" : "text-muted-foreground"}`}
-                      >
-                        {m === "recovery" ? tr("رمز الاسترداد", "Recovery code") : tr("رمز عبر البريد", "Email code")}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {method === "recovery" ? (
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{tr("رمز الاسترداد", "Recovery code")}</label>
-                    <input
-                      dir="ltr"
-                      autoFocus
-                      className={`${inputClass} font-mono tracking-widest uppercase text-center`}
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      placeholder="XXXX-XXXX-XXXX-XXXX"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      {emailSentTo
-                        ? tr(`أرسلنا رمزًا من 6 أرقام إلى ${emailSentTo}. صالح لمدة 15 دقيقة.`, `We sent a 6-digit code to ${emailSentTo}. It's valid for 15 minutes.`)
-                        : tr(`سنرسل رمزًا إلى حساب Gmail المربوط (${options.email}).`, `We'll send a code to the connected Gmail account (${options.email}).`)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={sendEmailCode}
-                      disabled={sendingEmail}
-                      className="w-full flex items-center justify-center gap-2 border border-border rounded-lg py-2 text-sm font-medium text-foreground hover:bg-muted transition disabled:opacity-60"
-                    >
-                      <Icon name={sendingEmail ? "spinner" : "mail"} className={`w-4 h-4 ${sendingEmail ? "animate-spin" : ""}`} />
-                      {emailSentTo ? tr("إعادة الإرسال", "Send again") : tr("إرسال الرمز", "Send code")}
-                    </button>
-                    {emailSentTo && (
-                      <input
-                        dir="ltr"
-                        autoFocus
-                        inputMode="numeric"
-                        maxLength={6}
-                        className={`${inputClass} font-mono tracking-[0.5em] text-center text-lg`}
-                        value={code}
-                        onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                        placeholder="000000"
-                        autoComplete="one-time-code"
-                      />
-                    )}
-                  </div>
-                )}
-
-                {(method === "recovery" || emailSentTo) && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{tr("كلمة المرور الجديدة", "New password")}</label>
-                      <input type="password" className={inputClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{tr("تأكيد كلمة المرور", "Confirm password")}</label>
-                      <input type="password" className={inputClass} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
-                      <p className="text-xs text-muted-foreground mt-1">{tr("8 أحرف على الأقل، وليست أرقامًا فقط.", "At least 8 characters, not all digits.")}</p>
-                    </div>
-                  </>
-                )}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tr("مفتاح الاسترداد", "Recovery key")}</label>
+                  <input
+                    dir="ltr"
+                    autoFocus
+                    className={`${inputClass} font-mono tracking-widest uppercase text-center`}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {tr("تجده في ملف atba3li-recovery-key.txt الذي نزّلته.", "You'll find it in the atba3li-recovery-key.txt file you downloaded.")}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tr("كلمة المرور الجديدة", "New password")}</label>
+                  <input type="password" className={inputClass} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tr("تأكيد كلمة المرور", "Confirm password")}</label>
+                  <input type="password" className={inputClass} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+                  <p className="text-xs text-muted-foreground mt-1">{tr("8 أحرف على الأقل، وليست أرقامًا فقط.", "At least 8 characters, not all digits.")}</p>
+                </div>
 
                 {resetError && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{resetError}</p>}
 
-                {(method === "recovery" || emailSentTo) && (
-                  <button type="submit" className={primaryButtonClass} disabled={submitting}>
-                    {submitting ? tr("جارٍ الحفظ...", "Saving...") : tr("تعيين كلمة المرور والدخول", "Set password & sign in")}
-                  </button>
-                )}
+                <button type="submit" className={primaryButtonClass} disabled={submitting}>
+                  {submitting ? tr("جارٍ الحفظ...", "Saving...") : tr("تعيين كلمة المرور والدخول", "Set password & sign in")}
+                </button>
                 <button type="button" onClick={backToLogin} className="w-full text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
                   {tr("رجوع إلى تسجيل الدخول", "Back to login")}
                 </button>

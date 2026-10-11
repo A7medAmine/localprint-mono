@@ -128,19 +128,19 @@ export const PasswordCard: React.FC = () => {
 
       <form onSubmit={handleGenerateRecovery} className="px-5 sm:px-6 pb-6 pt-5 border-t border-border space-y-3">
         <div>
-          <h4 className="text-sm font-semibold text-foreground">{isRtl ? "رمز استرداد كلمة المرور" : "Password recovery code"}</h4>
+          <h4 className="text-sm font-semibold text-foreground">{isRtl ? "مفتاح استرداد كلمة المرور" : "Password recovery key"}</h4>
           <p className="text-xs text-muted-foreground mt-1">
             {isRtl
-              ? "إذا نسيت كلمة المرور، استخدم هذا الرمز من شاشة الدخول (نسيت كلمة المرور؟) لتعيين كلمة جديدة. إذا كان Gmail مربوطًا، يمكنك أيضًا استلام رمز عبر البريد."
-              : "If you forget the password, use this code on the login screen (Forgot password?) to set a new one. With Gmail connected you can also get a code by email."}
+              ? "إذا نسيت كلمة المرور، استخدم هذا المفتاح من شاشة الدخول (نسيت كلمة المرور؟) لتعيين كلمة جديدة. نزّله واحفظه في مكان آمن خارج هذا الجهاز."
+              : "If you forget the password, use this key on the login screen (Forgot password?) to set a new one. Download it and keep it somewhere safe, off this computer."}
           </p>
           {recovery && (
             <p className={`text-xs mt-2 font-medium ${recovery.hasCode ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
               {recovery.hasCode
-                ? (isRtl ? "رمز الاسترداد مُفعّل" : "Recovery code is set") + recoveryDate
+                ? (isRtl ? "مفتاح الاسترداد مُفعّل" : "Recovery key is set") + recoveryDate
                 : isRtl
-                  ? "لا يوجد رمز استرداد — أنشئ واحدًا حتى لا تفقد الوصول."
-                  : "No recovery code yet — create one so you never get locked out."}
+                  ? "لا يوجد مفتاح استرداد — أنشئ واحدًا حتى لا تفقد الوصول."
+                  : "No recovery key yet — create one so you never get locked out."}
             </p>
           )}
         </div>
@@ -156,12 +156,12 @@ export const PasswordCard: React.FC = () => {
           <Button type="submit" variant="outline" disabled={generating} className="gap-2">
             <Icon name="key" className="w-4 h-4" />
             {recovery?.hasCode
-              ? (isRtl ? "إنشاء رمز جديد" : "Generate new code")
-              : (isRtl ? "إنشاء رمز استرداد" : "Create recovery code")}
+              ? (isRtl ? "إنشاء مفتاح جديد" : "Generate new key")
+              : (isRtl ? "إنشاء مفتاح استرداد" : "Create recovery key")}
           </Button>
         </div>
         {recovery?.hasCode && (
-          <p className="text-xs text-muted-foreground">{isRtl ? "إنشاء رمز جديد يُبطل الرمز القديم." : "Generating a new code invalidates the old one."}</p>
+          <p className="text-xs text-muted-foreground">{isRtl ? "إنشاء مفتاح جديد يُبطل المفتاح القديم." : "Generating a new key invalidates the old one."}</p>
         )}
         {recoveryError && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{recoveryError}</p>}
       </form>

@@ -212,7 +212,7 @@ const ImageSearchModal: React.FC<ImageSearchModalProps> = ({ isOpen, onClose, on
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 text-foreground">
       <button type="button" className="absolute inset-0 cursor-default" aria-label={t("close")} onClick={onClose} />
       <div
         role="dialog"
@@ -231,7 +231,7 @@ const ImageSearchModal: React.FC<ImageSearchModalProps> = ({ isOpen, onClose, on
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
             placeholder={t("searchImagesPlaceholder")}
-            className="flex-1 h-9 px-3 rounded-lg border border-input bg-background text-sm"
+            className="flex-1 h-9 px-3 rounded-lg border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground"
             dir={isRtl ? "rtl" : "ltr"}
           />
           {results.length > 0 && query.trim() && (

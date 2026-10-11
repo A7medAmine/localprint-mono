@@ -952,28 +952,20 @@ class StorageService {
   }
 
   // ── Forgotten password ──
-  async getRecoveryOptions(): Promise<{ recoveryCode: boolean; email: string | null }> {
+  async getRecoveryOptions(): Promise<{ recoveryCode: boolean }> {
     try {
       const data = await this.safeFetch("/api/auth/recovery-options");
-      return { recoveryCode: !!data?.recoveryCode, email: data?.email || null };
+      return { recoveryCode: !!data?.recoveryCode };
     } catch {
-      return { recoveryCode: false, email: null };
+      return { recoveryCode: false };
     }
   }
 
-  async sendPasswordResetEmail(): Promise<{ sentTo: string }> {
-    return this.safeFetch("/api/auth/forgot/send-email", { method: "POST" });
-  }
-
-  async resetForgottenPassword(
-    method: "recovery" | "email",
-    code: string,
-    newPassword: string,
-  ): Promise<{ token: string; newRecoveryCode?: string }> {
+  async resetForgottenPassword(code: string, newPassword: string): Promise<{ token: string; newRecoveryCode: string }> {
     return this.safeFetch("/api/auth/forgot/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ method, code, newPassword }),
+      body: JSON.stringify({ code, newPassword }),
     });
   }
 

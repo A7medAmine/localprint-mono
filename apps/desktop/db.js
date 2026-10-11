@@ -115,9 +115,13 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN cloudOrderId TEXT`); } catch { /* ign
 try { db.exec(`ALTER TABLE jobs ADD COLUMN gmailMessageId TEXT`); } catch { /* ignored */ }
 try { db.exec(`ALTER TABLE jobs ADD COLUMN notifiedReadyAt TEXT`); } catch { /* ignored */ }
 try { db.exec(`ALTER TABLE jobs ADD COLUMN deleteTokenHash TEXT`); } catch { /* ignored */ }
-try { db.exec(`ALTER TABLE jobs ADD COLUMN orderId TEXT`); } catch { /* ignored */ }
-
 runMigrations(db);
+
+// After the runner, not before: on a fresh database migration 001 rebuilds
+// `jobs` from a fixed column list that predates orderId, which dropped the
+// column and crashed startup on the orderId index below. Idempotent, so
+// databases that already have it are untouched.
+try { db.exec(`ALTER TABLE jobs ADD COLUMN orderId TEXT`); } catch { /* ignored */ }
 
 // Clean up ghost rows from the old client-supplied-id bug (see Phase 2.1):
 // a row with a NULL id is unreachable from the admin UI. Remove their files too.
