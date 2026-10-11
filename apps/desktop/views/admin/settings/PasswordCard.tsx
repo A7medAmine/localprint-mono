@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { storageService } from "../../../services/storageService";
 import { toast } from "../../../components/ui/use-toast";
 import { Button } from "../../../components/ui/button";
@@ -6,6 +6,9 @@ import { Input } from "../../../components/ui/input";
 import { Icon } from "../../../components/ui/icon";
 import { Card, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { useAdmin } from "../AdminContext";
+import { errorMessage } from "@atba3li/shared";
+import { passwordPolicyMessage, translateAuthError } from "../../../lib/passwordPolicy";
+import RecoveryCodeDialog from "../../../components/RecoveryCodeDialog";
 
 /** Change the operator password. Self-contained: the form state never leaves
  *  this card, so the settings panel does not carry it. */
@@ -20,12 +23,11 @@ export const PasswordCard: React.FC = () => {
     e.preventDefault();
     setPasswordError("");
     setPasswordSuccess(false);
-    if (passwordForm.newPass !== passwordForm.confirm) {
-      setPasswordError(isRtl ? "كلمات المرور الجديدة غير متطابقة" : "New passwords do not match");
-      return;
-    }
-    if (passwordForm.newPass.length < 4) {
-      setPasswordError(isRtl ? "يجب أن تكون كلمة المرور 4 أحرف على الأقل" : "Password must be at least 4 characters");
+    // Same rules the server enforces (8+ chars, not all digits) — the old
+    // 4-char check let short passwords through to a confusing server refusal.
+    const policy = passwordPolicyMessage(passwordForm.newPass, passwordForm.confirm, isRtl);
+    if (policy) {
+      setPasswordError(policy);
       return;
     }
     try {
@@ -33,10 +35,48 @@ export const PasswordCard: React.FC = () => {
       setPasswordSuccess(true);
       setPasswordForm({ current: "", newPass: "", confirm: "" });
       toast({ title: isRtl ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully", variant: "success" });
-    } catch {
-      setPasswordError(isRtl ? "كلمة المرور الحالية غير صحيحة" : "Current password is incorrect");
+    } catch (err) {
+      setPasswordError(translateAuthError(errorMessage(err), isRtl));
     }
   };
+
+  // ── Recovery code ──
+  const [recovery, setRecovery] = useState<{ hasCode: boolean; createdAt: string | null } | null>(null);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [shownCode, setShownCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    storageService
+      .getRecoveryCodeStatus()
+      .then(setRecovery)
+      .catch(() => setRecovery({ hasCode: false, createdAt: null }));
+  }, []);
+
+  const handleGenerateRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError("");
+    if (!recoveryPassword) {
+      setRecoveryError(isRtl ? "أدخل كلمة المرور الحالية" : "Enter your current password");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const result = await storageService.createRecoveryCode(recoveryPassword);
+      setRecovery({ hasCode: result.hasCode, createdAt: result.createdAt });
+      setRecoveryPassword("");
+      setShownCode(result.code);
+    } catch (err) {
+      setRecoveryError(translateAuthError(errorMessage(err), isRtl));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const recoveryDate = recovery?.createdAt
+    ? ` · ${new Date(recovery.createdAt).toLocaleDateString(isRtl ? "ar" : "en")}`
+    : "";
 
   return (
     <Card className="lg:col-span-2 border-0">
@@ -85,6 +125,48 @@ export const PasswordCard: React.FC = () => {
         {passwordSuccess && <p className="text-sm text-green-600 dark:text-green-400 font-medium"><><Icon name="check" className="inline-block me-1 align-text-bottom" />{isRtl ? "تم تغيير كلمة المرور بنجاح" : "Password changed successfully"}</></p>}
         <Button type="submit" variant="destructive">{isRtl ? "تغيير كلمة المرور" : "Change Password"}</Button>
       </form>
+
+      <form onSubmit={handleGenerateRecovery} className="px-5 sm:px-6 pb-6 pt-5 border-t border-border space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold text-foreground">{isRtl ? "رمز استرداد كلمة المرور" : "Password recovery code"}</h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isRtl
+              ? "إذا نسيت كلمة المرور، استخدم هذا الرمز من شاشة الدخول (نسيت كلمة المرور؟) لتعيين كلمة جديدة. إذا كان Gmail مربوطًا، يمكنك أيضًا استلام رمز عبر البريد."
+              : "If you forget the password, use this code on the login screen (Forgot password?) to set a new one. With Gmail connected you can also get a code by email."}
+          </p>
+          {recovery && (
+            <p className={`text-xs mt-2 font-medium ${recovery.hasCode ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
+              {recovery.hasCode
+                ? (isRtl ? "رمز الاسترداد مُفعّل" : "Recovery code is set") + recoveryDate
+                : isRtl
+                  ? "لا يوجد رمز استرداد — أنشئ واحدًا حتى لا تفقد الوصول."
+                  : "No recovery code yet — create one so you never get locked out."}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <Input
+            type="password"
+            value={recoveryPassword}
+            onChange={(e) => setRecoveryPassword(e.target.value)}
+            placeholder={isRtl ? "كلمة المرور الحالية" : "Current password"}
+            className="sm:max-w-xs"
+            autoComplete="current-password"
+          />
+          <Button type="submit" variant="outline" disabled={generating} className="gap-2">
+            <Icon name="key" className="w-4 h-4" />
+            {recovery?.hasCode
+              ? (isRtl ? "إنشاء رمز جديد" : "Generate new code")
+              : (isRtl ? "إنشاء رمز استرداد" : "Create recovery code")}
+          </Button>
+        </div>
+        {recovery?.hasCode && (
+          <p className="text-xs text-muted-foreground">{isRtl ? "إنشاء رمز جديد يُبطل الرمز القديم." : "Generating a new code invalidates the old one."}</p>
+        )}
+        {recoveryError && <p className="text-sm text-red-600 dark:text-red-400 font-medium">{recoveryError}</p>}
+      </form>
+
+      <RecoveryCodeDialog code={shownCode} isRtl={isRtl} onClose={() => setShownCode(null)} />
     </Card>
   );
 };

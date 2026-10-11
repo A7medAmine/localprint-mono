@@ -18,7 +18,7 @@ npm run test      -w @atba3li/desktop      # vitest
 
 ## Architecture
 - **Frontend**: React 19 + TypeScript + Vite. Dev server on port **3000**,
-  proxies `/api` to `VITE_API_TARGET` (falls back to `http://localhost:3001`).
+  proxies `/api` to `VITE_API_TARGET` (falls back to `http://localhost:4731`).
 - **Backend**: Express 5 (ESM), embedded in the Electron main process. Port
   **47821** when run under Electron, **3001** as a plain-node dev server, **3000**
   in production. `electron:dev` sets `VITE_API_TARGET=http://localhost:47821`.
@@ -71,6 +71,10 @@ owns the translation. A single shared mapper for both apps is still open.
 | `/settings/logo` | POST | Upload shop logo |
 | `/paper-types` | GET, POST, PUT, DELETE | Granular per-type CRUD |
 | `/auth/verify` | POST | `{password}` → `{success}` |
+| `/auth/recovery-options` | GET | Public: `{recoveryCode: bool, email: masked \| null}` for the login screen |
+| `/auth/forgot/send-email` | POST | Mails a 6-digit reset code to the connected Gmail account (never a request-supplied address) |
+| `/auth/forgot/reset` | POST | `{method: "recovery"\|"email", code, newPassword}` → new token; recovery codes are single-use and rotated |
+| `/auth/recovery-code` | GET, POST | Admin: status / regenerate (POST needs `currentPassword`). Stored as a scrypt hash only — see `server/passwordRecovery.js` |
 | `/discount-rules` | GET, POST, PUT, DELETE | CRUD |
 | `/gmail/*` | — | OAuth connect/callback + intake queue |
 

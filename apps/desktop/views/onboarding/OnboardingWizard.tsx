@@ -17,6 +17,8 @@ import {
 } from "../../components/ui/select";
 import { writePref } from "@atba3li/shared/lib/prefs";
 import { errorMessage } from "@atba3li/shared";
+import { translateAuthError } from "../../lib/passwordPolicy";
+import RecoveryCodeDialog from "../../components/RecoveryCodeDialog";
 
 const DEFAULT_PASSWORD = "admin123";
 
@@ -64,6 +66,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
   const [pwError, setPwError] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
 
   // ── Step 2: shop identity ──
   const [shopName, setShopName] = useState(currentSettings.shopName || "");
@@ -146,11 +149,19 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
           if (!validatePassword()) return false;
           try {
             await storageService.changePassword(pwCurrent, pwNew);
-          } catch {
-            setPwError(tr("كلمة المرور الحالية غير صحيحة.", "Current password is incorrect."));
+          } catch (err) {
+            setPwError(translateAuthError(errorMessage(err), isRtl));
             return false;
           }
           toast({ title: tr("تم تعيين كلمة المرور.", "Password set."), variant: "success" });
+          // Hand out a recovery code straight away, so a forgotten password is
+          // never a dead end. Best effort — Settings → Password can make one later.
+          try {
+            const { code } = await storageService.createRecoveryCode(pwNew);
+            setRecoveryCode(code);
+          } catch {
+            /* ignored */
+          }
           return true;
         }
         case "shop": {
@@ -449,6 +460,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ lang, currentSettin
           </div>
         </div>
       </div>
+      <RecoveryCodeDialog code={recoveryCode} isRtl={isRtl} onClose={() => setRecoveryCode(null)} />
       <Toaster />
     </div>
   );

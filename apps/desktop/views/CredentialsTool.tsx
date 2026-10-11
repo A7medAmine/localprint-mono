@@ -148,8 +148,12 @@ const CredentialsTool: React.FC<CredentialsToolProps> = ({ lang }) => {
 
   const openAddDialog = () => {
     setEditingId(null);
-    setForm(EMPTY_FORM);
-    setServiceChoice(credentialSettings.services[0]?.id || CUSTOM_SERVICE);
+    // The dropdown opens on the first preset, so the form must carry that
+    // preset's name too — otherwise the select shows a service while
+    // serviceName is still "" and Save fails with "missing required fields".
+    const firstPreset = credentialSettings.services[0];
+    setForm(firstPreset ? { ...EMPTY_FORM, serviceName: firstPreset.name, websiteUrl: firstPreset.websiteUrl || "" } : EMPTY_FORM);
+    setServiceChoice(firstPreset?.id || CUSTOM_SERVICE);
     setRevealPassword(true);
     setDialogOpen(true);
   };
@@ -183,15 +187,29 @@ const CredentialsTool: React.FC<CredentialsToolProps> = ({ lang }) => {
   };
 
   const handleSave = async () => {
-    if (!form.customerName.trim() || !form.serviceName.trim() || !form.username.trim() || !form.password.trim()) {
-      toast({ title: isRtl ? "الحقول المطلوبة ناقصة" : "Missing required fields", variant: "destructive" });
+    // A picked preset is the source of truth for the service name, whatever
+    // path got the dialog here.
+    const preset = serviceChoice !== CUSTOM_SERVICE ? credentialSettings.services.find((s) => s.id === serviceChoice) : undefined;
+    const serviceName = (preset?.name ?? form.serviceName).trim();
+    const missing = [
+      !form.customerName.trim() && (isRtl ? "اسم العميل" : "customer name"),
+      !serviceName && (isRtl ? "الخدمة" : "service"),
+      !form.username.trim() && (isRtl ? "اسم المستخدم" : "username"),
+      !form.password.trim() && (isRtl ? "كلمة المرور" : "password"),
+    ].filter(Boolean);
+    if (missing.length) {
+      toast({
+        title: isRtl ? "الحقول المطلوبة ناقصة" : "Missing required fields",
+        description: missing.join(isRtl ? "، " : ", "),
+        variant: "destructive",
+      });
       return;
     }
     setSaving(true);
     try {
       const payload = {
         customerName: form.customerName.trim(),
-        serviceName: form.serviceName.trim(),
+        serviceName,
         websiteUrl: form.websiteUrl.trim(),
         username: form.username.trim(),
         password: form.password,

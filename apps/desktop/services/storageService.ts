@@ -287,6 +287,28 @@ class StorageService {
     }
   }
 
+  // Small cached JPEG for job-list row thumbnails — a fraction of the size of
+  // the original file, so low-end machines aren't decoding a full-res scan
+  // just to paint a 40x40 preview.
+  async getAdminThumbnailUrl(id: string): Promise<string | null> {
+    try {
+      const token = this.getAuthToken();
+      const response = await fetch(`/api/files/review/${id}/thumbnail`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.status === 401) {
+        localStorage.removeItem("ps_admin_token");
+        this.authToken = null;
+        emitAppEvent("session-expired");
+        return null;
+      }
+      if (!response.ok) return null;
+      return URL.createObjectURL(await response.blob());
+    } catch {
+      return null;
+    }
+  }
+
   // Absolute path on the machine running the server — used by native
   // printing in the Electron desktop app. Admin-only server-side.
   async getFileLocalPath(id: string): Promise<string | null> {
@@ -900,7 +922,9 @@ class StorageService {
     }
   }
 
-  async verifyPassword(password: string): Promise<{ success: boolean; token?: string; mustChangePassword?: boolean }> {
+  async verifyPassword(
+    password: string,
+  ): Promise<{ success: boolean; token?: string; mustChangePassword?: boolean; error?: string }> {
     try {
       const result = await this.safeFetch("/api/auth/verify", {
         method: "POST",
@@ -908,9 +932,49 @@ class StorageService {
         body: JSON.stringify({ password }),
       });
       return result;
-    } catch {
-      return { success: false };
+    } catch (err) {
+      // Surfaces the lockout ("Too many failed attempts…") instead of letting
+      // it read as a plain wrong password.
+      return { success: false, error: err instanceof Error ? err.message : undefined };
     }
+  }
+
+  // ── Forgotten password ──
+  async getRecoveryOptions(): Promise<{ recoveryCode: boolean; email: string | null }> {
+    try {
+      const data = await this.safeFetch("/api/auth/recovery-options");
+      return { recoveryCode: !!data?.recoveryCode, email: data?.email || null };
+    } catch {
+      return { recoveryCode: false, email: null };
+    }
+  }
+
+  async sendPasswordResetEmail(): Promise<{ sentTo: string }> {
+    return this.safeFetch("/api/auth/forgot/send-email", { method: "POST" });
+  }
+
+  async resetForgottenPassword(
+    method: "recovery" | "email",
+    code: string,
+    newPassword: string,
+  ): Promise<{ token: string; newRecoveryCode?: string }> {
+    return this.safeFetch("/api/auth/forgot/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method, code, newPassword }),
+    });
+  }
+
+  async getRecoveryCodeStatus(): Promise<{ hasCode: boolean; createdAt: string | null }> {
+    return this.safeFetch("/api/auth/recovery-code");
+  }
+
+  async createRecoveryCode(currentPassword: string): Promise<{ code: string; hasCode: boolean; createdAt: string | null }> {
+    return this.safeFetch("/api/auth/recovery-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword }),
+    });
   }
 
   async logoutOthers(): Promise<void> {

@@ -124,6 +124,28 @@ export async function markAsRead(messageId) {
   });
 }
 
+// Without these, Gmail guesses the charset and Arabic text arrives as mojibake.
+const UTF8_TEXT_HEADERS = [
+  'MIME-Version: 1.0',
+  'Content-Type: text/plain; charset=UTF-8',
+  'Content-Transfer-Encoding: 8bit',
+];
+
+// RFC 2047 encoded-word for non-ASCII header values (e.g. an Arabic subject).
+function encodeHeaderWord(value) {
+  return /^[\x20-\x7E]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
+}
+
+const toBase64Url = (text) =>
+  Buffer.from(text, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/** Send a new plain-text email from the connected account. */
+export async function sendEmail({ to, subject, text }) {
+  const gmail = await getGmailClient();
+  const message = [`To: ${to}`, `Subject: ${encodeHeaderWord(subject)}`, ...UTF8_TEXT_HEADERS, '', text].join('\r\n');
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw: toBase64Url(message) } });
+}
+
 export async function sendReply(originalMessageId, replyBody) {
   const gmail = await getGmailClient();
 
@@ -144,14 +166,15 @@ export async function sendReply(originalMessageId, replyBody) {
   const replyText = [
     `From: me`,
     `To: ${headers.find(h => h.name === 'From')?.value || ''}`,
-    `Subject: ${replySubject}`,
+    `Subject: ${encodeHeaderWord(replySubject)}`,
     `In-Reply-To: ${msgId}`,
     `References: ${references ? references + ' ' : ''}${msgId}`,
+    ...UTF8_TEXT_HEADERS,
     '',
     replyBody,
-  ].join('\n');
+  ].join('\r\n');
 
-  const encoded = Buffer.from(replyText).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const encoded = toBase64Url(replyText);
 
   await gmail.users.messages.send({
     userId: 'me',

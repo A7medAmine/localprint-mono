@@ -6,9 +6,18 @@ import request from "supertest";
 // drive the routes against an in-memory stand-in for the key/value state they
 // actually touch.
 const state = new Map<string, unknown>();
+let gmailAccount: Record<string, unknown> | null = null;
+const sentEmails: Array<{ to: string; subject: string; text: string }> = [];
+vi.mock("../services/gmailService.js", () => ({
+  sendEmail: async (msg: { to: string; subject: string; text: string }) => {
+    sentEmails.push(msg);
+  },
+}));
 vi.mock("../db.js", () => ({
   default: {},
   getInternalState: (key: string) => state.get(key),
+  getSettings: () => ({ shopName: "Test Shop" }),
+  getGmailAccount: () => gmailAccount,
   setInternalState: (key: string, value: unknown) => state.set(key, value),
 }));
 
@@ -25,6 +34,8 @@ function makeApp() {
 
 beforeEach(() => {
   state.clear();
+  gmailAccount = null;
+  sentEmails.length = 0;
   setMustChangePassword(false);
 });
 
@@ -149,7 +160,9 @@ describe("POST /api/settings/password", () => {
       .post("/api/settings/password")
       .set("Authorization", `Bearer ${token}`)
       .send({ currentPassword: "wrong", newPassword: "a-good-password" });
-    expect(res.status).toBe(401);
+    // 400, not 401: the client treats any 401 as an expired session and logs
+    // the operator out, which a typo in the current-password field must not do.
+    expect(res.status).toBe(400);
     expect(state.get("adminPassword")).toBeUndefined();
   });
 
@@ -173,5 +186,122 @@ describe("POST /api/auth/logout", () => {
       .post("/api/auth/logout-all")
       .set("Authorization", `Bearer ${token}`);
     expect(after.status).toBe(401);
+  });
+});
+
+describe("forgotten password", () => {
+  async function adminToken(app: express.Express) {
+    state.set("adminPassword", hashPassword("correct horse battery"));
+    refreshMustChangePassword();
+    const res = await request(app).post("/api/auth/verify").send({ password: "correct horse battery" });
+    return res.body.token as string;
+  }
+
+  it("offers nothing until a recovery route is set up", async () => {
+    const res = await request(makeApp()).get("/api/auth/recovery-options");
+    expect(res.body).toEqual({ recoveryCode: false, email: null });
+  });
+
+  it("generates a recovery code only with the current password", async () => {
+    const app = makeApp();
+    const token = await adminToken(app);
+
+    const wrong = await request(app)
+      .post("/api/auth/recovery-code")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: "nope" });
+    expect(wrong.status).toBe(400);
+
+    const ok = await request(app)
+      .post("/api/auth/recovery-code")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: "correct horse battery" });
+    expect(ok.status).toBe(200);
+    expect(ok.body.code).toMatch(/^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+    // Only the hash is stored.
+    expect(JSON.stringify(state.get("adminRecoveryCode"))).not.toContain(ok.body.code.replace(/-/g, ""));
+
+    const opts = await request(app).get("/api/auth/recovery-options");
+    expect(opts.body.recoveryCode).toBe(true);
+  });
+
+  it("resets the password with the recovery code, kills old sessions and rotates the code", async () => {
+    const app = makeApp();
+    const token = await adminToken(app);
+    const gen = await request(app)
+      .post("/api/auth/recovery-code")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ currentPassword: "correct horse battery" });
+    const code: string = gen.body.code;
+
+    const bad = await request(app)
+      .post("/api/auth/forgot/reset")
+      .send({ method: "recovery", code: "AAAA-BBBB-CCCC-DDDD", newPassword: "brand-new-pass" });
+    expect(bad.status).toBe(400);
+
+    // Lower case and spaces are fine — people retype it from paper.
+    const res = await request(app)
+      .post("/api/auth/forgot/reset")
+      .send({ method: "recovery", code: code.toLowerCase().replace(/-/g, " "), newPassword: "brand-new-pass" });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.body.newRecoveryCode).toMatch(/^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+    expect(res.body.newRecoveryCode).not.toBe(code);
+
+    const login = await request(app).post("/api/auth/verify").send({ password: "brand-new-pass" });
+    expect(login.body.success).toBe(true);
+
+    // The old session died with the reset.
+    const old = await request(app).post("/api/auth/logout-all").set("Authorization", `Bearer ${token}`);
+    expect(old.status).toBe(401);
+
+    // The spent code no longer works.
+    const reuse = await request(app)
+      .post("/api/auth/forgot/reset")
+      .send({ method: "recovery", code, newPassword: "yet-another-pass" });
+    expect(reuse.status).toBe(400);
+  });
+
+  it("enforces the password policy on reset", async () => {
+    const res = await request(makeApp())
+      .post("/api/auth/forgot/reset")
+      .send({ method: "recovery", code: "AAAA-BBBB-CCCC-DDDD", newPassword: "123" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/at least 8/);
+  });
+
+  it("mails a code to the connected Gmail account only and accepts it once", async () => {
+    gmailAccount = { is_active: 1, gmail_email: "owner@gmail.com", refresh_token: "r" };
+    const app = makeApp();
+
+    const opts = await request(app).get("/api/auth/recovery-options");
+    expect(opts.body.email).toBe("ow***@gmail.com");
+
+    const sent = await request(app).post("/api/auth/forgot/send-email").send({ to: "attacker@evil.test" });
+    expect(sent.status).toBe(200);
+    expect(sentEmails).toHaveLength(1);
+    expect(sentEmails[0].to).toBe("owner@gmail.com");
+    const code = sentEmails[0].text.match(/\b(\d{6})\b/)![1];
+
+    // A second send inside the cooldown is refused.
+    const again = await request(app).post("/api/auth/forgot/send-email");
+    expect(again.status).toBe(429);
+
+    const res = await request(app)
+      .post("/api/auth/forgot/reset")
+      .send({ method: "email", code, newPassword: "from-the-inbox" });
+    expect(res.status).toBe(200);
+    expect(res.body.newRecoveryCode).toBeUndefined();
+
+    const reuse = await request(app)
+      .post("/api/auth/forgot/reset")
+      .send({ method: "email", code, newPassword: "second-time-pass" });
+    expect(reuse.status).toBe(400);
+  });
+
+  it("refuses to send a code when no Gmail account is connected", async () => {
+    const res = await request(makeApp()).post("/api/auth/forgot/send-email");
+    expect(res.status).toBe(400);
+    expect(sentEmails).toHaveLength(0);
   });
 });
