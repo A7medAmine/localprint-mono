@@ -66,7 +66,7 @@ app.use(express.urlencoded({ extended: true, limit: "256kb" }));
 
 // CORS for development only (allow the Vite dev server on its own port).
 // Never enabled in a packaged build.
-// Vite dev server runs on :3000 and proxies /api to this server on :3001.
+// Vite dev server runs on :4730 and proxies /api to this server on :4731.
 if (isDev) {
   app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", DEV_ORIGIN);
@@ -199,7 +199,7 @@ app.listen(PORT, HOST, () => {
   console.log(`🌐 Server URL: http://${HOST}:${PORT}`);
 
   if (isDev) {
-    console.log(`🔧 Development mode - CORS enabled for http://localhost:3000`);
+    console.log(`🔧 Development mode - CORS enabled for http://localhost:4730`);
     console.log(`💡 Frontend should run on port 5173 (Vite default)`);
   } else {
     console.log(`📁 Serving static files from: ${DIST_DIR}`);
@@ -212,7 +212,7 @@ app.listen(PORT, HOST, () => {
   if (!gmailRedirectUri) {
     console.warn('⚠️  GMAIL_REDIRECT_URI not set — Gmail OAuth flow will not work');
     console.warn('   Set GMAIL_REDIRECT_URI in your .env file, e.g.:');
-    console.warn('   GMAIL_REDIRECT_URI=http://localhost:3001/api/gmail/callback');
+    console.warn('   GMAIL_REDIRECT_URI=http://localhost:4731/api/gmail/callback');
   }
 
   // Auto-poll Gmail every 30s — broadcasts new emails to SSE clients

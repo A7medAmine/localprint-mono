@@ -16,16 +16,16 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 3000,
+    port: 4730,
     allowedHosts: true,
     proxy: {
       // Proxy target is env-configurable so both dev flows work:
       //   - `npm run electron:dev`: Electron embeds the server on 47821.
-      //   - `npm run dev` (browser-only): standalone `node server.js` on 3001.
+      //   - `npm run dev` (browser-only): standalone `node server.js` on 4731.
       // The plain-node flow only works with a Node-ABI build of better-sqlite3
       // (`npm run rebuild:node`) — Electron's postinstall rebuilds for Electron.
       "/api": {
-        target: process.env.VITE_API_TARGET || "http://localhost:3001",
+        target: process.env.VITE_API_TARGET || "http://localhost:4731",
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on("error", (err) => {

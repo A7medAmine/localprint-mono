@@ -67,7 +67,7 @@ const PDF_RENDER_SETTLE_MS = 250;
 const PRINT_CALLBACK_TIMEOUT_MS = 20_000;
 
 // The Vite dev server the repo has always used (see vite.config.ts).
-const DEV_URL = 'http://localhost:3000';
+const DEV_URL = 'http://localhost:4730';
 
 
 process.env.PORT = String(SERVER_PORT);
@@ -81,7 +81,7 @@ process.env.HOST = SERVER_BIND_HOST;
 // In dev this is a no-op since server.js already loads .env from cwd.
 if (app.isPackaged) {
   dotenv.config({ path: path.join(app.getAppPath(), '.env') });
-  // The .env's GMAIL_REDIRECT_URI is set for the dev server (port 3000). The
+  // The .env's GMAIL_REDIRECT_URI is set for the dev server (port 4730). The
   // packaged server binds SERVER_PORT — force the redirect URI to match, or
   // Google will send the browser to a port nothing is listening on. This URL
   // must also be registered in the Google Cloud Console OAuth client.

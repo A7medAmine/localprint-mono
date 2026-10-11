@@ -21,17 +21,19 @@ import { SourceBadge, StatusBadge, PaymentBadge } from "./JobBadges";
 import { storageService } from "../../../services/storageService";
 import { toast } from "../../../components/ui/use-toast";
 
-/** Small image thumbnail for the job row, fetched through the token-protected
- * review endpoint (public endpoint hides jobs still awaiting review). PDFs
- * aren't thumbnailed — rendering a first-page preview needs pdf.js per row,
- * too heavy for a list that can hold hundreds of jobs. */
-const JobThumbnail: React.FC<{ job: PrintJob }> = ({ job }) => {
+/** Small image thumbnail for the job row, fetched through the cached
+ * server-side thumbnail endpoint (a few KB, not the original file — that
+ * used to make the row decode a full-res scan just to paint a 40x40 icon).
+ * PDFs aren't thumbnailed — rendering a first-page preview needs pdf.js per
+ * row, too heavy for a list that can hold hundreds of jobs. Memoized on
+ * job.id so an SSE-triggered row re-render doesn't refetch it. */
+const JobThumbnail: React.FC<{ job: PrintJob }> = React.memo(({ job }) => {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let objectUrl: string | null = null;
     let cancelled = false;
-    storageService.getAdminFileUrl(job.id).then((u) => {
+    storageService.getAdminThumbnailUrl(job.id).then((u) => {
       if (cancelled) {
         if (u) URL.revokeObjectURL(u);
         return;
@@ -55,7 +57,7 @@ const JobThumbnail: React.FC<{ job: PrintJob }> = ({ job }) => {
       className="w-10 h-10 rounded-md object-cover border border-border flex-shrink-0"
     />
   );
-};
+}, (prev, next) => prev.job.id === next.job.id);
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return "0 B";

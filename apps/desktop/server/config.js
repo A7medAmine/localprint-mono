@@ -14,9 +14,9 @@ export const APP_ROOT = path.dirname(path.dirname(__filename));
 
 export const NODE_ENV = process.env.NODE_ENV || "development";
 export const isDev = NODE_ENV === "development";
-export const PORT = process.env.PORT || (isDev ? 3001 : 3000);
+export const PORT = process.env.PORT || (isDev ? 4731 : 3000);
 export const HOST = process.env.HOST || "127.0.0.1";
-export const DEV_ORIGIN = process.env.DEV_CORS_ORIGIN || "http://localhost:3000";
+export const DEV_ORIGIN = process.env.DEV_CORS_ORIGIN || "http://localhost:4730";
 
 export const DIST_DIR = path.join(APP_ROOT, "dist");
 export const PUBLIC_DIR = path.join(APP_ROOT, "public");

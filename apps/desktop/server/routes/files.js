@@ -2,8 +2,9 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import sharp from "sharp";
 import db, { getInternalState, reopenDb, checkpointAndClose } from "../../db.js";
-import { DB_PATH, UPLOADS_DIR } from "../config.js";
+import { DB_PATH, UPLOADS_DIR, PREVIEW_CACHE_DIR } from "../config.js";
 import { requireAdmin } from "../adminAuth.js";
 import { uploadMemory } from "../uploads.js";
 
@@ -109,6 +110,48 @@ export function registerFileRoutes(app) {
       const inline = /^image\//.test(job.fileType || "") || job.fileType === "application/pdf";
       res.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${safeName}"`);
       res.sendFile(filePath);
+    } catch {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Small cached JPEG for job-list row thumbnails — avoids shipping the full
+  // original (often several MB) just to paint a 40x40 preview, which used to
+  // stall the row on low-end machines decoding a full-res image per job.
+  app.get("/api/files/review/:id/thumbnail", requireAdmin, async (req, res) => {
+    try {
+      const job = db.prepare('SELECT serverFileName, fileType FROM jobs WHERE id = ?').get(req.params.id);
+      if (!job || !job.serverFileName) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      if (!/^image\//.test(job.fileType || "")) {
+        return res.status(415).json({ error: "Not an image" });
+      }
+      const filePath = path.resolve(path.join(UPLOADS_DIR, job.serverFileName));
+      if (!filePath.startsWith(path.resolve(UPLOADS_DIR))) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found on disk" });
+      }
+
+      if (!fs.existsSync(PREVIEW_CACHE_DIR)) {
+        fs.mkdirSync(PREVIEW_CACHE_DIR, { recursive: true });
+      }
+      const cachePath = path.join(PREVIEW_CACHE_DIR, `thumb_${job.serverFileName}.jpg`);
+
+      res.set("Cache-Control", "private, max-age=86400");
+      if (fs.existsSync(cachePath)) {
+        return res.sendFile(cachePath);
+      }
+
+      const buffer = await sharp(filePath)
+        .resize(80, 80, { fit: "cover" })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+      fs.writeFileSync(cachePath, buffer);
+      res.set("Content-Type", "image/jpeg");
+      res.send(buffer);
     } catch {
       res.status(500).json({ error: "Internal server error" });
     }

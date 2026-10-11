@@ -253,7 +253,10 @@ const App: React.FC = () => {
         <nav
           dir="ltr"
           style={{ direction: "ltr", flexDirection: "row" }}
-          className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100/50 dark:border-gray-800/50 px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-sm dark:shadow-gray-900/30"
+          // No backdrop-blur: this nav is sticky and repaints every scroll
+          // frame. At 95% opacity the blur was barely visible but forced a
+          // GPU composite pass on every frame — costly on low-end hardware.
+          className="bg-white/95 dark:bg-gray-900/95 border-b border-gray-100/50 dark:border-gray-800/50 px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-sm dark:shadow-gray-900/30"
         >
           <button
             type="button"
