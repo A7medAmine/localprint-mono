@@ -579,7 +579,7 @@ const ResearchTool: React.FC<ResearchToolProps> = ({ lang }) => {
     }
   };
 
-  const handleExportPdf = async (opts: ResearchPrintOptions) => {
+  const handleExportPdf = async (_opts: ResearchPrintOptions) => {
     if (!doc || !paperId || printSubmitting) return;
     setPrintSubmitting(true);
     try {

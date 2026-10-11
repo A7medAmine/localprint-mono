@@ -148,7 +148,24 @@ export function registerCatalogRoutes(app) {
   // Update paper type
   app.put("/api/paper-types/:id", requireAdmin, (req, res) => {
     try {
-      const pt = updatePaperType(req.params.id, req.body);
+      const body = req.body || {};
+      const updates = {};
+      if (body.name !== undefined) updates.name = String(body.name).trim();
+      if (body.nameAr !== undefined) updates.nameAr = String(body.nameAr).trim();
+      // Prices must stay numbers — a stray string here broke the price math
+      // on the upload page and in the cloud sync.
+      for (const key of ["colorPerPage", "blackWhitePerPage"]) {
+        if (body[key] === undefined) continue;
+        const n = parseFloat(body[key]);
+        if (!Number.isFinite(n) || n < 0) {
+          return res.status(400).json({ error: `${key} must be a number ≥ 0` });
+        }
+        updates[key] = n;
+      }
+      if (body.sortOrder !== undefined && Number.isInteger(Number(body.sortOrder))) updates.sortOrder = Number(body.sortOrder);
+      if (updates.name === "") return res.status(400).json({ error: "name cannot be empty" });
+
+      const pt = updatePaperType(req.params.id, updates);
       if (!pt) return res.status(404).json({ error: "Paper type not found" });
       res.status(200).json(pt);
       triggerCloudSettingsSync();

@@ -205,7 +205,7 @@ export function buildOutlineSystemPrompt({ level, subject, language, includeSour
   ].join("\n");
 }
 
-export function buildOutlineUserPrompt({ topic, level, subject, language, targetPages, customInstructions }) {
+export function buildOutlineUserPrompt({ topic, level, subject, targetPages, customInstructions }) {
   const plan = computeSectionPlan(level, targetPages);
   const isParagraphOnly = plan.introWords === 0 && plan.conclusionWords === 0;
   const lines = [
@@ -243,7 +243,7 @@ export function buildSectionSystemPrompt({ level, subject, language }) {
   ].join("\n");
 }
 
-export function buildSectionUserPrompt({ topic, level, subject, language, outline, section, wordTarget, customInstructions }) {
+export function buildSectionUserPrompt({ topic, outline, section, wordTarget, customInstructions }) {
   const otherHeadings = (outline?.sections || [])
     .filter((s) => s.heading !== section.heading)
     .map((s) => `- ${s.heading}: ${s.summary}`)
@@ -269,7 +269,7 @@ export function buildSectionUserPrompt({ topic, level, subject, language, outlin
  * Existing headings are passed so the model does not repeat ground already
  * covered.
  */
-export function buildExtendOutlineUserPrompt({ topic, level, subject, language, targetPages, customInstructions, existingHeadings, sectionCount }) {
+export function buildExtendOutlineUserPrompt({ topic, level, subject, targetPages, customInstructions, existingHeadings, sectionCount }) {
   const plan = computeSectionPlan(level, targetPages);
   const wordTarget = plan.wordsPerSection;
   const lines = [

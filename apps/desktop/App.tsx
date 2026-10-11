@@ -212,6 +212,13 @@ const App: React.FC = () => {
         }
       }
       if (e.key === "Escape" && !isElectron()) {
+        // Escape belongs to whatever is open or focused first — closing a
+        // dialog or leaving a field must not also throw the operator out of
+        // the admin panel (and lose an unsaved form).
+        const target = e.target as HTMLElement | null;
+        const inField = !!target?.closest?.("input, textarea, select, [contenteditable='true']");
+        const overlayOpen = !!document.querySelector("[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']");
+        if (e.defaultPrevented || inField || overlayOpen) return;
         if (location.pathname.startsWith("/admin")) {
           navigate("/upload");
         }

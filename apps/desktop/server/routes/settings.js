@@ -180,23 +180,20 @@ export function registerSettingsRoutes(app) {
       }
       if (req.body.pricing && typeof req.body.pricing === "object") {
         const currentSettings = getSettings();
+        // A valid number (0 included — "free" is a real price) wins; anything
+        // else keeps the current value. `parseFloat(x) || current` used to
+        // throw away a 0 the operator had typed.
+        const price = (key, fallback) => {
+          const n = parseFloat(req.body.pricing[key]);
+          if (Number.isFinite(n) && n >= 0) return n;
+          const current = Number(currentSettings.pricing?.[key]);
+          return Number.isFinite(current) && current >= 0 ? current : fallback;
+        };
         const newPricing = {
-          colorPerPage:
-            parseFloat(req.body.pricing.colorPerPage) ||
-            currentSettings.pricing?.colorPerPage ||
-            30.0,
-          blackWhitePerPage:
-            parseFloat(req.body.pricing.blackWhitePerPage) ||
-            currentSettings.pricing?.blackWhitePerPage ||
-            15.0,
-          glossyPerPage:
-            parseFloat(req.body.pricing.glossyPerPage) ||
-            currentSettings.pricing?.glossyPerPage ||
-            50.0,
-          cardboardPerPage:
-            parseFloat(req.body.pricing.cardboardPerPage) ||
-            currentSettings.pricing?.cardboardPerPage ||
-            40.0,
+          colorPerPage: price("colorPerPage", 30.0),
+          blackWhitePerPage: price("blackWhitePerPage", 15.0),
+          glossyPerPage: price("glossyPerPage", 50.0),
+          cardboardPerPage: price("cardboardPerPage", 40.0),
         };
         updateSetting('pricing', newPricing);
       }

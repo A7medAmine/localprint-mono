@@ -38,17 +38,23 @@
   text-align: right;
 }
 
-[dir="rtl"] input,
-[dir="rtl"] textarea {
+/* An explicitly LTR island inside the RTL page (phone, email, URL fields). */
+[dir="rtl"] [dir="ltr"] {
+  text-align: left;
+}
+
+/* Fields marked dir="ltr" (phone, email, URL) keep left alignment. */
+[dir="rtl"] input:not([dir="ltr"]),
+[dir="rtl"] textarea:not([dir="ltr"]) {
   text-align: right;
   font-family: "Rubik", sans-serif;
 }
 
-/* RTL layout adjustments */
-[dir="rtl"] .flex {
-  direction: rtl;
-}
-
+/* RTL layout adjustments.
+   No "[dir=rtl] .flex { direction: rtl }" here: direction already inherits
+   from <html dir>, and that rule overrode every dir="ltr" element with a
+   .flex class — including all Input fields — so phone numbers and URLs
+   were typed and shown backwards. */
 [dir="rtl"] .text-left {
   text-align: right !important;
 }
@@ -67,7 +73,3 @@
   margin-right: 0.5rem !important;
 }
 
-[dir="rtl"] .gap-2 > * + * {
-  margin-left: 0 !important;
-  margin-right: 0.5rem !important;
-}

@@ -11,6 +11,22 @@ import { computePageCount, upload, uploadLimit, validateMagicBytes } from "../up
 import { broadcastEvent } from "../events.js";
 import { applyAutoDeductForJob } from "../inventory.js";
 
+const JOB_STATUSES = new Set(["PENDING", "READY", "PRINTED", "CANCELED"]);
+const PAYMENT_STATUSES = new Set(["UNPAID", "PAID", "PARTIAL"]);
+// Matches the largest copy count the admin UI offers (PDF tools, print dialog).
+const MAX_COPIES = 999;
+
+const clampCopies = (value) => {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_COPIES) : 1;
+};
+
+/** Drop a multer upload that was rejected after it hit the disk. */
+const discardUpload = (file) => {
+  if (!file) return;
+  try { fs.unlinkSync(path.join(UPLOADS_DIR, file.filename)); } catch { /* already gone */ }
+};
+
 const hashDeleteToken = (token) => createHash("sha256").update(String(token)).digest("hex");
 
 // "My recent uploads" only ever asks about the handful of IDs in one browser.
@@ -147,6 +163,13 @@ export function registerJobRoutes(app) {
       const id = randomUUID();
       const deleteToken = randomBytes(16).toString("hex");
       const prefs = metadata.printPreferences || {};
+      // This route is public. Only the operator's own tools (which send their
+      // admin token) may label where a job came from; an anonymous uploader
+      // can't, and nobody gets to pick the starting status — it used to be
+      // possible to upload a job straight into "PRINTED" or "pending_review".
+      const isAdmin = isValidAdminToken(req);
+      const requestedSource = typeof metadata.source === "string" ? metadata.source.trim().slice(0, 32) : "";
+      const rawColor = prefs.colorMode || metadata.colorMode;
 
       const newJob = {
         id,
@@ -163,13 +186,13 @@ export function registerJobRoutes(app) {
         fileType: req.file.mimetype,
         fileSize: req.file.size,
         uploadDate: new Date().toISOString(),
-        status: metadata.status || "PENDING",
+        status: "PENDING",
         serverFileName: req.file.filename,
         pageCount,
-        colorMode: prefs.colorMode || metadata.colorMode || "color",
-        copies: Number(prefs.copies || metadata.copies) >= 1 ? Math.floor(Number(prefs.copies || metadata.copies)) : 1,
-        paperType: prefs.paperType || metadata.paperType || "normal",
-        source: metadata.source || "upload",
+        colorMode: rawColor === "blackWhite" ? "blackWhite" : "color",
+        copies: clampCopies(prefs.copies || metadata.copies),
+        paperType: String(prefs.paperType || metadata.paperType || "normal").slice(0, 64),
+        source: isAdmin && requestedSource ? requestedSource : "upload",
       };
 
       const insertStmt = db.prepare(`
@@ -197,6 +220,7 @@ export function registerJobRoutes(app) {
       });
     } catch (err) {
       console.error("❌ Upload Error:", err);
+      discardUpload(req.file);
       res.status(400).json({ success: false, error: "Invalid upload metadata" });
     }
   });
@@ -228,7 +252,7 @@ export function registerJobRoutes(app) {
       const prefs = metadata.printPreferences || {};
 
       const colorMode = prefs.colorMode === "blackWhite" ? "blackWhite" : "color";
-      const copies = Number(prefs.copies) >= 1 ? Math.floor(Number(prefs.copies)) : 1;
+      const copies = clampCopies(prefs.copies);
       const paperType = String(prefs.paperType || "normal");
       const uploadDate = new Date().toISOString();
 
@@ -280,6 +304,7 @@ export function registerJobRoutes(app) {
       });
     } catch (err) {
       console.error("❌ Admin job create error:", err);
+      discardUpload(req.file);
       res.status(400).json({ success: false, error: "Invalid job metadata" });
     }
   });
@@ -359,8 +384,11 @@ export function registerJobRoutes(app) {
 
   // Update job status
   app.put("/api/jobs/:id/status", requireAdmin, (req, res) => {
-    const { status } = req.body;
+    const { status } = req.body || {};
     const jobId = req.params.id;
+    if (!JOB_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, error: "Invalid status" });
+    }
 
     const previousStatus = db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId)?.status;
     const result = db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run(status, jobId);
@@ -435,7 +463,7 @@ export function registerJobRoutes(app) {
     }
 
     const parsedCopies = parseInt(copies, 10);
-    if (!isNaN(parsedCopies) && parsedCopies >= 1 && parsedCopies <= 100) {
+    if (!isNaN(parsedCopies) && parsedCopies >= 1 && parsedCopies <= MAX_COPIES) {
       finalCopies = parsedCopies;
     }
 
@@ -579,9 +607,12 @@ export function registerJobRoutes(app) {
 
   // Bulk status update
   app.post("/api/jobs/bulk/status", requireAdmin, (req, res) => {
-    const { ids, status } = req.body;
+    const { ids, status } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, error: "No IDs provided" });
+    }
+    if (!JOB_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, error: "Invalid status" });
     }
     const stmt = db.prepare('UPDATE jobs SET status = ? WHERE id = ?');
     const getStmt = db.prepare('SELECT cloudOrderId FROM jobs WHERE id = ?');
@@ -617,19 +648,29 @@ export function registerJobRoutes(app) {
   // Update payment status for a single job
   app.put("/api/jobs/:id/payment", requireAdmin, (req, res) => {
     const { id } = req.params;
-    const { paymentStatus, paymentAmount } = req.body;
+    const { paymentStatus, paymentAmount } = req.body || {};
+    if (!PAYMENT_STATUSES.has(paymentStatus)) {
+      return res.status(400).json({ success: false, error: "Invalid payment status" });
+    }
+    const amount = paymentAmount === undefined || paymentAmount === null || paymentAmount === "" ? null : Number(paymentAmount);
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      return res.status(400).json({ success: false, error: "Invalid payment amount" });
+    }
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
     if (!job) return res.status(404).json({ success: false, error: "Job not found" });
     const paymentDate = paymentStatus === 'PAID' || paymentStatus === 'PARTIAL' ? new Date().toISOString() : null;
-    db.prepare('UPDATE jobs SET paymentStatus = ?, paymentAmount = ?, paymentDate = ? WHERE id = ?').run(paymentStatus, paymentAmount || null, paymentDate, id);
+    db.prepare('UPDATE jobs SET paymentStatus = ?, paymentAmount = ?, paymentDate = ? WHERE id = ?').run(paymentStatus, amount || null, paymentDate, id);
     res.status(200).json({ success: true });
   });
 
   // Bulk payment update
   app.post("/api/jobs/bulk/payment", requireAdmin, (req, res) => {
-    const { ids, paymentStatus } = req.body;
+    const { ids, paymentStatus } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, error: "No IDs provided" });
+    }
+    if (!PAYMENT_STATUSES.has(paymentStatus)) {
+      return res.status(400).json({ success: false, error: "Invalid payment status" });
     }
     const paymentDate = paymentStatus === 'PAID' || paymentStatus === 'PARTIAL' ? new Date().toISOString() : null;
     const stmt = db.prepare('UPDATE jobs SET paymentStatus = ?, paymentDate = ? WHERE id = ?');
