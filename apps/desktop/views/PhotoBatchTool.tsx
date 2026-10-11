@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import type { PageSpec, MarginSpec, LaidOutPage, PhotoItem as LayoutItem, PageGroup, PlacementOverride } from "../lib/photoLayout";
-import { layoutGroups, estimateDpi, computePrintableRect, mmToPt, MIN_PLACEMENT_PT } from "../lib/photoLayout";
+import type { PageSpec, MarginSpec, LaidOutPage, PhotoItem as LayoutItem, PageGroup, PlacementOverride, TileSpec } from "../lib/photoLayout";
+import { layoutGroups, estimateDpi, computePrintableRect, mmToPt, MIN_PLACEMENT_PT, tileGrid } from "../lib/photoLayout";
 import { buildPhotoPdf } from "../lib/photoPdf";
-import { drawPlacements } from "../lib/photoRender";
+import { drawPlacements, type PhotoSource } from "../lib/photoRender";
 import { decodeImageToBitmap } from "../lib/imageNormalize";
 import { isElectron, printData, getPrinters, PrinterInfo } from "../lib/electronPrint";
 import { storageService } from "../services/storageService";
@@ -18,12 +18,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import PhotoSourceModal, { PickedPhoto } from "../components/PhotoSourceModal";
 import ImageSearchModal from "../components/ImageSearchModal";
+import ImageEditor from "../components/ImageEditor";
 import { JobTargetPicker, useJobTargets } from "../components/JobTargetPicker";
 import { consumePhotoBatchHandoff } from "../lib/photoBatchHandoff";
 import type { PaperType, PrinterJobDefaults, ShopSettings } from "../types";
 import { formatPrice } from "../utils/pricingUtils";
 import { Icon } from "../components/ui/icon";
-import { errorMessage } from "@atba3li/shared";
+import { cn, errorMessage } from "@atba3li/shared";
 
 interface BatchItem {
   id: string;
@@ -37,6 +38,10 @@ interface BatchItem {
   objectFit: "cover" | "contain" | null;
   error?: string;
 }
+
+type PaperPreset = "a4" | "a3" | "p10x15" | "p13x18" | "match" | "custom";
+type Orientation = "auto" | "portrait" | "landscape";
+type PhotoSizeKey = "full" | "id" | "passport" | "10x15" | "13x18" | "wallet" | "custom";
 
 // What survives an app restart (unless the shop turned Print Studio
 // persistence off in Settings). Bitmaps are left out and re-decoded from the stored File on restore.
@@ -61,15 +66,31 @@ interface PhotoSnapshot {
   colorMode: "color" | "bw";
   paperType: string;
   copies: number;
+  photoSize?: PhotoSizeKey;
+  tileCount?: number;
+  customTileW?: number;
+  customTileH?: number;
 }
 
-type PaperPreset = "a4" | "a3" | "match" | "custom";
-type Orientation = "auto" | "portrait" | "landscape";
-
-const PAPER_PRESETS_MM: Record<"a4" | "a3", { w: number; h: number }> = {
+const PAPER_PRESETS_MM: Record<"a4" | "a3" | "p10x15" | "p13x18", { w: number; h: number }> = {
   a4: { w: 210, h: 297 },
   a3: { w: 297, h: 420 },
+  p10x15: { w: 100, h: 150 },
+  p13x18: { w: 130, h: 180 },
 };
+
+// Fixed photo sizes in mm (width × height, portrait).
+const PHOTO_SIZES_MM: Record<Exclude<PhotoSizeKey, "full" | "custom">, { w: number; h: number; labelKey: string }> = {
+  id: { w: 35, h: 45, labelKey: "photoSizeId" },
+  passport: { w: 50, h: 50, labelKey: "photoSizePassport" },
+  "10x15": { w: 100, h: 150, labelKey: "photoSize10x15" },
+  "13x18": { w: 130, h: 180, labelKey: "photoSize13x18" },
+  wallet: { w: 60, h: 90, labelKey: "photoSizeWallet" },
+};
+
+const TILE_GAP_MM = 2;
+const MAX_COPIES = 999;
+const HISTORY_LIMIT = 50;
 
 function parsePrinterPageSize(info: PrinterInfo | undefined): { wmm: number; hmm: number } | null {
   const opts = info?.options || {};
@@ -103,6 +124,57 @@ interface DragState {
   scale: number;
 }
 
+interface HistoryEntry {
+  items: BatchItem[];
+  groups: PageGroup[];
+  overrides: Record<string, PlacementOverride>;
+}
+
+/**
+ * One page's preview canvas. Memoised on the page's actual geometry so a drag
+ * on one page doesn't repaint every other page's photos on each pointer move.
+ */
+const PagePreviewCanvas = React.memo(
+  function PagePreviewCanvas({
+    page,
+    itemsMap,
+    sourcesById,
+    width,
+    height,
+    scale,
+  }: {
+    page: LaidOutPage;
+    itemsMap: ReadonlyMap<string, LayoutItem>;
+    sourcesById: ReadonlyMap<string, PhotoSource | undefined>;
+    width: number;
+    height: number;
+    scale: number;
+  }) {
+    const ref = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+      const canvas = ref.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) return;
+      canvas.width = width;
+      canvas.height = height;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.strokeStyle = "#d1d5db";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+      drawPlacements(ctx, page, itemsMap, sourcesById, scale);
+    }, [page, itemsMap, sourcesById, width, height, scale]);
+    return <canvas ref={ref} className="absolute inset-0" style={{ width, height }} />;
+  },
+  (a, b) =>
+    a.width === b.width &&
+    a.height === b.height &&
+    a.scale === b.scale &&
+    a.sourcesById === b.sourcesById &&
+    JSON.stringify(a.page) === JSON.stringify(b.page) &&
+    a.page.placements.every((p) => a.itemsMap.get(p.photoId) === b.itemsMap.get(p.photoId)),
+);
+
 const PhotoBatchTool: React.FC = () => {
   const { t, lang } = useLanguage();
   const isRtl = lang === "ar";
@@ -124,6 +196,11 @@ const PhotoBatchTool: React.FC = () => {
   const [colorMode, setColorMode] = useState<"color" | "bw">("color");
   const [paperType, setPaperType] = useState("glossy");
   const [copies, setCopies] = useState(1);
+  const [photoSize, setPhotoSize] = useState<PhotoSizeKey>("full");
+  const [tileCount, setTileCount] = useState(4);
+  const [customTileW, setCustomTileW] = useState(35);
+  const [customTileH, setCustomTileH] = useState(45);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<ShopSettings>({ shopName: "", logoUrl: null });
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -136,12 +213,14 @@ const PhotoBatchTool: React.FC = () => {
   const targets = useJobTargets();
   // False until the saved-across-restarts snapshot (if any) has been applied.
   const [restored, setRestored] = useState(false);
-  // Read on the first render: the handoff effect above clears this key before
+  // Read on the first render: the handoff effect below clears this key before
   // the async restore resolves, so checking it later is too late.
   const handoffPendingRef = useRef(!!sessionStorage.getItem("ps_batch_jobs"));
   const dragIndexRef = useRef<number | null>(null);
   const placementDragRef = useRef<DragState | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HistoryEntry[]>([]);
 
   useEffect(() => {
     storageService.getSettings().then((s) => {
@@ -199,21 +278,33 @@ const PhotoBatchTool: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const paperTypes: PaperType[] =
-    settings.paperTypes && settings.paperTypes.length > 0
-      ? settings.paperTypes
-      : [
-          { id: "normal", name: "Normal", nameAr: "عادي", colorPerPage: settings.pricing?.colorPerPage || 30, blackWhitePerPage: settings.pricing?.blackWhitePerPage || 15 },
-          { id: "glossy", name: "Glossy", nameAr: "لامع", colorPerPage: settings.pricing?.glossyPerPage || 50, blackWhitePerPage: settings.pricing?.glossyPerPage || 50 },
-          { id: "cardboard", name: "Cardboard", nameAr: "ورق مقوى", colorPerPage: settings.pricing?.cardboardPerPage || 40, blackWhitePerPage: settings.pricing?.cardboardPerPage || 40 },
-        ];
+  const paperTypes: PaperType[] = useMemo(
+    () =>
+      settings.paperTypes && settings.paperTypes.length > 0
+        ? settings.paperTypes
+        : [
+            { id: "normal", name: "Normal", nameAr: "عادي", colorPerPage: settings.pricing?.colorPerPage || 30, blackWhitePerPage: settings.pricing?.blackWhitePerPage || 15 },
+            { id: "glossy", name: "Glossy", nameAr: "لامع", colorPerPage: settings.pricing?.glossyPerPage || 50, blackWhitePerPage: settings.pricing?.glossyPerPage || 50 },
+            { id: "cardboard", name: "Cardboard", nameAr: "ورق مقوى", colorPerPage: settings.pricing?.cardboardPerPage || 40, blackWhitePerPage: settings.pricing?.cardboardPerPage || 40 },
+          ],
+    [settings],
+  );
+
+  // The shop's own paper list may not have a "glossy" entry — fall back to a
+  // type that exists, preferring anything glossy-sounding, so the price and
+  // the dropdown never go blank.
+  useEffect(() => {
+    if (paperTypes.some((p) => p.id === paperType)) return;
+    const glossy = paperTypes.find((p) => /gloss|photo|لامع/i.test(`${p.name} ${p.nameAr}`));
+    setPaperType((glossy ?? paperTypes[0])?.id ?? paperType);
+  }, [paperTypes, paperType]);
 
   const pageSpec = useMemo<PageSpec>(() => {
     let wmm = PAPER_PRESETS_MM.a4.w;
     let hmm = PAPER_PRESETS_MM.a4.h;
-    if (paperPreset === "a3") {
-      wmm = PAPER_PRESETS_MM.a3.w;
-      hmm = PAPER_PRESETS_MM.a3.h;
+    if (paperPreset === "a3" || paperPreset === "p10x15" || paperPreset === "p13x18") {
+      wmm = PAPER_PRESETS_MM[paperPreset].w;
+      hmm = PAPER_PRESETS_MM[paperPreset].h;
     } else if (paperPreset === "match") {
       const info = printers.find((p) => p.name === defaultPrinter || p.isDefault) || printers[0];
       const parsed = parsePrinterPageSize(info);
@@ -236,6 +327,20 @@ const PhotoBatchTool: React.FC = () => {
     return customMargins;
   }, [marginPreset, customMargins]);
 
+  const tile = useMemo<TileSpec | undefined>(() => {
+    if (photoSize === "full") return undefined;
+    const size = photoSize === "custom"
+      ? { w: Math.max(10, customTileW || 35), h: Math.max(10, customTileH || 45) }
+      : PHOTO_SIZES_MM[photoSize];
+    return { wPt: mmToPt(size.w), hPt: mmToPt(size.h), count: Math.max(1, tileCount), gapPt: mmToPt(TILE_GAP_MM) };
+  }, [photoSize, customTileW, customTileH, tileCount]);
+  const tiled = !!tile;
+  const tilesPerSheet = useMemo(() => {
+    if (!tile) return 0;
+    const g = tileGrid(pageSpec, margins, tile, orientation === "auto");
+    return g.cols * g.rows;
+  }, [tile, pageSpec, margins, orientation]);
+
   const itemsById = useMemo<Record<string, LayoutItem>>(
     () =>
       Object.fromEntries(
@@ -255,6 +360,7 @@ const PhotoBatchTool: React.FC = () => {
   );
 
   const itemsMap = useMemo(() => new Map(Object.entries(itemsById)), [itemsById]);
+  const sourcesById = useMemo(() => new Map(items.map((it) => [it.id, it.bitmap || undefined])), [items]);
 
   const pages = useMemo<LaidOutPage[]>(
     () =>
@@ -265,9 +371,27 @@ const PhotoBatchTool: React.FC = () => {
         autoRotate: orientation === "auto",
         background: "#ffffff",
         copies,
+        tile,
       }),
-    [groups, itemsById, overrides, pageSpec, margins, fit, orientation, copies],
+    [groups, itemsById, overrides, pageSpec, margins, fit, orientation, copies, tile],
   );
+
+  const pushHistory = useCallback(() => {
+    historyRef.current.push({ items, groups, overrides });
+    if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift();
+  }, [items, groups, overrides]);
+
+  const undo = useCallback(() => {
+    const prev = historyRef.current.pop();
+    if (!prev) {
+      toast({ title: t("studioNothingToUndo") });
+      return;
+    }
+    setItems(prev.items);
+    setGroups(prev.groups);
+    setOverrides(prev.overrides);
+    setCombineSelection(new Set());
+  }, [t]);
 
   const addFiles = useCallback(async (files: { file: File; sourceJobId?: string; sourceCustomerName?: string }[]) => {
     const incoming: BatchItem[] = files
@@ -344,6 +468,10 @@ const PhotoBatchTool: React.FC = () => {
       setColorMode(snap.colorMode);
       setPaperType(snap.paperType);
       setCopies(snap.copies);
+      if (snap.photoSize) setPhotoSize(snap.photoSize);
+      if (snap.tileCount) setTileCount(snap.tileCount);
+      if (snap.customTileW) setCustomTileW(snap.customTileW);
+      if (snap.customTileH) setCustomTileH(snap.customTileH);
       if (snap.items?.length) {
         await restoreItems(snap.items);
         setGroups(snap.groups?.length ? snap.groups : defaultGroups(snap.items.map((it) => it.id)));
@@ -377,6 +505,10 @@ const PhotoBatchTool: React.FC = () => {
           colorMode,
           paperType,
           copies,
+          photoSize,
+          tileCount,
+          customTileW,
+          customTileH,
         }
       : null,
     restored,
@@ -403,20 +535,23 @@ const PhotoBatchTool: React.FC = () => {
   }, [addFiles]);
 
   const updateItem = useCallback((id: string, patch: Partial<BatchItem>) => {
+    pushHistory();
     setItems((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  }, []);
+  }, [pushHistory]);
 
   const moveGroup = useCallback((from: number, to: number) => {
+    if (from < 0 || from >= groups.length || to < 0 || to >= groups.length || from === to) return;
+    pushHistory();
     setGroups((prev) => {
-      if (from < 0 || from >= prev.length || to < 0 || to >= prev.length || from === to) return prev;
       const next = [...prev];
       const [movedGroup] = next.splice(from, 1);
       next.splice(to, 0, movedGroup);
       return next;
     });
-  }, []);
+  }, [groups.length, pushHistory]);
 
   const removeItem = useCallback((id: string) => {
+    pushHistory();
     setItems((prev) => prev.filter((p) => p.id !== id));
     setGroups((prev) => prev.map((g) => ({ ...g, itemIds: g.itemIds.filter((x) => x !== id) })).filter((g) => g.itemIds.length > 0));
     setOverrides((prev) => {
@@ -431,7 +566,15 @@ const PhotoBatchTool: React.FC = () => {
       next.delete(id);
       return next;
     });
-  }, []);
+  }, [pushHistory]);
+
+  const clearAll = () => {
+    pushHistory();
+    setItems([]);
+    setGroups([]);
+    setOverrides({});
+    setCombineSelection(new Set());
+  };
 
   const toggleGroupSelection = useCallback((group: PageGroup) => {
     setCombineSelection((prev) => {
@@ -445,6 +588,7 @@ const PhotoBatchTool: React.FC = () => {
 
   const combineSelected = useCallback(() => {
     if (combineSelection.size < 2) return;
+    pushHistory();
     setGroups((prev) => {
       const selectedIds = combineSelection;
       const firstIndex = prev.findIndex((g) => g.itemIds.some((id) => selectedIds.has(id)));
@@ -464,31 +608,31 @@ const PhotoBatchTool: React.FC = () => {
       return next;
     });
     setCombineSelection(new Set());
-  }, [combineSelection]);
+  }, [combineSelection, pushHistory]);
 
   const splitGroup = useCallback((groupId: string) => {
+    const group = groups.find((g) => g.id === groupId);
+    if (!group || group.itemIds.length <= 1) return;
+    pushHistory();
     setGroups((prev) => {
       const idx = prev.findIndex((g) => g.id === groupId);
       if (idx === -1) return prev;
-      const group = prev[idx];
-      if (group.itemIds.length <= 1) return prev;
-      const singles = group.itemIds.map((id) => ({ id: crypto.randomUUID(), itemIds: [id] }));
+      const singles = prev[idx].itemIds.map((id) => ({ id: crypto.randomUUID(), itemIds: [id] }));
       const next = [...prev];
       next.splice(idx, 1, ...singles);
       return next;
     });
     setOverrides((prev) => {
-      const group = groups.find((g) => g.id === groupId);
-      if (!group) return prev;
       const next = { ...prev };
       group.itemIds.forEach((id) => delete next[id]);
       return next;
     });
-  }, [groups]);
+  }, [groups, pushHistory]);
 
   const snapFullPage = useCallback((itemId: string, printable: { x: number; y: number; w: number; h: number }) => {
+    pushHistory();
     setOverrides((prev) => ({ ...prev, [itemId]: { xPt: printable.x, yPt: printable.y, wPt: printable.w, hPt: printable.h } }));
-  }, []);
+  }, [pushHistory]);
 
   const beginPlacementDrag = (
     e: React.PointerEvent,
@@ -501,7 +645,9 @@ const PhotoBatchTool: React.FC = () => {
   ) => {
     e.stopPropagation();
     e.preventDefault();
+    (e.currentTarget as HTMLElement).focus?.({ preventScroll: true });
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* ignored */ }
+    pushHistory();
     placementDragRef.current = { itemId, mode, startX: e.clientX, startY: e.clientY, startRect: { ...rect }, pageWidthPt, pageHeightPt, scale };
   };
 
@@ -526,6 +672,62 @@ const PhotoBatchTool: React.FC = () => {
     placementDragRef.current = null;
   };
 
+  /** Arrow keys nudge a focused photo by 1mm (Shift: 5mm). */
+  const nudgePlacement = (
+    e: React.KeyboardEvent,
+    itemId: string,
+    rect: { xPt: number; yPt: number; wPt: number; hPt: number },
+    pageWidthPt: number,
+    pageHeightPt: number,
+  ) => {
+    const step = mmToPt(e.shiftKey ? 5 : 1);
+    const dirX = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+    const dirY = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+    if (!dirX && !dirY) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pushHistory();
+    const xPt = clamp(rect.xPt + dirX * step, 0, Math.max(0, pageWidthPt - rect.wPt));
+    const yPt = clamp(rect.yPt + dirY * step, 0, Math.max(0, pageHeightPt - rect.hPt));
+    setOverrides((prev) => ({ ...prev, [itemId]: { ...prev[itemId], xPt, yPt, wPt: rect.wPt, hPt: rect.hPt } }));
+  };
+
+  // Ctrl+Z while this tool is the visible one.
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const root = rootRef.current;
+      if (!root || root.offsetParent === null) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undoRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ── Editing one photo (crop / perspective / brightness) ──────────────────
+  const editingItem = editingId ? items.find((it) => it.id === editingId) ?? null : null;
+  const handleEditedSave = useCallback(async (blob: Blob) => {
+    const target = editingItem;
+    setEditingId(null);
+    if (!target) return;
+    try {
+      const file = new File([blob], target.file.name, { type: blob.type || "image/png" });
+      const { bitmap, width, height } = await decodeImageToBitmap(file);
+      pushHistory();
+      setItems((prev) => prev.map((p) => (p.id === target.id ? { ...p, file, bitmap, naturalWidth: width, naturalHeight: height, error: undefined } : p)));
+      toast({ title: isRtl ? "تم تحديث الصورة" : "Image updated", variant: "success" });
+    } catch (e) {
+      toast({ title: isRtl ? "تعذّر تطبيق التعديل" : "Could not apply the edit", description: errorMessage(e), variant: "destructive" });
+    }
+  }, [editingItem, pushHistory, isRtl]);
+
   const failedItems = items.filter((it) => it.error);
   const failedIds = useMemo(() => new Set(failedItems.map((it) => it.id)), [failedItems]);
   const totalMB = items.reduce((sum, it) => sum + it.file.size, 0) / (1024 * 1024);
@@ -545,10 +747,10 @@ const PhotoBatchTool: React.FC = () => {
   }, [pages, itemsById]);
 
   // Live price preview — billed per physical sheet, not per photo, since a
-  // page can now hold several combined images.
+  // page can hold several combined or tiled images.
   const paper = paperTypes.find((pt) => pt.id === paperType);
   const perPageRate = paper ? (colorMode === "bw" ? paper.blackWhitePerPage : paper.colorPerPage) : 0;
-  const billablePages = groups.filter((g) => g.itemIds.some((id) => !failedIds.has(id))).length;
+  const billablePages = pages.filter((p) => p.placements.some((pl) => !failedIds.has(pl.photoId))).length;
   const sheetCount = billablePages * copies;
   const price = perPageRate * sheetCount;
   const currency = settings.currency || "DZD";
@@ -646,7 +848,7 @@ const PhotoBatchTool: React.FC = () => {
           copies: 1, // baked into the PDF
           paperType,
         },
-        pageCount: pages.length,
+        pageCount: pages.length * copies,
         sourceJobIds,
         source: "admin",
       });
@@ -665,21 +867,6 @@ const PhotoBatchTool: React.FC = () => {
     }
   };
 
-  const drawGroupPreview = (canvas: HTMLCanvasElement | null, page: LaidOutPage, w: number, h: number, scale: number) => {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width = w;
-    canvas.height = h;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "#d1d5db";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
-    const sourcesById = new Map(items.map((it) => [it.id, it.bitmap || undefined]));
-    drawPlacements(ctx, page, itemsMap, sourcesById, scale);
-  };
-
   const marginButtons: { mm: number; label: string }[] = [
     { mm: 0, label: t("borderless") },
     { mm: 3, label: "3mm" },
@@ -687,8 +874,29 @@ const PhotoBatchTool: React.FC = () => {
     { mm: 10, label: "10mm" },
   ];
 
+  const marginLabels: Record<keyof MarginSpec, string> = {
+    topMm: t("marginTop"),
+    rightMm: t("marginRight"),
+    bottomMm: t("marginBottom"),
+    leftMm: t("marginLeft"),
+  };
+
+  // One segmented-button look for every option row, matching the PDF tool.
+  const seg = (active: boolean, onClick: () => void, label: React.ReactNode, key?: string, className?: string) => (
+    <Button
+      key={key}
+      type="button"
+      size="sm"
+      variant={active ? "default" : "outline"}
+      onClick={onClick}
+      className={cn("h-8 px-2.5 text-xs", className)}
+    >
+      {label}
+    </Button>
+  );
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div ref={rootRef} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       {/* Controls */}
       <div className="lg:col-span-1 space-y-4">
         <Card className="shadow-none">
@@ -743,6 +951,57 @@ const PhotoBatchTool: React.FC = () => {
 
         <Card className="shadow-none">
           <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-sm font-semibold">{t("photoSize")}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0 space-y-3">
+            <div className="flex flex-wrap gap-1">
+              {seg(photoSize === "full", () => setPhotoSize("full"), t("photoSizeFull"), "full")}
+              {(Object.keys(PHOTO_SIZES_MM) as (keyof typeof PHOTO_SIZES_MM)[]).map((k) =>
+                seg(photoSize === k, () => setPhotoSize(k), t(PHOTO_SIZES_MM[k].labelKey), k),
+              )}
+              {seg(photoSize === "custom", () => setPhotoSize("custom"), t("photoSizeCustom"), "custom")}
+            </div>
+            {photoSize === "custom" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">{isRtl ? "العرض (مم)" : "Width (mm)"}</Label>
+                  <Input type="number" min={10} value={customTileW} onChange={(e) => setCustomTileW(Number(e.target.value) || 35)} className="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{isRtl ? "الارتفاع (مم)" : "Height (mm)"}</Label>
+                  <Input type="number" min={10} value={customTileH} onChange={(e) => setCustomTileH(Number(e.target.value) || 45)} className="h-8 text-xs" />
+                </div>
+              </div>
+            )}
+            {tiled && (
+              <div className="space-y-1">
+                <Label className="text-xs">{t("photoTileCount")}</Label>
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={tileCount <= 1} onClick={() => setTileCount((c) => Math.max(1, c - 1))} aria-label={isRtl ? "إنقاص" : "Decrease"}>
+                    <Icon name="minus" />
+                  </Button>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={MAX_COPIES}
+                    value={tileCount}
+                    onChange={(e) => setTileCount(Math.max(1, Math.min(MAX_COPIES, Number(e.target.value) || 1)))}
+                    className="h-8 text-xs text-center"
+                  />
+                  <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={tileCount >= MAX_COPIES} onClick={() => setTileCount((c) => Math.min(MAX_COPIES, c + 1))} aria-label={isRtl ? "زيادة" : "Increase"}>
+                    <Icon name="plus" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("photoTilePerSheet").replace("{n}", String(tilesPerSheet))} · {t("photoTileHint")}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-none">
+          <CardHeader className="p-4 pb-2">
             <CardTitle className="text-sm font-semibold">{t("paperSize")}</CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0 space-y-3">
@@ -750,20 +1009,11 @@ const PhotoBatchTool: React.FC = () => {
               {([
                 ["a4", "A4"],
                 ["a3", "A3"],
+                ["p10x15", t("photoPaper10x15")],
+                ["p13x18", t("photoPaper13x18")],
                 ["match", t("matchPrinter")],
                 ["custom", t("customSize")],
-              ] as [PaperPreset, string][]).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setPaperPreset(v)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                    paperPreset === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+              ] as [PaperPreset, string][]).map(([v, label]) => seg(paperPreset === v, () => setPaperPreset(v), label, v))}
             </div>
             {paperPreset === "custom" && (
               <div className="grid grid-cols-2 gap-2">
@@ -795,55 +1045,23 @@ const PhotoBatchTool: React.FC = () => {
 
             <div className="space-y-1">
               <Label className="text-xs">{t("fillMode")}</Label>
-              <div className="flex gap-1">
-                {([
-                  ["cover", t("fillCover")],
-                  ["contain", t("fitContain")],
-                ] as ["cover" | "contain", string][]).map(([v, label]) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setFit(v)}
-                    className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                      fit === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-1">
+                {seg(fit === "cover", () => setFit("cover"), t("fillCover"), "cover")}
+                {seg(fit === "contain", () => setFit("contain"), t("fitContain"), "contain")}
               </div>
             </div>
 
             <div className="space-y-1">
               <Label className="text-xs">{t("margins")}</Label>
               <div className="flex flex-wrap gap-1">
-                {marginButtons.map((m) => (
-                  <button
-                    key={m.mm}
-                    type="button"
-                    onClick={() => setMarginPreset(m.mm)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                      marginPreset === m.mm ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setMarginPreset(null)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                    marginPreset === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {t("marginCustom")}
-                </button>
+                {marginButtons.map((m) => seg(marginPreset === m.mm, () => setMarginPreset(m.mm), m.label, String(m.mm)))}
+                {seg(marginPreset === null, () => setMarginPreset(null), t("marginCustom"), "custom")}
               </div>
               {marginPreset === null && (
                 <div className="grid grid-cols-4 gap-2 mt-1">
                   {(["topMm", "rightMm", "bottomMm", "leftMm"] as const).map((key) => (
                     <div key={key} className="space-y-0.5">
-                      <Label className="text-xs text-muted-foreground">{key.replace("Mm", "")}</Label>
+                      <Label className="text-xs text-muted-foreground">{marginLabels[key]}</Label>
                       <Input
                         type="number"
                         min={0}
@@ -862,22 +1080,9 @@ const PhotoBatchTool: React.FC = () => {
 
             <div className="space-y-1">
               <Label className="text-xs">{t("colorMode")}</Label>
-              <div className="flex gap-1">
-                {([
-                  ["color", t("color")],
-                  ["bw", t("bw")],
-                ] as ["color" | "bw", string][]).map(([v, label]) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setColorMode(v)}
-                    className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
-                      colorMode === v ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-1">
+                {seg(colorMode === "color", () => setColorMode("color"), t("color"), "color")}
+                {seg(colorMode === "bw", () => setColorMode("bw"), t("bw"), "bw")}
               </div>
             </div>
 
@@ -899,14 +1104,22 @@ const PhotoBatchTool: React.FC = () => {
 
             <div className="space-y-1">
               <Label className="text-xs">{t("copies")}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={copies}
-                onChange={(e) => setCopies(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
-                className="h-8 text-xs"
-              />
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={copies <= 1} onClick={() => setCopies((c) => Math.max(1, c - 1))} aria-label={isRtl ? "إنقاص عدد النسخ" : "Decrease copies"}>
+                  <Icon name="minus" />
+                </Button>
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_COPIES}
+                  value={copies}
+                  onChange={(e) => setCopies(Math.max(1, Math.min(MAX_COPIES, Number(e.target.value) || 1)))}
+                  className="h-8 text-xs text-center"
+                />
+                <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" disabled={copies >= MAX_COPIES} onClick={() => setCopies((c) => Math.min(MAX_COPIES, c + 1))} aria-label={isRtl ? "زيادة عدد النسخ" : "Increase copies"}>
+                  <Icon name="plus" />
+                </Button>
+              </div>
             </div>
 
             <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 px-3 py-2 text-xs text-green-800 dark:text-green-100">
@@ -915,11 +1128,19 @@ const PhotoBatchTool: React.FC = () => {
               <span className="font-bold">{formatPrice(price, currency)}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button disabled={!allDecoded || building || printing} onClick={handlePrint}>
+            {/* Same action order as the other studio tools: Print, then save. */}
+            <div className="space-y-2">
+              <Button className="w-full gap-2" disabled={!allDecoded || building || printing} onClick={handlePrint}>
+                <Icon name="print" />
                 {printing || building ? "..." : t("printNow")}
               </Button>
-              <Button disabled={!allDecoded || building} variant="outline" onClick={handleSaveAsJob}>
+              {isElectron() && (
+                <p className="text-xs text-muted-foreground text-center truncate" title={defaultPrinter}>
+                  {t("studioPrinterLabel")}: {defaultPrinter || t("studioSystemDefaultPrinter")}
+                </p>
+              )}
+              <Button className="w-full gap-2" size="sm" disabled={!allDecoded || building} variant="secondary" onClick={handleSaveAsJob}>
+                <Icon name="save" />
                 {building ? "..." : t("saveAsJob")}
               </Button>
             </div>
@@ -930,10 +1151,15 @@ const PhotoBatchTool: React.FC = () => {
       {/* Preview grid */}
       <div className="lg:col-span-3">
         <Card className="shadow-none">
-          <CardHeader className="p-4 pb-2 flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold">
-              {t("preview")} &middot; {groups.length} {t("pages")}
-            </CardTitle>
+          <CardHeader className="p-4 pb-2 flex-row items-center justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="text-sm font-semibold">
+                {t("preview")} &middot; {pages.length} {t("pages")}
+              </CardTitle>
+              {items.length > 0 && !tiled && (
+                <p className="text-xs text-muted-foreground mt-0.5">{t("photoNudgeHint")}</p>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {combineSelection.size >= 2 && (
                 <Button variant="outline" size="sm" className="text-xs h-auto px-2 py-1" onClick={combineSelected}>
@@ -941,14 +1167,20 @@ const PhotoBatchTool: React.FC = () => {
                 </Button>
               )}
               {items.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-destructive h-auto px-2 py-1"
-                  onClick={() => { setItems([]); setGroups([]); setOverrides({}); setCombineSelection(new Set()); }}
-                >
-                  {t("clearAll")}
-                </Button>
+                <>
+                  <Button variant="ghost" size="sm" className="text-xs h-auto px-2 py-1 gap-1" onClick={undo} title="Ctrl+Z">
+                    <Icon name="rotate-ccw" className="w-3.5 h-3.5" />
+                    {t("studioUndo")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-destructive h-auto px-2 py-1"
+                    onClick={clearAll}
+                  >
+                    {t("clearAll")}
+                  </Button>
+                </>
               )}
             </div>
           </CardHeader>
@@ -958,12 +1190,8 @@ const PhotoBatchTool: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 {groups.map((group, i) => {
-                  const page = pages[i];
-                  if (!page) return null;
-                  const scale = Math.min(420 / page.pageWidthPt, 520 / page.pageHeightPt);
-                  const canvasW = Math.max(1, Math.round(page.pageWidthPt * scale));
-                  const canvasH = Math.max(1, Math.round(page.pageHeightPt * scale));
-                  const printable = computePrintableRect(page.pageWidthPt, page.pageHeightPt, margins);
+                  const groupPages = pages.filter((p) => p.groupId === group.id);
+                  if (groupPages.length === 0) return null;
                   const groupSelected = group.itemIds.every((id) => combineSelection.has(id));
                   const names = group.itemIds.map((id) => items.find((it) => it.id === id)?.file.name).filter(Boolean).join(", ");
 
@@ -980,13 +1208,16 @@ const PhotoBatchTool: React.FC = () => {
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <input
                           type="checkbox"
-                          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-indigo-600 cursor-pointer"
+                          className="w-3.5 h-3.5 rounded border-input accent-primary cursor-pointer"
                           checked={groupSelected}
                           onChange={() => toggleGroupSelection(group)}
                           title={t("selectMode")}
                         />
                         {group.itemIds.length > 1 && (
                           <span className="text-xs text-muted-foreground">{group.itemIds.length}&times;</span>
+                        )}
+                        {groupPages.length > 1 && (
+                          <span className="text-xs text-muted-foreground">· {groupPages.length} {t("pages")}</span>
                         )}
                         <div className="ms-auto flex items-center gap-0.5">
                           {group.itemIds.length > 1 && (
@@ -997,87 +1228,136 @@ const PhotoBatchTool: React.FC = () => {
                               {t("splitPage")}
                             </button>
                           )}
-                          <button className="text-gray-400 hover:text-foreground p-0.5 cursor-grab active:cursor-grabbing" title={isRtl ? "لأعلى" : "Move up"} onClick={() => moveGroup(i, i - 1)}>▲</button>
-                          <button className="text-gray-400 hover:text-foreground p-0.5" title={isRtl ? "لأسفل" : "Move down"} onClick={() => moveGroup(i, i + 1)}>▼</button>
+                          <button className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted" title={isRtl ? "لأعلى" : "Move up"} aria-label={isRtl ? "لأعلى" : "Move up"} disabled={i === 0} onClick={() => moveGroup(i, i - 1)}>
+                            <Icon name="chevron-up" className="w-3.5 h-3.5" />
+                          </button>
+                          <button className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted" title={isRtl ? "لأسفل" : "Move down"} aria-label={isRtl ? "لأسفل" : "Move down"} disabled={i === groups.length - 1} onClick={() => moveGroup(i, i + 1)}>
+                            <Icon name="chevron-down" className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      <div
-                        className="relative bg-white border border-border rounded-lg overflow-hidden mx-auto"
-                        style={{ width: canvasW, height: canvasH }}
-                      >
-                        <canvas ref={(el) => drawGroupPreview(el, page, canvasW, canvasH, scale)} className="absolute inset-0" style={{ width: canvasW, height: canvasH }} />
-                        {page.placements.map((placement) => {
-                          const item = items.find((it) => it.id === placement.photoId);
-                          if (!item) return null;
-                          const dpi = dpiByPhoto[placement.photoId];
-                          const lowRes = !!item.bitmap && dpi > 0 && dpi < 150;
-                          const left = placement.xPt * scale;
-                          const top = placement.yPt * scale;
-                          const w = placement.wPt * scale;
-                          const h = placement.hPt * scale;
+                      <div className="space-y-3">
+                        {groupPages.map((page, pageIdx) => {
+                          const scale = Math.min(420 / page.pageWidthPt, 520 / page.pageHeightPt);
+                          const canvasW = Math.max(1, Math.round(page.pageWidthPt * scale));
+                          const canvasH = Math.max(1, Math.round(page.pageHeightPt * scale));
+                          const printable = computePrintableRect(page.pageWidthPt, page.pageHeightPt, margins);
+                          // Tiled pages repeat a photo many times; its toolbar
+                          // goes on the first copy only.
+                          const toolbarShown = new Set<string>();
                           return (
                             <div
-                              key={placement.photoId}
-                              className="absolute border border-dashed border-indigo-400/70 group/placement select-none"
-                              style={{ left, top, width: w, height: h, touchAction: "none" }}
-                              onPointerDown={(e) => beginPlacementDrag(e, placement.photoId, "move", { xPt: placement.xPt, yPt: placement.yPt, wPt: placement.wPt, hPt: placement.hPt }, page.pageWidthPt, page.pageHeightPt, scale)}
-                              onPointerMove={onPlacementDragMove}
-                              onPointerUp={endPlacementDrag}
+                              key={pageIdx}
+                              className="relative bg-white border border-border rounded-lg mx-auto"
+                              style={{ width: canvasW, height: canvasH }}
                             >
-                              {item.error && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/80 text-xs text-red-700 dark:text-red-200 p-1 text-center">
-                                  {item.error}
-                                </div>
-                              )}
-                              {lowRes && (
-                                <span
-                                  className="absolute top-0.5 start-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold"
-                                  title={isRtl ? `دقة منخفضة (~${Math.round(dpi)} DPI)` : `Low resolution (~${Math.round(dpi)} DPI)`}
-                                >
-                                  !
-                                </span>
-                              )}
-                              <div className="absolute -top-6 start-0 hidden group-hover/placement:flex items-center gap-0.5 bg-card border border-border rounded-md shadow px-1 py-0.5 z-10 whitespace-nowrap">
-                                <button
-                                  className="p-0.5 rounded text-gray-400 hover:text-foreground hover:bg-muted"
-                                  title={t("rotate90")}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); updateItem(item.id, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 }); }}
-                                >
-                                  <Icon name="refresh" className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
-                                  title={t("fillMode")}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); updateItem(item.id, { objectFit: (item.objectFit ?? fit) === "cover" ? "contain" : "cover" }); }}
-                                >
-                                  {(item.objectFit ?? fit) === "cover" ? t("fillCover") : t("fitContain")}
-                                </button>
-                                <button
-                                  className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
-                                  title={t("fullPage")}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); snapFullPage(item.id, printable); }}
-                                >
-                                  {t("fullPage")}
-                                </button>
-                                <button
-                                  className="p-0.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  title={t("remove")}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
-                                >
-                                  <Icon name="x" className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              <div
-                                className="absolute bottom-0 end-0 w-3 h-3 bg-indigo-500 cursor-se-resize opacity-0 group-hover/placement:opacity-100"
-                                onPointerDown={(e) => beginPlacementDrag(e, placement.photoId, "resize", { xPt: placement.xPt, yPt: placement.yPt, wPt: placement.wPt, hPt: placement.hPt }, page.pageWidthPt, page.pageHeightPt, scale)}
-                                onPointerMove={onPlacementDragMove}
-                                onPointerUp={endPlacementDrag}
+                              <PagePreviewCanvas
+                                page={page}
+                                itemsMap={itemsMap}
+                                sourcesById={sourcesById}
+                                width={canvasW}
+                                height={canvasH}
+                                scale={scale}
                               />
+                              {page.placements.map((placement, pi) => {
+                                const item = items.find((it) => it.id === placement.photoId);
+                                if (!item) return null;
+                                const dpi = dpiByPhoto[placement.photoId];
+                                const lowRes = !!item.bitmap && dpi > 0 && dpi < 150;
+                                const rect = { xPt: placement.xPt, yPt: placement.yPt, wPt: placement.wPt, hPt: placement.hPt };
+                                const withToolbar = !toolbarShown.has(item.id);
+                                toolbarShown.add(item.id);
+                                return (
+                                  <div
+                                    key={`${placement.photoId}-${pi}`}
+                                    tabIndex={tiled ? -1 : 0}
+                                    className={cn(
+                                      "absolute border border-dashed border-primary/50 group/placement select-none outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                                      tiled ? "cursor-default" : "cursor-move",
+                                    )}
+                                    style={{ left: placement.xPt * scale, top: placement.yPt * scale, width: placement.wPt * scale, height: placement.hPt * scale, touchAction: "none" }}
+                                    onPointerDown={tiled ? undefined : (e) => beginPlacementDrag(e, placement.photoId, "move", rect, page.pageWidthPt, page.pageHeightPt, scale)}
+                                    onPointerMove={tiled ? undefined : onPlacementDragMove}
+                                    onPointerUp={tiled ? undefined : endPlacementDrag}
+                                    onKeyDown={tiled ? undefined : (e) => nudgePlacement(e, placement.photoId, rect, page.pageWidthPt, page.pageHeightPt)}
+                                  >
+                                    {item.error && (
+                                      <div className="absolute inset-0 flex items-center justify-center bg-red-50/90 dark:bg-red-900/80 text-xs text-red-700 dark:text-red-200 p-1 text-center">
+                                        {item.error}
+                                      </div>
+                                    )}
+                                    {lowRes && withToolbar && (
+                                      <span
+                                        className="absolute bottom-0.5 start-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-bold"
+                                        title={isRtl ? `دقة منخفضة (~${Math.round(dpi)} DPI)` : `Low resolution (~${Math.round(dpi)} DPI)`}
+                                      >
+                                        !
+                                      </span>
+                                    )}
+                                    {/* Sits inside the photo so it is never cut
+                                        off by the page edge; always visible on
+                                        touch screens, on hover/focus elsewhere. */}
+                                    {withToolbar && (
+                                      <div className="absolute top-1 start-1 z-10 flex items-center gap-0.5 bg-card/95 border border-border rounded-md shadow px-1 py-0.5 whitespace-nowrap opacity-100 [@media(hover:hover)]:opacity-0 group-hover/placement:opacity-100 group-focus-within/placement:opacity-100 focus-within:opacity-100 transition-opacity">
+                                        <button
+                                          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                                          title={t("rotate90")}
+                                          aria-label={t("rotate90")}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => { e.stopPropagation(); updateItem(item.id, { rotateQuarterTurns: ((item.rotateQuarterTurns + 1) % 4) as 0 | 1 | 2 | 3 }); }}
+                                        >
+                                          <Icon name="refresh" className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
+                                          title={t("fillMode")}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => { e.stopPropagation(); updateItem(item.id, { objectFit: (item.objectFit ?? fit) === "cover" ? "contain" : "cover" }); }}
+                                        >
+                                          {(item.objectFit ?? fit) === "cover" ? t("fillCover") : t("fitContain")}
+                                        </button>
+                                        <button
+                                          className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
+                                          title={t("photoEdit")}
+                                          disabled={!item.bitmap}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => { e.stopPropagation(); setEditingId(item.id); }}
+                                        >
+                                          {t("photoEdit")}
+                                        </button>
+                                        {!tiled && (
+                                          <button
+                                            className="p-0.5 rounded text-xs font-medium text-muted-foreground hover:bg-muted"
+                                            title={t("fullPage")}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onClick={(e) => { e.stopPropagation(); snapFullPage(item.id, printable); }}
+                                          >
+                                            {t("fullPage")}
+                                          </button>
+                                        )}
+                                        <button
+                                          className="p-0.5 rounded text-destructive hover:bg-destructive/10"
+                                          title={t("remove")}
+                                          aria-label={t("remove")}
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                          onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
+                                        >
+                                          <Icon name="x" className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                    {!tiled && (
+                                      <div
+                                        className="absolute bottom-0 end-0 w-3 h-3 bg-primary cursor-se-resize opacity-100 [@media(hover:hover)]:opacity-0 group-hover/placement:opacity-100"
+                                        onPointerDown={(e) => beginPlacementDrag(e, placement.photoId, "resize", rect, page.pageWidthPt, page.pageHeightPt, scale)}
+                                        onPointerMove={onPlacementDragMove}
+                                        onPointerUp={endPlacementDrag}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
@@ -1096,6 +1376,15 @@ const PhotoBatchTool: React.FC = () => {
 
       <PhotoSourceModal isOpen={showPicker} onClose={() => setShowPicker(false)} onAdd={onPickerAdd} />
       <ImageSearchModal isOpen={showImageSearch} onClose={() => setShowImageSearch(false)} onAdd={onSearchAdd} />
+
+      {editingItem && (
+        <ImageEditor
+          imageBlob={editingItem.file}
+          lang={lang}
+          onSave={handleEditedSave}
+          onCancel={() => setEditingId(null)}
+        />
+      )}
 
       <Dialog open={showJobForm} onOpenChange={setShowJobForm}>
         <DialogContent>

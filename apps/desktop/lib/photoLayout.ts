@@ -45,6 +45,17 @@ export interface BatchOptions {
   autoRotate: boolean;
   background: string; // "#ffffff" for contain letterbox
   copies: number; // whole-batch copies — duplicated at PDF-build stage, not here
+  // Fixed photo size (ID/passport/10×15…): every photo is printed `count`
+  // times at exactly this size, packed in a grid that spills onto more pages.
+  // Placement overrides are ignored in this mode.
+  tile?: TileSpec;
+}
+
+export interface TileSpec {
+  wPt: number;
+  hPt: number;
+  count: number; // copies of each photo
+  gapPt: number;
 }
 
 export interface SourceCropRect {
@@ -100,6 +111,9 @@ export interface PageGroup {
 }
 
 export interface LaidOutPage {
+  // The group this page was laid out from. A tiled group can fill several
+  // pages; a normal group always yields exactly one.
+  groupId: string;
   // Effective page size — already swapped to landscape for a single-photo
   // group when auto-rotate fired.
   pageWidthPt: number;
@@ -239,6 +253,11 @@ export function layoutGroups(
     const groupItems = group.itemIds.map((id) => itemsById[id]).filter((it): it is PhotoItem => !!it);
     if (groupItems.length === 0) continue;
 
+    if (options.tile) {
+      pages.push(...layoutTiledGroup(group.id, groupItems, options, options.tile));
+      continue;
+    }
+
     let pageW = options.page.widthPt;
     let pageH = options.page.heightPt;
 
@@ -273,9 +292,75 @@ export function layoutGroups(
       });
     }
 
-    pages.push({ pageWidthPt: pageW, pageHeightPt: pageH, placements });
+    pages.push({ groupId: group.id, pageWidthPt: pageW, pageHeightPt: pageH, placements });
   }
 
+  return pages;
+}
+
+export interface TileGrid {
+  cols: number;
+  rows: number;
+  cellW: number;
+  cellH: number;
+  pageW: number;
+  pageH: number;
+}
+
+/**
+ * Grid for fixed-size photos on one page. A tile larger than the printable
+ * area is shrunk to fit (never stretched); with `autoRotate` the page turns
+ * landscape when that holds more tiles.
+ */
+export function tileGrid(page: PageSpec, margins: MarginSpec, tile: TileSpec, autoRotate: boolean): TileGrid {
+  const gridFor = (pageW: number, pageH: number): TileGrid => {
+    const printable = computePrintableRect(pageW, pageH, margins);
+    const shrink = Math.min(1, printable.w / tile.wPt, printable.h / tile.hPt);
+    const cellW = tile.wPt * shrink;
+    const cellH = tile.hPt * shrink;
+    const gap = Math.max(0, tile.gapPt);
+    return {
+      cols: Math.max(1, Math.floor((printable.w + gap) / (cellW + gap))),
+      rows: Math.max(1, Math.floor((printable.h + gap) / (cellH + gap))),
+      cellW,
+      cellH,
+      pageW,
+      pageH,
+    };
+  };
+  const portrait = gridFor(page.widthPt, page.heightPt);
+  if (!autoRotate) return portrait;
+  const landscape = gridFor(page.heightPt, page.widthPt);
+  return landscape.cols * landscape.rows > portrait.cols * portrait.rows ? landscape : portrait;
+}
+
+function layoutTiledGroup(groupId: string, groupItems: PhotoItem[], options: BatchOptions, tile: TileSpec): LaidOutPage[] {
+  const grid = tileGrid(options.page, options.margins, tile, options.autoRotate);
+  const printable = computePrintableRect(grid.pageW, grid.pageH, options.margins);
+  const gap = Math.max(0, tile.gapPt);
+  const perPage = grid.cols * grid.rows;
+  const sequence = groupItems.flatMap((item) => Array.from({ length: Math.max(1, tile.count) }, () => item));
+  const pages: LaidOutPage[] = [];
+  for (let start = 0; start < sequence.length; start += perPage) {
+    const chunk = sequence.slice(start, start + perPage);
+    const cols = Math.min(grid.cols, chunk.length);
+    const gridW = cols * grid.cellW + (cols - 1) * gap;
+    const originX = printable.x + (printable.w - gridW) / 2;
+    const placements: Placement[] = chunk.map((item, i) => {
+      const col = i % grid.cols;
+      const row = Math.floor(i / grid.cols);
+      return {
+        photoId: item.id,
+        xPt: originX + col * (grid.cellW + gap),
+        yPt: printable.y + row * (grid.cellH + gap),
+        wPt: grid.cellW,
+        hPt: grid.cellH,
+        rotateQuarterTurns: item.rotateQuarterTurns ?? 0,
+        objectFit: item.objectFit ?? options.fit,
+      };
+    });
+    pages.push({ groupId, pageWidthPt: grid.pageW, pageHeightPt: grid.pageH, placements });
+  }
   return pages;
 }
 

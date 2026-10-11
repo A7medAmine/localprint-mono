@@ -13,6 +13,9 @@ interface ImageEditorProps {
   lang: Language;
   onSave: (newBlob: Blob) => void;
   onCancel: () => void;
+  // Mode the editor opens in. Applied to the first image load only — later
+  // loads (after applying a crop) drop back to "edit" as before.
+  initialMode?: "edit" | "crop" | "perspective";
 }
 
 interface FilterValues {
@@ -209,6 +212,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   lang,
   onSave,
   onCancel,
+  initialMode = "edit",
 }) => {
   const t = (key: string) => TRANSLATIONS[key][lang];
   const isRtl = lang === "ar";
@@ -228,6 +232,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
   const [redoStack, setRedoStack] = useState<Blob[]>([]);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
+  const pendingInitialModeRef = useRef(initialMode);
 
   const [baseSize, setBaseSize] = useState({ width: 0, height: 0 });
 
@@ -326,7 +331,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
         { x: w * 0.1, y: h * 0.9 },
       ]);
       setCropRect({ x: w * 0.2, y: h * 0.2, w: w * 0.6, h: h * 0.6 });
-      setMode("edit");
+      setMode(pendingInitialModeRef.current);
+      pendingInitialModeRef.current = "edit";
       if (resetFilters) setFilters({ ...DEFAULT_FILTERS });
     };
   }, []);

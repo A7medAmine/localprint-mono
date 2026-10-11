@@ -35,6 +35,44 @@ export async function getPdfjs(): Promise<any> {
 }
 
 /**
+ * Render the first `maxPages` pages of a PDF to PNG data URLs, in order.
+ * @param data      the PDF bytes (ArrayBuffer or typed array)
+ * @param maxPages  how many leading pages to render (default 1)
+ * @param maxPx     longest-edge target in device pixels (default 1000)
+ */
+export async function renderPdfPagesToDataUrls(
+  data: ArrayBuffer | Uint8Array,
+  maxPages = 1,
+  maxPx = 1000,
+): Promise<string[]> {
+  const pdfjs = await getPdfjs();
+  // pdf.js transfers/detaches the buffer it's given — hand it a copy so the
+  // caller's ArrayBuffer stays usable.
+  const bytes = data instanceof Uint8Array ? data.slice() : new Uint8Array(data).slice();
+  const doc = await pdfjs.getDocument({ data: bytes, ...PDF_DOC_OPTIONS }).promise;
+  try {
+    const out: string[] = [];
+    const count = Math.min(doc.numPages, Math.max(1, maxPages));
+    for (let n = 1; n <= count; n++) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(maxPx / base.width, maxPx / base.height, 4);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(viewport.width));
+      canvas.height = Math.max(1, Math.floor(viewport.height));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Failed to get canvas context");
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      out.push(canvas.toDataURL("image/png"));
+    }
+    return out;
+  } finally {
+    try { doc.destroy(); } catch { /* noop */ }
+  }
+}
+
+/**
  * Render the first page of a PDF to a PNG data URL.
  * @param data   the PDF bytes (ArrayBuffer or typed array)
  * @param maxPx  longest-edge target in device pixels (default 1000)
@@ -43,24 +81,6 @@ export async function renderPdfFirstPageToDataUrl(
   data: ArrayBuffer | Uint8Array,
   maxPx = 1000,
 ): Promise<string> {
-  const pdfjs = await getPdfjs();
-  // pdf.js transfers/detaches the buffer it's given — hand it a copy so the
-  // caller's ArrayBuffer stays usable.
-  const bytes = data instanceof Uint8Array ? data.slice() : new Uint8Array(data).slice();
-  const doc = await pdfjs.getDocument({ data: bytes, ...PDF_DOC_OPTIONS }).promise;
-  try {
-    const page = await doc.getPage(1);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(maxPx / base.width, maxPx / base.height, 4);
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.floor(viewport.width));
-    canvas.height = Math.max(1, Math.floor(viewport.height));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Failed to get canvas context");
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL("image/png");
-  } finally {
-    try { doc.destroy(); } catch { /* noop */ }
-  }
+  const [first] = await renderPdfPagesToDataUrls(data, 1, maxPx);
+  return first;
 }
