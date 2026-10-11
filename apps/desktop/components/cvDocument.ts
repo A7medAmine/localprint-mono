@@ -8,6 +8,64 @@ const escapeHtml = (s: string) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string),
   );
 
+const DEFAULT_FIELDS: CvDocument["fields"] = {
+  photo: true, contact: true, summary: true, experience: true, education: true, skills: true, languages: true,
+};
+const TEMPLATE_IDS: CvTemplateId[] = ["modern", "classic", "minimal", "azure"];
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const strList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const entryList = (v: unknown): CvEntry[] =>
+  Array.isArray(v)
+    ? v.map((e, i) => ({
+        id: str(e?.id) || `e${i}_${Math.random().toString(36).slice(2, 8)}`,
+        title: str(e?.title),
+        subtitle: str(e?.subtitle),
+        period: str(e?.period),
+        description: str(e?.description),
+      }))
+    : [];
+
+/** Fill in anything an older or partial saved record is missing, so neither
+ *  the editor nor the renderer trips over an undefined list or flag. */
+export const normalizeCvDocument = (raw: Partial<CvDocument> | null | undefined, fallbackLang: CvDocument["language"] = "ar"): CvDocument => {
+  const d = (raw && typeof raw === "object" ? raw : {}) as Partial<CvDocument>;
+  const language = d.language === "ar" || d.language === "en" || d.language === "fr" ? d.language : fallbackLang;
+  return {
+    language,
+    templateId: TEMPLATE_IDS.includes(d.templateId as CvTemplateId) ? (d.templateId as CvTemplateId) : "modern",
+    fields: { ...DEFAULT_FIELDS, ...(d.fields && typeof d.fields === "object" ? d.fields : {}) },
+    jobTitle: str(d.jobTitle),
+    email: str(d.email),
+    address: str(d.address),
+    summary: str(d.summary),
+    experience: entryList(d.experience),
+    education: entryList(d.education),
+    skills: strList(d.skills),
+    languagesSpoken: strList(d.languagesSpoken),
+    customSections: Array.isArray(d.customSections)
+      ? d.customSections.map((s, i) => ({ id: str(s?.id) || `s${i}`, title: str(s?.title), content: str(s?.content) }))
+      : [],
+  };
+};
+
+// A row added in the editor but never filled in must not print an empty
+// heading (or a lone bullet).
+const withoutBlankRows = (d: CvDocument): CvDocument => {
+  const filled = (e: CvEntry) => !!(e.title.trim() || e.subtitle.trim() || e.period.trim() || e.description.trim());
+  return {
+    ...d,
+    experience: d.experience.filter(filled),
+    education: d.education.filter(filled),
+    skills: d.skills.filter((s) => s.trim()),
+    languagesSpoken: d.languagesSpoken.filter((s) => s.trim()),
+    customSections: d.customSections.filter((s) => s.title.trim() || s.content.trim()),
+  };
+};
+
+// Phone numbers and emails inside Arabic text get reordered by the bidi
+// algorithm ("+213 5..." renders as "5... 213+") — isolate them.
+const ltr = (s: string) => `<bdi dir="ltr">${escapeHtml(s)}</bdi>`;
+
 // Multi-line free text (summary, custom sections) → one <p> per non-empty line.
 const paragraphs = (text: string) =>
   text
@@ -66,14 +124,14 @@ const entrySection = (entries: CvEntry[], accent: string) =>
     .join("");
 
 const buildCvInner = ({ profile, photoDataUrl }: CvDocumentProps) => {
-  const { data } = profile;
+  const data = withoutBlankRows(profile.data);
   const isRtl = data.language === "ar";
   const L = (key: LabelKey) => LABELS[key][data.language];
   const accent = ACCENTS[data.templateId];
 
   const contactBits = [
-    profile.phone ? `<span>${escapeHtml(L("phone"))}: ${escapeHtml(profile.phone)}</span>` : "",
-    data.email ? `<span>${escapeHtml(L("email"))}: ${escapeHtml(data.email)}</span>` : "",
+    profile.phone ? `<span>${escapeHtml(L("phone"))}: ${ltr(profile.phone)}</span>` : "",
+    data.email ? `<span>${escapeHtml(L("email"))}: ${ltr(data.email)}</span>` : "",
     data.address ? `<span>${escapeHtml(L("address"))}: ${escapeHtml(data.address)}</span>` : "",
   ].filter(Boolean);
 
@@ -127,7 +185,8 @@ const cvCss = (templateId: CvTemplateId) => {
   .section h2{font-size:4.2mm;font-weight:700;text-transform:uppercase;letter-spacing:0.4mm;margin-bottom:3mm;padding-bottom:1.5mm;border-bottom:0.3mm solid #e5e7eb}
   .summary p{font-size:3.6mm;line-height:1.6;margin-bottom:1.5mm;color:#374151}
 
-  .entry{margin-bottom:4.5mm}
+  .entry{margin-bottom:4.5mm;break-inside:avoid}
+  .section h2{break-after:avoid}
   .entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:4mm}
   .entry-title{font-size:3.9mm;font-weight:700}
   .entry-period{font-size:3.2mm;color:#9ca3af;white-space:nowrap}
@@ -152,28 +211,41 @@ const cvCss = (templateId: CvTemplateId) => {
 const azureBullets = (items: string[]) =>
   items.length ? `<ul class="az-list">${items.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : "";
 
-const azureEntryLines = (entries: CvEntry[]) =>
-  entries
-    .map((e) => [e.title, e.subtitle, e.period].map((v) => v.trim()).filter(Boolean).join(" — "))
-    .filter(Boolean);
+// One bullet per entry ("title — place — period"), with its description
+// underneath — the description used to be silently dropped in this template.
+const azureEntries = (entries: CvEntry[]) => {
+  const items = entries
+    .map((e) => ({
+      line: [e.title, e.subtitle, e.period].map((v) => v.trim()).filter(Boolean).join(" — "),
+      desc: e.description.trim(),
+    }))
+    .filter((e) => e.line || e.desc);
+  return items.length
+    ? `<ul class="az-list">${items
+        .map((e) => `<li>${escapeHtml(e.line)}${e.desc ? `<div class="az-desc">${paragraphs(e.desc)}</div>` : ""}</li>`)
+        .join("")}</ul>`
+    : "";
+};
 
 const buildAzureInner = ({ profile, photoDataUrl }: CvDocumentProps) => {
-  const { data } = profile;
+  const data = withoutBlankRows(profile.data);
   const isRtl = data.language === "ar";
   const L = (key: LabelKey) => LABELS[key][data.language];
 
   const bar = (title: string, body: string) =>
     body ? `<section class="az-section"><div class="az-bar"><span>${escapeHtml(title)} :</span></div>${body}</section>` : "";
 
-  const civilRow = (label: string, value: string) =>
-    value ? `<div class="az-row"><span class="az-label">${escapeHtml(label)} :</span> <span class="az-value">${escapeHtml(value)}</span></div>` : "";
+  const civilRow = (label: string, value: string, isLtr = false) =>
+    value ? `<div class="az-row"><span class="az-label">${escapeHtml(label)} :</span> <span class="az-value">${isLtr ? ltr(value) : escapeHtml(value)}</span></div>` : "";
 
+  // Name and job title always show; the Contact toggle governs the rest
+  // (it used to be ignored here, so switching it off changed nothing).
   const civil = [
     civilRow(L("fullName"), profile.fullName),
     civilRow(L("jobTitle"), data.jobTitle),
-    civilRow(L("address"), data.address),
-    civilRow(L("email"), data.email),
-    civilRow(L("phone"), profile.phone),
+    ...(data.fields.contact
+      ? [civilRow(L("address"), data.address), civilRow(L("email"), data.email, true), civilRow(L("phone"), profile.phone, true)]
+      : []),
   ].join("");
 
   return `
@@ -190,10 +262,10 @@ const buildAzureInner = ({ profile, photoDataUrl }: CvDocumentProps) => {
     <h1 class="az-title">${escapeHtml(L("cvTitle"))}</h1>
   </header>
 
-  ${bar(L("civil"), data.fields.contact || civil ? `<div class="az-civil">${civil}</div>` : "")}
+  ${bar(L("civil"), civil ? `<div class="az-civil">${civil}</div>` : "")}
   ${data.fields.summary && data.summary ? bar(L("summary"), `<div class="az-text">${paragraphs(data.summary)}</div>`) : ""}
-  ${data.fields.education && data.education.length ? bar(L("education"), azureBullets(azureEntryLines(data.education))) : ""}
-  ${data.fields.experience && data.experience.length ? bar(L("experience"), azureBullets(azureEntryLines(data.experience))) : ""}
+  ${data.fields.education && data.education.length ? bar(L("education"), azureEntries(data.education)) : ""}
+  ${data.fields.experience && data.experience.length ? bar(L("experience"), azureEntries(data.experience)) : ""}
   ${data.fields.skills && data.skills.length ? bar(L("skills"), azureBullets(data.skills)) : ""}
   ${data.fields.languages && data.languagesSpoken.length ? bar(L("languages"), azureBullets(data.languagesSpoken)) : ""}
   ${data.customSections
@@ -229,13 +301,17 @@ const azureCss = () => `
   .az-value{font-weight:500}
 
   .az-list{padding:3mm 12mm 0;list-style:disc;list-style-position:inside}
-  .az-list li{font-size:3.9mm;font-weight:700;line-height:1.9;color:#111827}
+  .az-list li{font-size:3.9mm;font-weight:700;line-height:1.9;color:#111827;break-inside:avoid}
+  .az-desc p{font-size:3.5mm;font-weight:500;line-height:1.6;color:#374151;padding-inline-start:5mm}
+  .az-bar{break-after:avoid}
   .az-text p{font-size:3.8mm;line-height:1.7;padding:0 8mm;color:#1f2937}
 
   @page{size:210mm 297mm;margin:0}
 `;
 
-export const buildCvHtml = (props: CvDocumentProps) => `<!doctype html>
+export const buildCvHtml = (rawProps: CvDocumentProps) => {
+  const props = { ...rawProps, profile: { ...rawProps.profile, data: normalizeCvDocument(rawProps.profile.data) } };
+  return `<!doctype html>
 <html lang="${props.profile.data.language}" dir="${props.profile.data.language === "ar" ? "rtl" : "ltr"}">
 <head>
 <meta charset="utf-8"/>
@@ -246,3 +322,4 @@ export const buildCvHtml = (props: CvDocumentProps) => `<!doctype html>
 ${props.profile.data.templateId === "azure" ? buildAzureInner(props) : buildCvInner(props)}
 </body>
 </html>`;
+};

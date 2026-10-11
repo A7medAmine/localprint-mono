@@ -76,6 +76,7 @@ owns the translation. A single shared mapper for both apps is still open.
 | `/auth/forgot/reset` | POST | `{method: "recovery"\|"email", code, newPassword}` → new token; recovery codes are single-use and rotated |
 | `/auth/recovery-code` | GET, POST | Admin: status / regenerate (POST needs `currentPassword`). Stored as a scrypt hash only — see `server/passwordRecovery.js` |
 | `/discount-rules` | GET, POST, PUT, DELETE | CRUD |
+| `/cvs` | GET, POST, PUT, DELETE | Customer CVs; `/cvs/:id/photo` GET/POST/DELETE, `/cvs/:id/duplicate` POST (copies the photo too) |
 | `/gmail/*` | — | OAuth connect/callback + intake queue |
 
 ## Migrations

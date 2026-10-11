@@ -699,6 +699,18 @@ class StorageService {
     await this.safeFetch(`/api/cvs/${id}`, { method: "DELETE" });
   }
 
+  async removeCvPhoto(id: string): Promise<CvProfile> {
+    return this.safeFetch(`/api/cvs/${id}/photo`, { method: "DELETE" });
+  }
+
+  async duplicateCvProfile(id: string, fullName?: string): Promise<CvProfile> {
+    return this.safeFetch(`/api/cvs/${id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fullName }),
+    });
+  }
+
   async uploadCvPhoto(id: string, file: File): Promise<CvProfile> {
     const formData = new FormData();
     formData.append("photo", file);

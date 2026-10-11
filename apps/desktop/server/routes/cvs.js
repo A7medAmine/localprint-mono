@@ -15,6 +15,13 @@ import { UPLOADS_DIR } from "../config.js";
 import { requireAdmin } from "../adminAuth.js";
 import { upload } from "../uploads.js";
 
+function removePhotoFile(filename) {
+  if (!filename) return;
+  const filePath = path.resolve(path.join(UPLOADS_DIR, filename));
+  if (!filePath.startsWith(path.resolve(UPLOADS_DIR)) || !fs.existsSync(filePath)) return;
+  try { fs.unlinkSync(filePath); } catch { console.warn("⚠️  Could not delete CV photo"); }
+}
+
 export function registerCvRoutes(app) {
   app.get("/api/cvs", requireAdmin, (req, res) => {
     try {
@@ -108,6 +115,42 @@ export function registerCvRoutes(app) {
     } catch (err) {
       console.error("❌ Error uploading CV photo:", err);
       res.status(500).json({ error: "Failed to upload CV photo" });
+    }
+  });
+
+  app.delete("/api/cvs/:id/photo", requireAdmin, (req, res) => {
+    try {
+      const cv = getCvProfile(req.params.id);
+      if (!cv) return res.status(404).json({ error: "CV not found" });
+      removePhotoFile(cv.photoFilename);
+      res.status(200).json(updateCvProfilePhoto(req.params.id, ""));
+    } catch (err) {
+      console.error("❌ Error removing CV photo:", err);
+      res.status(500).json({ error: "Failed to remove CV photo" });
+    }
+  });
+
+  // Copy a CV (photo included) as a starting point for a similar customer.
+  app.post("/api/cvs/:id/duplicate", requireAdmin, (req, res) => {
+    try {
+      const source = getCvProfile(req.params.id);
+      if (!source) return res.status(404).json({ error: "CV not found" });
+      const copy = createCvProfile({
+        id: `cv_${randomBytes(8).toString("hex")}`,
+        fullName: String(req.body?.fullName || source.fullName).trim() || source.fullName,
+        phone: source.phone,
+        data: source.data,
+      });
+      const srcPath = source.photoFilename ? path.resolve(path.join(UPLOADS_DIR, source.photoFilename)) : "";
+      if (srcPath && srcPath.startsWith(path.resolve(UPLOADS_DIR)) && fs.existsSync(srcPath)) {
+        const newName = `cvcopy_${randomBytes(8).toString("hex")}${path.extname(source.photoFilename)}`;
+        fs.copyFileSync(srcPath, path.join(UPLOADS_DIR, newName));
+        return res.status(201).json(updateCvProfilePhoto(copy.id, newName));
+      }
+      res.status(201).json(copy);
+    } catch (err) {
+      console.error("❌ Error duplicating CV:", err);
+      res.status(500).json({ error: "Failed to duplicate CV" });
     }
   });
 
