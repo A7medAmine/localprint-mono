@@ -140,6 +140,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     const images = selected.filter((j) => j.fileType?.startsWith("image/"));
     if (images.length > 0) {
       sessionStorage.setItem("ps_batch_jobs", JSON.stringify(images.map((j) => j.id)));
+      jobs.setSelectedJobIds(new Set());
       navigate("/admin/dashboard?tab=studio-photos");
       return;
     }
@@ -153,6 +154,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
     }
     // The PDF tool works on one document at a time.
     sessionStorage.setItem("ps_edit_job", pdf.id);
+    jobs.setSelectedJobIds(new Set());
     navigate("/admin/dashboard?tab=studio-pdf");
   };
 
@@ -406,6 +408,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ jobs, paperTypes, discountRules, 
                         const [front, back] = selectedImages;
                         sessionStorage.setItem("ps_card_front", front.id);
                         sessionStorage.setItem("ps_card_back", back.id);
+                        setSelectedJobIds(new Set());
                         navigate("/admin/dashboard?tab=studio-cards");
                       }} title="Print as Card" className="flex-col gap-1 h-auto text-inherit hover:text-pink-400 dark:hover:text-pink-300">
                         <Icon name="card" className="w-5 h-5" />

@@ -576,6 +576,8 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
     } finally {
       setBulkPrinting(false);
     }
+    // The batch has been handled; leave nothing selected behind it.
+    setSelectedJobIds(new Set());
     if (cancelled) {
       toast({
         title: rtl ? "تم إيقاف الطباعة الجماعية" : "Bulk print stopped",
@@ -601,6 +603,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
         if (selectedIds.length > 1) await new Promise((r) => setTimeout(r, 200));
       }
     }
+    setSelectedJobIds(new Set());
   };
 
   const handleBulkDelete = () => setBulkDeleteConfirm(true);
@@ -634,6 +637,7 @@ export function useAdminJobs({ currentSettings, onLowStockRefresh }: UseAdminJob
   const handleEdit = async (job: PrintJob) => {
     if (job.fileType.includes("pdf")) {
       sessionStorage.setItem("ps_edit_job", job.id);
+      setSelectedJobIds(new Set());
       navigate("/admin/dashboard?tab=studio-pdf");
     } else {
       const url = await storageService.getFileUrl(job.id);
